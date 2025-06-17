@@ -1,0 +1,8 @@
+# ... другие строки
+venv/
+.env
+__pycache__/
+*.pyc
+
+# Файл базы данных SQLite
+crm.db
