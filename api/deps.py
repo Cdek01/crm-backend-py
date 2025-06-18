@@ -7,19 +7,7 @@ from jose import JWTError, jwt
 
 from db import models, session
 from core.config import settings
-from schemas.token import TokenData  # Мы создадим эту схему сейчас
 
-# Создайте schemas/token.py если его еще нет, и добавьте TokenData
-# schemas/token.py
-# from pydantic import BaseModel
-# from typing import Optional
-#
-# class Token(BaseModel):
-#     access_token: str
-#     token_type: str
-#
-# class TokenData(BaseModel):
-#     username: Optional[str] = None
 
 # Эта строка указывает FastAPI, откуда брать токен для проверки
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")

@@ -96,6 +96,7 @@ class Individual(Base):
     email = Column(String, nullable=True, index=True)
 
     is_sole_proprietor = Column(Boolean, default=False, nullable=True)  # ИП
+    notes = Column(Text, nullable=True) # <--- ДОБАВЬТЕ ЭТУ СТРОКУ
 
     # Связи с компаниями (храним как текст для простоты)
     founder_in = Column(Text, nullable=True)

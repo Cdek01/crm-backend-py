@@ -3,8 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError
-
-from api.endpoints import auth, leads
+from api.endpoints import auth, leads, legal_entities, individuals
 from db import models, base, session
 from core import security
 from core.config import settings
@@ -24,6 +23,16 @@ app.include_router(leads.router, prefix="/api/leads", tags=["leads"]) # <--- Д�
 # --- Защита эндпоинтов ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
+app.include_router(
+    legal_entities.router,
+    prefix="/api/legal-entities",
+    tags=["Legal Entities"]
+)
+app.include_router(
+    individuals.router,
+    prefix="/api/individuals",
+    tags=["Individuals"]
+)
 
 def get_current_user(db: Session = Depends(session.get_db), token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(

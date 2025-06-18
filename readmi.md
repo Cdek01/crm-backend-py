@@ -1,4 +1,6 @@
 pip install -r requirements.txt
+venv\Scripts\activate.bat
+
 
 Актуальные эндпоинты API
 На данный момент в вашем API реализована базовая аутентификация и один защищенный маршрут. Вот они:
