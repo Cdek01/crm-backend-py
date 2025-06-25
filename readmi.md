@@ -2,6 +2,19 @@ pip install -r requirements.txt
 venv\Scripts\activate.bat
 http://89.111.169.47:8005/docs
 
+Запустить Redis (если еще не запущен):
+Generated bash
+docker run -d -p 6379:6379 redis
+Use code with caution.
+Bash
+Запустить воркер Celery: (в корне проекта, с активным venv)
+Generated bash
+celery -A celery_worker.celery_app worker --loglevel=info
+Use code with caution.
+Bash
+Этот терминал будет показывать логи выполнения фоновых задач.
+Запустить веб-сервер FastAPI: (в корне проекта, с активным venv)
+Generated bash
 uvicorn main:app --reload
 
 

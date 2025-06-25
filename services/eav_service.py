@@ -29,19 +29,46 @@ class EAVService:
         # Проверяем, нет ли у этого клиента уже типа с таким именем
         existing = self.db.query(models.EntityType).filter(
             models.EntityType.name == entity_type_in.name,
-            models.EntityType.tenant_id == current_user.tenant_id  # <-- Проверка уникальности в рамках клиента
+            models.EntityType.tenant_id == current_user.tenant_id
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail=f"Тип сущности с именем '{entity_type_in.name}' уже существует")
 
-        # ИЗМЕНЕНИЕ: Добавляем tenant_id при создании
+        # --- ИЗМЕНЕНИЕ ЛОГИКИ ---
+
+        # 1. Создаем и коммитим ТОЛЬКО сам EntityType
         db_entity_type = models.EntityType(
             **entity_type_in.model_dump(),
-            tenant_id=current_user.tenant_id  # <-- ВОТ ОНО!
+            tenant_id=current_user.tenant_id
         )
         self.db.add(db_entity_type)
         self.db.commit()
         self.db.refresh(db_entity_type)
+
+        # 2. Теперь, когда EntityType сохранен, создаем для него атрибуты
+        system_attributes = [
+            {"name": "send_sms_trigger", "display_name": "Отправить SMS", "value_type": "boolean"},
+            {"name": "sms_status", "display_name": "Статус отправки", "value_type": "string"},
+            {"name": "sms_last_error", "display_name": "Ошибка отправки", "value_type": "string"},
+            {"name": "phone_number", "display_name": "Номер телефона", "value_type": "string"},
+            {"name": "message_text", "display_name": "Текст сообщения", "value_type": "string"},
+        ]
+
+        for attr_data in system_attributes:
+            # Проверяем, нет ли уже такого атрибута (на всякий случай)
+            attr_exists = self.db.query(models.Attribute).filter_by(
+                name=attr_data['name'],
+                entity_type_id=db_entity_type.id
+            ).first()
+            if not attr_exists:
+                attr = models.Attribute(**attr_data, entity_type_id=db_entity_type.id)
+                self.db.add(attr)
+
+        # 3. Коммитим добавление атрибутов
+        self.db.commit()
+        # Обновляем объект, чтобы он содержал новые атрибуты
+        self.db.refresh(db_entity_type)
+
         return db_entity_type
 
     def create_attribute_for_type(self, entity_type_id: int, attribute_in: AttributeCreate) -> models.Attribute:
@@ -134,7 +161,10 @@ class EAVService:
         return self.get_entity_by_id(new_entity.id)
 
     def update_entity(self, entity_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-        # ИСПРАВЛЕНИЕ: Загружаем сущность вместе со связанным объектом EntityType
+        # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
+        from tasks.messaging import send_sms_for_entity_task
+
+        # Загружаем сущность со связанным типом и его атрибутами
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
         ).get(entity_id)
@@ -142,30 +172,50 @@ class EAVService:
         if not entity:
             raise HTTPException(status_code=404, detail="Сущность не найдена")
 
-        # Удаляем старые значения и записываем новые (простой вариант для PUT)
-        # synchronize_session=False часто помогает избежать конфликтов при массовом удалении
-        self.db.query(models.AttributeValue).filter(
-            models.AttributeValue.entity_id == entity_id
-        ).delete(synchronize_session=False)
+        # --- НОВАЯ ЛОГИКА ОБНОВЛЕНИЯ (PATCH) ---
 
-        # Теперь `entity.entity_type` гарантированно загружен и не будет None
         attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
 
+        # 1. Проверяем триггер и модифицируем входящие данные
+        if data.get("send_sms_trigger") is True:
+            data["sms_status"] = "pending"
+            data["send_sms_trigger"] = False
+            # Запускаем фоновую задачу
+            send_sms_for_entity_task.delay(entity_id=entity_id)
+
+        # 2. Обновляем значения атрибутов
         for key, value in data.items():
-            if key not in attributes_map or value is None:
+            if key not in attributes_map:
                 continue
 
             attribute = attributes_map[key]
             value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-            attr_value = models.AttributeValue(entity_id=entity.id, attribute_id=attribute.id)
-            setattr(attr_value, value_field_name, value)
-            self.db.add(attr_value)
 
-        # ИСПРАВЛЕНИЕ: Обновляем поле updated_at у самой сущности
+            # Ищем существующее значение для этого атрибута
+            existing_value = self.db.query(models.AttributeValue).filter_by(
+                entity_id=entity_id,
+                attribute_id=attribute.id
+            ).first()
+
+            if existing_value:
+                # Если значение уже есть, обновляем его
+                setattr(existing_value, value_field_name, value)
+            else:
+                # Если значения нет, создаем новое
+                new_value = models.AttributeValue(
+                    entity_id=entity_id,
+                    attribute_id=attribute.id
+                )
+                setattr(new_value, value_field_name, value)
+                self.db.add(new_value)
+
+        # 3. Обновляем `updated_at` у самой сущности
         entity.updated_at = datetime.utcnow()
         self.db.add(entity)
 
         self.db.commit()
+
+        # 4. Возвращаем ПОЛНЫЙ и ОБНОВЛЕННЫЙ объект
         return self.get_entity_by_id(entity_id)
 
     def delete_entity(self, entity_id: int):
