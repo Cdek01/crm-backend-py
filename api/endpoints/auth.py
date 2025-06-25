@@ -23,12 +23,20 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
             detail="Пользователь с таким email уже существует",
         )
 
-    # Хешируем пароль и создаем пользователя
+    # --- НОВАЯ ЛОГИКА ДЛЯ MULTI-TENANCY ---
+    # 1. Создаем нового "клиента" (Tenant) для этого пользователя.
+    # В реальном приложении имя может браться из формы регистрации.
+    new_tenant = models.Tenant(name=f"Компания {user_in.full_name or user_in.email}")
+    db.add(new_tenant)
+    db.flush() # Используем flush, чтобы получить new_tenant.id до коммита
+
+    # 2. Хешируем пароль и создаем пользователя, привязывая его к новому Tenant.
     hashed_password = security.get_password_hash(user_in.password)
     new_user = models.User(
         email=user_in.email,
         hashed_password=hashed_password,
         full_name=user_in.full_name,
+        tenant_id=new_tenant.id  # <-- ПРИВЯЗКА К КЛИЕНТУ
     )
     db.add(new_user)
     db.commit()

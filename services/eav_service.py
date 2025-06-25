@@ -24,12 +24,21 @@ class EAVService:
 
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ ---
 
-    def create_entity_type(self, entity_type_in: EntityTypeCreate) -> models.EntityType:
-        existing = self.db.query(models.EntityType).filter(models.EntityType.name == entity_type_in.name).first()
+    # ИЗМЕНЕНИЕ: Добавляем current_user в аргументы
+    def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
+        # Проверяем, нет ли у этого клиента уже типа с таким именем
+        existing = self.db.query(models.EntityType).filter(
+            models.EntityType.name == entity_type_in.name,
+            models.EntityType.tenant_id == current_user.tenant_id  # <-- Проверка уникальности в рамках клиента
+        ).first()
         if existing:
             raise HTTPException(status_code=400, detail=f"Тип сущности с именем '{entity_type_in.name}' уже существует")
 
-        db_entity_type = models.EntityType(**entity_type_in.model_dump())
+        # ИЗМЕНЕНИЕ: Добавляем tenant_id при создании
+        db_entity_type = models.EntityType(
+            **entity_type_in.model_dump(),
+            tenant_id=current_user.tenant_id  # <-- ВОТ ОНО!
+        )
         self.db.add(db_entity_type)
         self.db.commit()
         self.db.refresh(db_entity_type)

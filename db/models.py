@@ -6,7 +6,11 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
 
-
+class Tenant(Base):
+    __tablename__ = 'tenants'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class User(Base):
@@ -17,6 +21,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True, index=True) # Сделаем nullable=True на время
+    tenant = relationship("Tenant")
 
 
 # --- НОВЫЕ И ПОЛНЫЕ МОДЕЛИ ---
@@ -85,6 +91,8 @@ class LegalEntity(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+
 
 
 class Individual(Base):
@@ -111,6 +119,8 @@ class Individual(Base):
     # `Дата добавления` и `Дата создания` покрываются этим полем
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
 
 
 class Lead(Base):
@@ -160,6 +170,9 @@ class Lead(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+
+
 
 # ... (в конце файла, после существующих моделей User, Lead и т.д.)
 
@@ -175,6 +188,8 @@ class EntityType(Base):
     # Связь для удобного получения всех атрибутов типа
     attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="entity_type")
+
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
 
 
 class Attribute(Base):

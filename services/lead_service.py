@@ -14,13 +14,18 @@ class LeadService:
 
     def get_all(self, skip: int = 0, limit: int = 100) -> List[Lead]:
         """Получить все лиды"""
-        return lead_crud.get_multi(self.db, skip=skip, limit=limit)
+        return self.db.query(models.Lead).filter(
+            models.Lead.tenant_id == current_user.tenant_id # <-- ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ
+        ).offset(skip).limit(limit).all()
 
     def get_by_id(self, lead_id: int) -> Lead:
         """Получить лид по ID"""
-        lead = lead_crud.get(self.db, id=lead_id)
+        lead = self.db.query(models.Lead).filter(
+            models.Lead.id == lead_id,
+            models.Lead.tenant_id == current_user.tenant_id # <-- ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ
+        ).first()
         if not lead:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Лид не найден")
+            raise HTTPException(status_code=404, detail="Лид не найден") # Не говорим, что он есть у другого клиента!
         return lead
 
     def create_lead(self, lead_in: LeadCreate, current_user: models.User) -> Lead:

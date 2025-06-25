@@ -43,12 +43,17 @@ def print_response(name: str, response: requests.Response):
 def test_01_auth():
     """Тестирование регистрации, входа и получения данных о себе."""
     global AUTH_TOKEN
+    print("====== НАЧАЛО ТЕСТА: АУТЕНТИФИКАЦИЯ ======")
+
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    # Генерируем уникальное имя пользователя, как и email
+    unique_full_name = f"Тестовый Пользователь {TIMESTAMP}"
 
     # 1. Регистрация
     user_data = {
         "email": UNIQUE_EMAIL,
         "password": USER_PASSWORD,
-        "full_name": "Тестовый Пользователь"
+        "full_name": unique_full_name  # <-- Используем уникальное имя
     }
     response = requests.post(f"{BASE_URL}/api/auth/register", json=user_data)
     print_response("1. User Registration", response)
