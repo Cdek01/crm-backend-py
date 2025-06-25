@@ -1,5 +1,9 @@
 pip install -r requirements.txt
 venv\Scripts\activate.bat
+http://89.111.169.47:8005/docs
+
+uvicorn main:app --reload
+
 
 
 Актуальные эндпоинты API

@@ -6,6 +6,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
 
+
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -156,3 +159,67 @@ class Lead(Base):
     last_contact_date = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# ... (в конце файла, после существующих моделей User, Lead и т.д.)
+
+class EntityType(Base):
+    """Описывает 'тип' пользовательской таблицы, например, 'Проекты', 'Контракты'."""
+    __tablename__ = 'entity_types'
+    id = Column(Integer, primary_key=True)
+    # Системное имя, используется в URL, например 'projects'
+    name = Column(String, unique=True, index=True, nullable=False)
+    # Отображаемое имя для фронтенда, например 'Проекты'
+    display_name = Column(String, nullable=False)
+
+    # Связь для удобного получения всех атрибутов типа
+    attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
+    entities = relationship("Entity", back_populates="entity_type")
+
+
+class Attribute(Base):
+    """Описывает 'колонку' в пользовательской таблице, например, 'Название проекта', 'Бюджет'."""
+    __tablename__ = 'attributes'
+    id = Column(Integer, primary_key=True)
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=False)
+    # Системное имя, используется как ключ в JSON, например 'project_name'
+    name = Column(String, nullable=False)
+    # Отображаемое имя для фронтенда, например 'Название Проекта'
+    display_name = Column(String, nullable=False)
+    # Тип значения: 'string', 'integer', 'float', 'date', 'boolean'. Важно для валидации.
+    value_type = Column(String, nullable=False)
+
+    entity_type = relationship("EntityType", back_populates="attributes")
+
+
+class Entity(Base):
+    """Представляет одну 'строку' в пользовательской таблице. Например, конкретный проект."""
+    __tablename__ = 'entities'
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Связь для каскадного удаления всех значений при удалении сущности
+    values = relationship("AttributeValue", back_populates="entity", cascade="all, delete-orphan")
+    entity_type = relationship("EntityType", back_populates="entities")
+
+
+class AttributeValue(Base):
+    """Хранит одно конкретное значение для одной строки и одной колонки."""
+    __tablename__ = 'attribute_values'
+    id = Column(Integer, primary_key=True)
+    # Эти два поля почти всегда используются вместе в JOIN'ах
+    entity_id = Column(Integer, ForeignKey('entities.id'), nullable=False)
+    attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=False)
+
+    # Храним значения разных типов в разных полях
+    # Индексируем каждое поле со значением
+    value_string = Column(Text, nullable=True)
+    value_integer = Column(Integer, nullable=True)
+    value_float = Column(Float, nullable=True)
+    value_date = Column(DateTime, nullable=True)
+    value_boolean = Column(Boolean, nullable=True)
+
+    entity = relationship("Entity", back_populates="values")
+    attribute = relationship("Attribute")

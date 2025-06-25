@@ -3,12 +3,16 @@
 import requests
 import json
 import time
+from datetime import datetime
 
 # --- НАСТРОЙКИ ---
 BASE_URL = "http://127.0.0.1:8000"
+# BASE_URL = "http://89.111.169.47:8005"
 # Генерируем уникальный email, чтобы можно было запускать скрипт много раз
 UNIQUE_EMAIL = f"testuser_{int(time.time())}@example.com"
 USER_PASSWORD = "a_very_secure_password"
+TIMESTAMP = int(time.time())
+CUSTOM_TABLE_NAME = f"projects_{TIMESTAMP}"
 
 # Глобальные переменные для хранения состояния между тестами
 AUTH_TOKEN = None
@@ -198,12 +202,119 @@ def test_04_individuals_crud():
     print("====== ТЕСТ ФИЗ. ЛИЦ УСПЕШНО ЗАВЕРШЕН ======\n")
 
 
+# --- НОВЫЕ ТЕСТЫ ДЛЯ EAV ---
+
+def test_05_meta_crud():
+    """Тестирование создания 'таблиц' (EntityType) и 'колонок' (Attribute)."""
+    if not AUTH_TOKEN: raise AssertionError("Пропускаем тест метаданных: нет токена авторизации.")
+    print("====== НАЧАЛО ТЕСТА: META API (Конструктор таблиц) ======")
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+
+    # 1. Создание нового типа сущности ('таблицы')
+    entity_type_data = {
+        "name": CUSTOM_TABLE_NAME,
+        "display_name": f"Проекты {TIMESTAMP}"
+    }
+    response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=entity_type_data)
+    print_response("Meta - 1. Create Entity Type ('Table')", response)
+    assert response.status_code == 201
+    CREATED_IDS["entity_type"] = response.json()['id']
+    entity_type_id = CREATED_IDS["entity_type"]
+
+    # 2. Добавление атрибутов ('колонок') в эту 'таблицу'
+    attributes_to_create = [
+        {"name": "project_title", "display_name": "Название проекта", "value_type": "string"},
+        {"name": "budget", "display_name": "Бюджет", "value_type": "float"},
+        {"name": "is_active", "display_name": "Активен", "value_type": "boolean"},
+        {"name": "tasks_count", "display_name": "Количество задач", "value_type": "integer"},
+    ]
+
+    for i, attr in enumerate(attributes_to_create):
+        response = requests.post(
+            f"{BASE_URL}/api/meta/entity-types/{entity_type_id}/attributes",
+            headers=headers,
+            json=attr
+        )
+        print_response(f"Meta - 2.{i + 1}. Create Attribute ('Column')", response)
+        assert response.status_code == 201
+
+    print("====== ТЕСТ META API УСПЕШНО ЗАВЕРШЕН ======\n")
+
+
+def test_06_data_crud():
+    """Тестирование CRUD для данных в созданной пользовательской 'таблице'."""
+    if not AUTH_TOKEN or not CREATED_IDS["entity_type"]:
+        raise AssertionError("Пропускаем тест данных: нет токена или не создан тип сущности.")
+
+    print(f"====== НАЧАЛО ТЕСТА: DATA API (данные для таблицы '{CUSTOM_TABLE_NAME}') ======")
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+
+    # 1. Создание записи ('строки')
+    entity_data = {
+        "project_title": "Разработка нового модуля CRM",
+        "budget": 150000.50,
+        "is_active": True,
+        "tasks_count": 10
+    }
+    response = requests.post(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}", headers=headers, json=entity_data)
+    print_response("Data - 1. Create Entity ('Row')", response)
+    assert response.status_code == 201
+    assert response.json()['project_title'] == "Разработка нового модуля CRM"
+    CREATED_IDS["entity_instance"] = response.json()['id']
+    entity_id = CREATED_IDS["entity_instance"]
+
+    # 2. Получение списка всех записей
+    response = requests.get(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}", headers=headers)
+    print_response("Data - 2. Get All Entities", response)
+    assert response.status_code == 200
+    assert len(response.json()) > 0
+
+    # 3. Получение одной записи по ID
+    response = requests.get(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}/{entity_id}", headers=headers)
+    print_response("Data - 3. Get One Entity", response)
+    assert response.status_code == 200
+    assert response.json()['id'] == entity_id
+
+    # 4. Обновление записи
+    update_data = {
+        "project_title": "Завершение разработки модуля CRM",
+        "budget": 200000.0,
+        "is_active": False,
+        "tasks_count": 25
+    }
+    response = requests.put(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}/{entity_id}", headers=headers, json=update_data)
+    print_response("Data - 4. Update Entity", response)
+    assert response.status_code == 200
+    assert response.json()['is_active'] is False
+    assert response.json()['tasks_count'] == 25
+
+    # 5. Удаление записи
+    response = requests.delete(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}/{entity_id}", headers=headers)
+    print_response("Data - 5. Delete Entity", response)
+    assert response.status_code == 204
+
+    # 6. Проверка удаления
+    response = requests.get(f"{BASE_URL}/api/data/{CUSTOM_TABLE_NAME}/{entity_id}", headers=headers)
+    print_response("Data - 6. Verify Deletion", response)
+    assert response.status_code == 404
+
+    print("====== ТЕСТ DATA API УСПЕШНО ЗАВЕРШЕН ======\n")
+
+
+# --- Основной блок запуска ---
+
 if __name__ == "__main__":
     try:
+        # Сначала выполняем старые тесты
         test_01_auth()
-        test_02_leads_crud()
-        test_03_legal_entities_crud()
-        test_04_individuals_crud()
+        # test_02_leads_crud() # Можно временно закомментировать, чтобы ускорить тесты
+        # test_03_legal_entities_crud()
+        # test_04_individuals_crud()
+
+        # Затем новые тесты для конструктора
+        test_05_meta_crud()
+        test_06_data_crud()
+
         print("\n\n" + "=" * 20 + " ВСЕ ТЕСТЫ УСПЕШНО ПРОЙДЕНЫ! " + "=" * 20)
     except requests.exceptions.ConnectionError:
         print(f"\n[ОШИБКА] Не удалось подключиться к серверу {BASE_URL}.")
