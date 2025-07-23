@@ -6,8 +6,8 @@ import time
 from datetime import datetime
 
 # --- НАСТРОЙКИ ---
-BASE_URL = "http://127.0.0.1:8000"
-# BASE_URL = "http://89.111.169.47:8005"  # Если тестируете на удаленном сервере
+# BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://89.111.169.47:8005"  # Если тестируете на удаленном сервере
 TIMESTAMP = int(time.time())
 UNIQUE_EMAIL = f"testuser_{TIMESTAMP}@example.com"
 USER_PASSWORD = "a_very_secure_password"

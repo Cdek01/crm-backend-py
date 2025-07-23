@@ -6,8 +6,8 @@ import time
 from datetime import datetime
 
 # --- НАСТРОЙКИ ---
-BASE_URL = "http://127.0.0.1:8000"
-# BASE_URL = "http://89.111.169.47:8005"
+# BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://89.111.169.47:8005"
 # Генерируем уникальный email, чтобы можно было запускать скрипт много раз
 UNIQUE_EMAIL = f"testuser_{int(time.time())}@example.com"
 USER_PASSWORD = "a_very_secure_password"
