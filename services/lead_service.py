@@ -22,15 +22,21 @@ class LeadService:
             models.Lead.tenant_id == current_user.tenant_id
         ).offset(skip).limit(limit).all()
 
-    def get_by_id(self, lead_id: int) -> Lead:
-        """Получить лид по ID"""
-        lead = self.db.query(models.Lead).filter(
+    def get_by_id(self, lead_id: int, current_user: models.User):
+        """
+        Получает лид по ID с проверкой принадлежности к тенанту.
+        """
+        db_lead = self.db.query(models.Lead).filter(
             models.Lead.id == lead_id,
-            models.Lead.tenant_id == current_user.tenant_id # <-- ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ
+            models.Lead.tenant_id == current_user.tenant_id  # <-- Эта строка теперь будет работать
         ).first()
-        if not lead:
-            raise HTTPException(status_code=404, detail="Лид не найден") # Не говорим, что он есть у другого клиента!
-        return lead
+
+        if not db_lead:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Лид не найден"
+            )
+        return db_lead
 
     def create_lead(self, lead_in: LeadCreate, current_user: models.User) -> Lead:
         """
