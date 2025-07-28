@@ -48,7 +48,8 @@ class LeadService:
 
         # Передаем в CRUD уже готовый объект для создания
         # Мы создаем модель прямо тут, т.к. CRUD-слой должен быть "глупым"
-        new_lead = models.Lead(**lead_data)
+        new_lead = models.Lead(**lead_data,
+        tenant_id=current_user.tenant_id,)
 
         self.db.add(new_lead)
         self.db.commit()
