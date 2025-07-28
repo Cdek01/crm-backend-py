@@ -12,10 +12,14 @@ class LeadService:
     def __init__(self, db: Session = Depends(session.get_db)):
         self.db = db
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[Lead]:
-        """Получить все лиды"""
+    # Добавляем current_user: models.User в аргументы
+    def get_all(self, current_user: models.User, skip: int = 0, limit: int = 100):
+        """
+        Получает список лидов для ТЕКУЩЕГО пользователя (его тенанта).
+        """
+        # Теперь current_user здесь определен и мы можем его использовать
         return self.db.query(models.Lead).filter(
-            models.Lead.tenant_id == current_user.tenant_id # <-- ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ
+            models.Lead.tenant_id == current_user.tenant_id
         ).offset(skip).limit(limit).all()
 
     def get_by_id(self, lead_id: int) -> Lead:
