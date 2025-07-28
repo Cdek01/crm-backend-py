@@ -60,10 +60,20 @@ class LeadService:
 
         return new_lead
 
-    def update_lead(self, lead_id: int, lead_in: LeadUpdate) -> Lead:
-        """Обновить лид"""
-        db_lead = self.get_by_id(lead_id)  # Переиспользуем наш метод для поиска и проверки
-        return lead_crud.update(self.db, db_obj=db_lead, obj_in=lead_in)
+    def update_lead(self, lead_id: int, lead_in: LeadUpdate, current_user: models.User):  # <-- Добавили current_user
+
+        # Сначала находим лид, УЖЕ с проверкой прав доступа
+        db_lead = self.get_by_id(lead_id=lead_id, current_user=current_user)  # <-- Передали current_user
+
+        # Обновляем поля
+        update_data = lead_in.dict(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_lead, key, value)
+
+        self.db.add(db_lead)
+        self.db.commit()
+        self.db.refresh(db_lead)
+        return db_lead
 
     def delete_lead(self, lead_id: int):
         """Удалить лид"""
