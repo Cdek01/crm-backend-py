@@ -60,6 +60,12 @@ def update_lead(
     """
     Обновить информацию о лиде.
     """
+    # Передаем current_user в сервисный метод
+    return lead_service.update_lead(
+        lead_id=lead_id,
+        lead_in=lead_in,
+        current_user=current_user
+    )
     return lead_service.update_lead(lead_id=lead_id, lead_in=lead_in)
 
 @router.delete("/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
