@@ -9,6 +9,32 @@ from api.deps import get_current_user
 
 router = APIRouter()
 
+
+
+@router.get("/entity-types", response_model=List[EntityType])
+def get_all_entity_types(
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Получить список всех пользовательских типов сущностей ('таблиц').
+    """
+    return service.get_all_entity_types(current_user=current_user)
+
+
+@router.get("/entity-types/{entity_type_id}", response_model=EntityType)
+def get_entity_type(
+    entity_type_id: int,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Получить детальную информацию о конкретном типе сущности по его ID,
+    включая все его атрибуты ('колонки').
+    """
+    return service.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
+
+
 @router.post("/entity-types", response_model=EntityType, status_code=status.HTTP_201_CREATED)
 def create_entity_type(
     entity_type_in: EntityTypeCreate,

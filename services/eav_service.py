@@ -23,6 +23,35 @@ class EAVService:
         self.db = db
 
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ ---
+    # >>> ДОБАВЬТЕ ЭТИ ДВА МЕТОДА <<<
+    #
+    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
+        """
+        Получить все типы сущностей ('таблицы'), созданные текущим клиентом.
+        """
+        # Важнейшее условие для multi-tenancy!
+        # Показываем только те типы, которые принадлежат клиенту (tenant) текущего пользователя.
+        return self.db.query(models.EntityType).filter(
+            models.EntityType.tenant_id == current_user.tenant_id
+        ).order_by(models.EntityType.display_name).all()
+
+    def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> models.EntityType:
+        """
+        Получить один тип сущности по его ID.
+        """
+        # Ищем по ID, но СТРОГО в рамках текущего tenant_id.
+        # Это не позволяет одному клиенту "подсмотреть" структуру таблиц другого.
+        entity_type = self.db.query(models.EntityType).filter(
+            models.EntityType.id == entity_type_id,
+            models.EntityType.tenant_id == current_user.tenant_id
+        ).first()
+
+        if not entity_type:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Тип сущности не найден"
+            )
+        return entity_type
 
     # ИЗМЕНЕНИЕ: Добавляем current_user в аргументы
     def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
