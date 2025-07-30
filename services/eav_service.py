@@ -53,6 +53,31 @@ class EAVService:
             )
         return entity_type
 
+
+
+    def delete_entity_type(self, entity_type_id: int, current_user: models.User):
+        """
+        Удалить тип сущности и ВСЕ связанные с ним данные (атрибуты, сущности, значения).
+        Это необратимая операция!
+        """
+        # 1. Находим таблицу, которую нужно удалить.
+        # Этот метод уже содержит проверку на tenant_id, что гарантирует безопасность.
+        entity_type_to_delete = self.get_entity_type_by_id(
+            entity_type_id=entity_type_id,
+            current_user=current_user
+        )
+
+        # 2. Удаляем объект. Благодаря cascade="all, delete-orphan" в моделях,
+        # SQLAlchemy и база данных позаботятся об удалении всех дочерних записей.
+        self.db.delete(entity_type_to_delete)
+        self.db.commit()
+
+        # Для операции DELETE принято возвращать None или пустой ответ.
+        return None
+
+
+
+
     # ИЗМЕНЕНИЕ: Добавляем current_user в аргументы
     def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
         # Проверяем, нет ли у этого клиента уже типа с таким именем

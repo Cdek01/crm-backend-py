@@ -35,6 +35,28 @@ def get_entity_type(
     return service.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
 
+
+@router.delete("/entity-types/{entity_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_entity_type(
+    entity_type_id: int,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Удалить пользовательский тип сущности ('таблицу').
+
+    **ВНИМАНИЕ:** Это действие необратимо и приведет к удалению:
+    - Самой 'таблицы' (типа сущности).
+    - Всех ее 'колонок' (атрибутов).
+    - Всех 'строк' (сущностей) внутри этой таблицы.
+    - Всех данных в 'ячейках' (значений атрибутов).
+    """
+    return service.delete_entity_type(entity_type_id=entity_type_id, current_user=current_user)
+
+
+# ...
+
+
 @router.post("/entity-types", response_model=EntityType, status_code=status.HTTP_201_CREATED)
 def create_entity_type(
     entity_type_in: EntityTypeCreate,

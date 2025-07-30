@@ -187,7 +187,7 @@ class EntityType(Base):
 
     # Связь для удобного получения всех атрибутов типа
     attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
-    entities = relationship("Entity", back_populates="entity_type")
+    entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
 
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
 

@@ -31,18 +31,25 @@ def main():
 
     # --- Шаг 1: Регистрация и Вход ---
     print("\n--- Шаг 1: Регистрация и Авторизация ---")
-    # Генерируем уникальные данные для каждого запуска теста
-    unique_email = f"testuser_{int(datetime.now().timestamp())}@test.com"
+
+    timestamp = int(datetime.now().timestamp())
+    unique_email = f"testuser_{timestamp}@test.com"
+
+    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    # Сделаем full_name тоже уникальным для каждого запуска теста
+    unique_full_name = f"Meta Tester {timestamp}"
+
     password = "superstrongpassword123"
 
     try:
         # Регистрация
         reg_response = requests.post(
             f"{BASE_URL}/api/auth/register",
-            json={"email": unique_email, "password": password, "full_name": "Meta Tester"}
+            # Используем нашу новую уникальную переменную
+            json={"email": unique_email, "password": password, "full_name": unique_full_name}
         )
         assert reg_response.status_code == 201
-        print_status(True, f"Пользователь {unique_email} успешно зарегистрирован.")
+        print_status(True, f"Пользователь {unique_email} ({unique_full_name}) успешно зарегистрирован.")
 
         # Вход
         login_response = requests.post(
@@ -63,7 +70,7 @@ def main():
     print("\n--- Шаг 2: Создание новых 'таблиц' (Entity Types) ---")
     try:
         # Создаем "Проекты"
-        project_payload = {"name": "projects", "display_name": "Проекты"}
+        project_payload = {"name": "pro", "display_name": "Про"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -75,7 +82,7 @@ def main():
         print_status(True, f"Создан тип 'Проекты' с ID: {test_state['project_type_id']}")
 
         # Создаем "Задачи"
-        task_payload = {"name": "tasks", "display_name": "Задачи"}
+        task_payload = {"name": "tas", "display_name": "Зад"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -102,7 +109,7 @@ def main():
         assert len(all_types) == 2
 
         type_names = {t['name'] for t in all_types}
-        assert "projects" in type_names and "tasks" in type_names
+        assert "pro" in type_names and "tas" in type_names
 
         print_status(True, "Список всех типов сущностей получен и содержит созданные нами 'таблицы'.")
 
@@ -120,8 +127,8 @@ def main():
 
         # Проверки
         assert project_details["id"] == project_id
-        assert project_details["name"] == "projects"
-        assert project_details["display_name"] == "Проекты"
+        assert project_details["name"] == "pro"
+        assert project_details["display_name"] == "Про"
 
         # Проверяем, что системные атрибуты были автоматически созданы
         assert isinstance(project_details["attributes"], list)
@@ -149,6 +156,48 @@ def main():
 
     print("\n🎉 Все тесты для Meta API успешно пройдены!")
 
+    # --- Шаг 6: Удаление одного из типов сущностей ---
+    print("\n--- Шаг 6: Проверка удаления 'таблицы' (DELETE /api/meta/entity-types/{id}) ---")
+    try:
+        # Будем удалять 'Задачи'
+        task_id_to_delete = test_state["task_type_id"]
+        response = requests.delete(
+            f"{BASE_URL}/api/meta/entity-types/{task_id_to_delete}",
+            headers=test_state["headers"]
+        )
+        # Ожидаем успешный пустой ответ
+        assert response.status_code == 204
+
+        print_status(True, f"Сервер успешно обработал запрос на удаление типа с ID {task_id_to_delete}.")
+
+    except (requests.exceptions.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка при удалении типа: {e}")
+
+    # --- Шаг 7: Проверка последствий удаления ---
+    print("\n--- Шаг 7: Проверка, что 'таблица' действительно удалена ---")
+    try:
+        # 7.1. Попытка получить удаленный тип по ID должна вернуть 404
+        task_id_deleted = test_state["task_type_id"]
+        response_get_deleted = requests.get(
+            f"{BASE_URL}/api/meta/entity-types/{task_id_deleted}",
+            headers=test_state["headers"]
+        )
+        assert response_get_deleted.status_code == 404
+        print_status(True, "Повторный запрос удаленного ID корректно вернул 404.")
+
+        # 7.2. В общем списке должен остаться только один тип
+        response_list_after_delete = requests.get(
+            f"{BASE_URL}/api/meta/entity-types",
+            headers=test_state["headers"]
+        )
+        assert response_list_after_delete.status_code == 200
+        list_after_delete = response_list_after_delete.json()
+        assert len(list_after_delete) == 1
+        assert list_after_delete[0]["name"] == "projects"
+        print_status(True, "Общий список теперь содержит только одну оставшуюся 'таблицу'.")
+
+    except (requests.exceptions.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка при проверке последствий удаления: {e}")
 
 if __name__ == "__main__":
     main()
