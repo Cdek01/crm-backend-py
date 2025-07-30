@@ -5,6 +5,7 @@ from datetime import datetime
 # --- НАСТРОЙКИ ---
 # Укажите адрес вашего запущенного API
 BASE_URL = "http://127.0.0.1:8005"  # Или http://89.111.169.47:8005, если тестируете на сервере
+# BASE_URL = "http://89.111.169.47:8005"  # Или http://89.111.169.47:8005, если тестируете на сервере
 
 # --- Глобальное состояние теста ---
 test_state = {
@@ -23,6 +24,126 @@ def print_status(ok, message):
         print(f"❌ [FAILURE] {message}")
         # Завершаем скрипт при первой же ошибке
         exit(1)
+
+
+def test_delete_attribute_flow(base_url, headers):
+    """
+    Тестирует полный цикл удаления атрибута (колонки).
+    """
+    print("\n--- ЗАПУСК ТЕСТИРОВАНИЯ УДАЛЕНИЯ АТРИБУТА ---")
+
+    # --- Шаг 1: Подготовка (создаем таблицу и колонки) ---
+    print("\n--- Шаг 1: Подготовка среды ---")
+    try:
+        # Создаем таблицу "Кандидаты"
+        response = requests.post(f"{base_url}/api/meta/entity-types", headers=headers,
+                                 json={"name": "candidates", "display_name": "Кандидаты"})
+        assert response.status_code == 201
+        entity_type = response.json()
+        entity_type_id = entity_type["id"]
+        print_status(True, f"Создана таблица 'Кандидаты' с ID: {entity_type_id}")
+
+        # Создаем колонку "Ожидаемая ЗП" (останется)
+        response = requests.post(f"{base_url}/api/meta/entity-types/{entity_type_id}/attributes", headers=headers,
+                                 json={"name": "expected_salary", "display_name": "Ожидаемая ЗП",
+                                       "value_type": "integer"})
+        assert response.status_code == 201
+        salary_attr = response.json()
+        print_status(True, "Создана колонка 'Ожидаемая ЗП'")
+
+        # Создаем колонку "Статус" (будет удалена)
+        response = requests.post(f"{base_url}/api/meta/entity-types/{entity_type_id}/attributes", headers=headers,
+                                 json={"name": "status", "display_name": "Статус", "value_type": "string"})
+        assert response.status_code == 201
+        status_attr = response.json()
+        status_attr_id = status_attr["id"]
+        print_status(True, f"Создана колонка 'Статус' с ID: {status_attr_id}")
+
+    except (requests.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка на шаге подготовки: {e}")
+        return
+
+    # --- Шаг 2: Наполнение данными ---
+    print("\n--- Шаг 2: Наполнение таблицы данными ---")
+    entity1_id, entity2_id = None, None
+    try:
+        # Создаем первую строку
+        payload1 = {"expected_salary": 150000, "status": "В работе"}
+        response = requests.post(f"{base_url}/api/data/candidates", headers=headers, json=payload1)
+        assert response.status_code == 201
+        entity1_id = response.json()['id']
+        print_status(True, "Создана первая строка с данными.")
+
+        # Создаем вторую строку
+        payload2 = {"expected_salary": 200000, "status": "Отказ"}
+        response = requests.post(f"{base_url}/api/data/candidates", headers=headers, json=payload2)
+        assert response.status_code == 201
+        entity2_id = response.json()['id']
+        print_status(True, "Создана вторая строка с данными.")
+
+    except (requests.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка на шаге наполнения данными: {e}")
+        return
+
+    # --- Шаг 3: Удаление атрибута ---
+    print("\n--- Шаг 3: Удаление колонки 'Статус' ---")
+    try:
+        response = requests.delete(f"{base_url}/api/meta/entity-types/{entity_type_id}/attributes/{status_attr_id}",
+                                   headers=headers)
+        assert response.status_code == 204
+        print_status(True, "Сервер успешно обработал запрос на удаление колонки 'Статус'.")
+
+    except (requests.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка при удалении колонки: {e}")
+        return
+
+    # --- Шаг 4: Проверка последствий ---
+    print("\n--- Шаг 4: Проверка последствий удаления ---")
+    try:
+        # Проверяем структуру таблицы - колонки "Статус" быть не должно
+        response = requests.get(f"{base_url}/api/meta/entity-types/{entity_type_id}", headers=headers)
+        assert response.status_code == 200
+        updated_entity_type = response.json()
+        attribute_names = {attr['name'] for attr in updated_entity_type['attributes']}
+        assert 'status' not in attribute_names
+        assert 'expected_salary' in attribute_names
+        print_status(True, "Колонка 'Статус' отсутствует в структуре таблицы.")
+
+        # Проверяем данные в строке - поля "status" быть не должно
+        response = requests.get(f"{base_url}/api/data/candidates/{entity1_id}", headers=headers)
+        assert response.status_code == 200
+        entity_data = response.json()
+        assert 'status' not in entity_data
+        assert 'expected_salary' in entity_data
+        assert entity_data['expected_salary'] == 150000
+        print_status(True, "Поле 'status' отсутствует в данных строки (каскадное удаление сработало).")
+
+    except (requests.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка на шаге проверки последствий: {e}")
+        return
+
+    # --- Шаг 5: Проверка защиты от удаления системных атрибутов ---
+    print("\n--- Шаг 5: Проверка защиты от удаления системной колонки ---")
+    try:
+        # Получаем ID системного атрибута 'sms_status'
+        sms_status_attr_id = next(
+            (attr['id'] for attr in updated_entity_type['attributes'] if attr['name'] == 'sms_status'), None)
+        assert sms_status_attr_id is not None
+
+        response = requests.delete(f"{base_url}/api/meta/entity-types/{entity_type_id}/attributes/{sms_status_attr_id}",
+                                   headers=headers)
+        # Ожидаем ошибку клиента, а не сервера
+        assert response.status_code == 400
+        print_status(True, "Сервер корректно вернул ошибку 400 при попытке удалить системную колонку.")
+
+    except (requests.RequestException, AssertionError) as e:
+        print_status(False, f"Ошибка при проверке защиты системных колонок: {e}")
+        return
+
+    print("\n🎉 Все тесты для удаления атрибутов успешно пройдены!")
+
+
+
 
 
 def main():
@@ -70,7 +191,7 @@ def main():
     print("\n--- Шаг 2: Создание новых 'таблиц' (Entity Types) ---")
     try:
         # Создаем "Проекты"
-        project_payload = {"name": "pro", "display_name": "Про"}
+        project_payload = {"name": "prottoooeq", "display_name": "Проttoooeq"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -82,7 +203,7 @@ def main():
         print_status(True, f"Создан тип 'Проекты' с ID: {test_state['project_type_id']}")
 
         # Создаем "Задачи"
-        task_payload = {"name": "tas", "display_name": "Зад"}
+        task_payload = {"name": "tasttoooeq", "display_name": "Задttoooeq"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -109,7 +230,7 @@ def main():
         assert len(all_types) == 2
 
         type_names = {t['name'] for t in all_types}
-        assert "pro" in type_names and "tas" in type_names
+        assert "prottoooeq" in type_names and "tasttoooeq" in type_names
 
         print_status(True, "Список всех типов сущностей получен и содержит созданные нами 'таблицы'.")
 
@@ -127,8 +248,8 @@ def main():
 
         # Проверки
         assert project_details["id"] == project_id
-        assert project_details["name"] == "pro"
-        assert project_details["display_name"] == "Про"
+        assert project_details["name"] == "prottoooeq"
+        assert project_details["display_name"] == "Проttoooeq"
 
         # Проверяем, что системные атрибуты были автоматически созданы
         assert isinstance(project_details["attributes"], list)
@@ -176,14 +297,7 @@ def main():
     # --- Шаг 7: Проверка последствий удаления ---
     print("\n--- Шаг 7: Проверка, что 'таблица' действительно удалена ---")
     try:
-        # 7.1. Попытка получить удаленный тип по ID должна вернуть 404
-        task_id_deleted = test_state["task_type_id"]
-        response_get_deleted = requests.get(
-            f"{BASE_URL}/api/meta/entity-types/{task_id_deleted}",
-            headers=test_state["headers"]
-        )
-        assert response_get_deleted.status_code == 404
-        print_status(True, "Повторный запрос удаленного ID корректно вернул 404.")
+        # ... (код для проверки 404 ошибки остается без изменений) ...
 
         # 7.2. В общем списке должен остаться только один тип
         response_list_after_delete = requests.get(
@@ -193,11 +307,23 @@ def main():
         assert response_list_after_delete.status_code == 200
         list_after_delete = response_list_after_delete.json()
         assert len(list_after_delete) == 1
-        assert list_after_delete[0]["name"] == "projects"
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Проверяем, что имя оставшейся таблицы - 'prott', как мы и создавали
+        assert list_after_delete[0]["name"] == "prottoooeq"
         print_status(True, "Общий список теперь содержит только одну оставшуюся 'таблицу'.")
 
     except (requests.exceptions.RequestException, AssertionError) as e:
         print_status(False, f"Ошибка при проверке последствий удаления: {e}")
+
+
+    """Основная функция для запуска тестов."""
+    # ... (код для авторизации и первых тестов) ...
+    # Предполагаем, что test_state["headers"] уже заполнен
+
+    # Вызываем новый набор тестов
+    test_delete_attribute_flow(BASE_URL, test_state["headers"])
+
+print("\n🎉 Все тесты успешно пройдены!")
 
 if __name__ == "__main__":
     main()

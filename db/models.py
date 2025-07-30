@@ -1,7 +1,7 @@
 # db/models.py
 
 from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
-                        Boolean, Text, ForeignKey)
+                        Boolean, Text, ForeignKey, UniqueConstraint)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
@@ -181,15 +181,21 @@ class EntityType(Base):
     __tablename__ = 'entity_types'
     id = Column(Integer, primary_key=True)
     # Системное имя, используется в URL, например 'projects'
-    name = Column(String, unique=True, index=True, nullable=False)
-    # Отображаемое имя для фронтенда, например 'Проекты'
+    # --- ИЗМЕНЕНИЕ 1: Убираем unique=True отсюда ---
+    name = Column(String, index=True, nullable=False)
+
     display_name = Column(String, nullable=False)
 
-    # Связь для удобного получения всех атрибутов типа
     attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
-
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+
+    # --- ИЗМЕНЕНИЕ 2: Добавляем композитное ограничение ---
+    # Это говорит базе данных: "Комбинация значений в колонках 'name' и 'tenant_id'
+    # должна быть уникальной во всей таблице".
+    __table_args__ = (
+        UniqueConstraint('name', 'tenant_id', name='_name_tenant_uc'),
+    )
 
 
 class Attribute(Base):
@@ -205,6 +211,13 @@ class Attribute(Base):
     value_type = Column(String, nullable=False)
 
     entity_type = relationship("EntityType", back_populates="attributes")
+    # --- ДОБАВЬТЕ ЭТОТ БЛОК ---
+    # Это отношение говорит SQLAlchemy, что у одного Атрибута может быть много Значений.
+    # cascade="all, delete-orphan" - самая важная часть.
+    # "all" - применяет все операции (save-update, merge, etc.) к связанным объектам.
+    # "delete-orphan" - удаляет 'AttributeValue', если он больше не связан ни с каким 'Attribute'.
+    # "delete" (в составе "all") - удаляет все связанные 'AttributeValue', когда удаляется сам 'Attribute'.
+    values = relationship("AttributeValue", cascade="all, delete-orphan")
 
 
 class Entity(Base):
@@ -226,7 +239,7 @@ class AttributeValue(Base):
     id = Column(Integer, primary_key=True)
     # Эти два поля почти всегда используются вместе в JOIN'ах
     entity_id = Column(Integer, ForeignKey('entities.id'), nullable=False)
-    attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=False)
+    attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False)
 
     # Храним значения разных типов в разных полях
     # Индексируем каждое поле со значением
@@ -237,4 +250,4 @@ class AttributeValue(Base):
     value_boolean = Column(Boolean, nullable=True)
 
     entity = relationship("Entity", back_populates="values")
-    attribute = relationship("Attribute")
+    attribute = relationship("Attribute", back_populates="values")
