@@ -4,7 +4,8 @@ from datetime import datetime
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any
-
+from sqlalchemy import and_, asc, desc
+from sqlalchemy.orm import aliased
 from db import models, session
 from schemas.eav import EntityTypeCreate, AttributeCreate
 
@@ -25,15 +26,128 @@ class EAVService:
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ ---
     # >>> ДОБАВЬТЕ ЭТИ ДВА МЕТОДА <<<
     #
-    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
-        """
-        Получить все типы сущностей ('таблицы'), созданные текущим клиентом.
-        """
-        # Важнейшее условие для multi-tenancy!
-        # Показываем только те типы, которые принадлежат клиенту (tenant) текущего пользователя.
-        return self.db.query(models.EntityType).filter(
+    def get_all_entities_for_type(
+            self,
+            entity_type_name: str,
+            current_user: models.User,
+            filters: List[Dict[str, Any]] = None,
+            sort_by: str = 'created_at',
+            sort_order: str = 'desc'
+    ) -> List[Dict[str, Any]]:
+
+        # 1. Получаем тип сущности и его атрибуты
+        entity_type = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes)
+        ).filter(
+            models.EntityType.name == entity_type_name,
             models.EntityType.tenant_id == current_user.tenant_id
-        ).order_by(models.EntityType.display_name).all()
+        ).first()
+
+        if not entity_type:
+            raise HTTPException(status_code=404, detail=f"Тип сущности '{entity_type_name}' не найден")
+
+        attributes_map = {attr.name: attr for attr in entity_type.attributes}
+
+        # 2. Начинаем строить запрос
+        query = self.db.query(models.Entity).filter(models.Entity.entity_type_id == entity_type.id)
+
+        # 3. Динамически применяем фильтры
+        if filters:
+            for f in filters:
+                field_name = f.get("field")
+                op = f.get("op", "eq")  # eq (равно) по умолчанию
+                value = f.get("value")
+
+                if not field_name or field_name not in attributes_map:
+                    continue
+
+                attribute = attributes_map[field_name]
+                value_column = getattr(models.AttributeValue, VALUE_FIELD_MAP[attribute.value_type])
+
+                # Создаем подзапрос для проверки существования нужного значения
+                subquery = self.db.query(models.AttributeValue.id).filter(
+                    models.AttributeValue.entity_id == models.Entity.id,
+                    models.AttributeValue.attribute_id == attribute.id
+                )
+
+                # Применяем оператор сравнения
+                if op == "eq":
+                    subquery = subquery.filter(value_column == value)
+                elif op == "neq":
+                    subquery = subquery.filter(value_column != value)
+                elif op == "gt":
+                    subquery = subquery.filter(value_column > value)
+                elif op == "gte":
+                    subquery = subquery.filter(value_column >= value)
+                elif op == "lt":
+                    subquery = subquery.filter(value_column < value)
+                elif op == "lte":
+                    subquery = subquery.filter(value_column <= value)
+                elif op == "contains" and attribute.value_type == 'string':
+                    subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                else:
+                    continue  # Пропускаем неподдерживаемые операторы
+
+                # Фильтруем основные сущности: должны существовать значения, удовлетворяющие подзапросу
+                query = query.filter(subquery.exists())
+
+        # 4. Применяем сортировку
+        if sort_by == 'created_at':
+            order_expression = desc(models.Entity.created_at) if sort_order == 'desc' else asc(models.Entity.created_at)
+            query = query.order_by(order_expression)
+        elif sort_by in attributes_map:
+            sort_attribute = attributes_map[sort_by]
+            sort_value_column_name = VALUE_FIELD_MAP[sort_attribute.value_type]
+
+            # Используем aliased для LEFT JOIN, чтобы не конфликтовать с фильтрами
+            SortValue = aliased(models.AttributeValue)
+
+            query = query.outerjoin(
+                SortValue,
+                and_(
+                    SortValue.entity_id == models.Entity.id,
+                    SortValue.attribute_id == sort_attribute.id
+                )
+            )
+
+            sort_value_column = getattr(SortValue, sort_value_column_name)
+            order_expression = desc(sort_value_column).nullslast() if sort_order == 'desc' else asc(
+                sort_value_column).nullsfirst()
+            query = query.order_by(order_expression)
+
+        # 5. Выполняем запрос и получаем ID сущностей
+        # (Пагинацию применяем к ID, чтобы избежать проблем с JOIN)
+        entity_ids = [e.id for e in query.all()]
+
+        # 6. Загружаем полные данные только для отфильтрованных и отсортированных сущностей
+        if not entity_ids:
+            return []
+
+        final_query = self.db.query(models.Entity).filter(
+            models.Entity.id.in_(entity_ids)
+        ).options(
+            joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute)
+        )
+
+        # Повторно применяем ту же сортировку
+        # (Это нужно, т.к. `IN` не гарантирует порядок)
+        if sort_by == 'created_at':
+            order_expression = desc(models.Entity.created_at) if sort_order == 'desc' else asc(models.Entity.created_at)
+            final_query = final_query.order_by(order_expression)
+        elif sort_by in attributes_map:
+            # ... (логика сортировки, как выше) ...
+            sort_attribute = attributes_map[sort_by]
+            sort_value_column_name = VALUE_FIELD_MAP[sort_attribute.value_type]
+            SortValue = aliased(models.AttributeValue)
+            final_query = final_query.outerjoin(
+                SortValue, and_(SortValue.entity_id == models.Entity.id, SortValue.attribute_id == sort_attribute.id))
+            sort_value_column = getattr(SortValue, sort_value_column_name)
+            order_expression = desc(sort_value_column).nullslast() if sort_order == 'desc' else asc(
+                sort_value_column).nullsfirst()
+            final_query = final_query.order_by(order_expression)
+
+        entities = final_query.all()
+        return [self._pivot_data(e) for e in entities]
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> models.EntityType:
         """
@@ -322,3 +436,12 @@ class EAVService:
         self.db.delete(entity)
         self.db.commit()
         return None
+
+    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
+        """
+        Получить все типы сущностей ('таблицы') для ТЕКУЩЕГО пользователя.
+        """
+        # Ключевое исправление - добавляем фильтр по tenant_id
+        return self.db.query(models.EntityType).filter(
+            models.EntityType.tenant_id == current_user.tenant_id
+        ).all()

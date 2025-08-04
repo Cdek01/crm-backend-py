@@ -191,7 +191,7 @@ def main():
     print("\n--- Шаг 2: Создание новых 'таблиц' (Entity Types) ---")
     try:
         # Создаем "Проекты"
-        project_payload = {"name": "prottoooeq", "display_name": "Проttoooeq"}
+        project_payload = {"name": "prottoooeqqr", "display_name": "Проttoooeqqr"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -203,7 +203,7 @@ def main():
         print_status(True, f"Создан тип 'Проекты' с ID: {test_state['project_type_id']}")
 
         # Создаем "Задачи"
-        task_payload = {"name": "tasttoooeq", "display_name": "Задttoooeq"}
+        task_payload = {"name": "tasttoooeqqr", "display_name": "Задttoooeqqr"}
         response = requests.post(
             f"{BASE_URL}/api/meta/entity-types",
             headers=test_state["headers"],
@@ -230,7 +230,7 @@ def main():
         assert len(all_types) == 2
 
         type_names = {t['name'] for t in all_types}
-        assert "prottoooeq" in type_names and "tasttoooeq" in type_names
+        assert "prottoooeqqr" in type_names and "tasttoooeqqr" in type_names
 
         print_status(True, "Список всех типов сущностей получен и содержит созданные нами 'таблицы'.")
 
@@ -248,8 +248,8 @@ def main():
 
         # Проверки
         assert project_details["id"] == project_id
-        assert project_details["name"] == "prottoooeq"
-        assert project_details["display_name"] == "Проttoooeq"
+        assert project_details["name"] == "prottoooeqqr"
+        assert project_details["display_name"] == "Проttoooeqqr"
 
         # Проверяем, что системные атрибуты были автоматически созданы
         assert isinstance(project_details["attributes"], list)
@@ -309,7 +309,7 @@ def main():
         assert len(list_after_delete) == 1
         # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
         # Проверяем, что имя оставшейся таблицы - 'prott', как мы и создавали
-        assert list_after_delete[0]["name"] == "prottoooeq"
+        assert list_after_delete[0]["name"] == "prottoooeqqr"
         print_status(True, "Общий список теперь содержит только одну оставшуюся 'таблицу'.")
 
     except (requests.exceptions.RequestException, AssertionError) as e:

@@ -1,6 +1,6 @@
 # api/endpoints/legal_entities.py
 from fastapi import APIRouter, Depends, status
-from typing import List
+from typing import List, Optional
 
 from db.models import User
 from schemas.legal_entity import LegalEntity, LegalEntityCreate, LegalEntityUpdate
@@ -15,16 +15,41 @@ def create_legal_entity(
     service: LegalEntityService = Depends(),
     current_user: User = Depends(get_current_user)
 ):
-    return service.create(entity_in=entity_in)
+    # ИСПРАВЛЕНИЕ: передаем current_user в сервисный метод
+    return service.create(entity_in=entity_in, current_user=current_user)
 
 @router.get("/", response_model=List[LegalEntity])
 def get_all_legal_entities(
+    # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
+    inn: Optional[str] = None,
+    ogrn: Optional[str] = None,
+    short_name: Optional[str] = None, # Для поиска по части названия
+    status: Optional[str] = None,
+    # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
+    sort_by: Optional[str] = 'created_at',
+    sort_order: str = 'desc',
+    # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
     skip: int = 0,
     limit: int = 100,
+    # --- ЗАВИСИМОСТИ ---
     service: LegalEntityService = Depends(),
     current_user: User = Depends(get_current_user)
 ):
-    return service.get_all(skip=skip, limit=limit)
+    """
+    Получить список всех юридических лиц с фильтрацией и сортировкой.
+    """
+    # ИСПРАВЛЕНИЕ: Передаем ВСЕ параметры в сервис
+    return service.get_all(
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        inn=inn,
+        ogrn=ogrn,
+        short_name=short_name,
+        status=status,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
 
 @router.get("/{entity_id}", response_model=LegalEntity)
 def get_legal_entity_by_id(
@@ -50,3 +75,36 @@ def delete_legal_entity(
     current_user: User = Depends(get_current_user)
 ):
     return service.delete(entity_id=entity_id)
+
+
+@router.get("/", response_model=List[LegalEntity])
+def get_all_legal_entities(
+    # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
+    inn: Optional[str] = None,
+    ogrn: Optional[str] = None,
+    short_name: Optional[str] = None, # Для поиска по части названия
+    status: Optional[str] = None,
+    # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
+    sort_by: Optional[str] = 'created_at',
+    sort_order: str = 'desc',
+    # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
+    skip: int = 0,
+    limit: int = 100,
+    # --- ЗАВИСИМОСТИ ---
+    service: LegalEntityService = Depends(),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получить список всех юридических лиц с фильтрацией и сортировкой.
+    """
+    return service.get_all(
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        inn=inn,
+        ogrn=ogrn,
+        short_name=short_name,
+        status=status,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )

@@ -1,13 +1,33 @@
 # api/endpoints/individuals.py
 from fastapi import APIRouter, Depends, status
+from typing import List, Optional
+from fastapi import Body
+from pydantic import BaseModel
 from typing import List
-
 from db.models import User
 from schemas.individual import Individual, IndividualCreate, IndividualUpdate
 from api.deps import get_current_user
 from services.individual_service import IndividualService
 
 router = APIRouter()
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[int]
+
+
+@router.delete("/bulk-delete", status_code=status.HTTP_200_OK)
+def delete_multiple_individuals(
+    delete_request: BulkDeleteRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    service: IndividualService = Depends()
+):
+    deleted_count = service.delete_multiple(
+        ids=delete_request.ids,
+        current_user=current_user
+    )
+    return {"deleted_count": deleted_count}
+
 
 @router.post("/", response_model=Individual, status_code=status.HTTP_201_CREATED)
 def create_individual(
@@ -18,20 +38,43 @@ def create_individual(
     """
     Создать новое физическое лицо.
     """
-    return service.create(individual_in=individual_in)
+    # ИСПРАВЛЕНИЕ: передаем current_user в сервисный метод
+    return service.create(individual_in=individual_in, current_user=current_user)
 
+# ... остальной код без изменений
 
 @router.get("/", response_model=List[Individual])
 def get_all_individuals(
+    # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
+    full_name: Optional[str] = None,
+    inn: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    email: Optional[str] = None,
+    # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
+    sort_by: Optional[str] = 'created_at',
+    sort_order: str = 'desc',
+    # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
     skip: int = 0,
     limit: int = 100,
+    # --- ЗАВИСИМОСТИ ---
     service: IndividualService = Depends(),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Получить список всех физических лиц.
+    Получить список всех физических лиц с фильтрацией и сортировкой.
     """
-    return service.get_all(skip=skip, limit=limit)
+    # ИСПРАВЛЕНИЕ: Передаем ВСЕ параметры в сервис
+    return service.get_all(
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        full_name=full_name,
+        inn=inn,
+        phone_number=phone_number,
+        email=email,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
 
 
 @router.get("/{individual_id}", response_model=Individual)
@@ -69,3 +112,37 @@ def delete_individual(
     Удалить физическое лицо.
     """
     return service.delete(individual_id=individual_id)
+
+
+
+@router.get("/", response_model=List[Individual])
+def get_all_individuals(
+    # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
+    full_name: Optional[str] = None,
+    inn: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    email: Optional[str] = None,
+    # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
+    sort_by: Optional[str] = 'created_at',
+    sort_order: str = 'desc',
+    # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
+    skip: int = 0,
+    limit: int = 100,
+    # --- ЗАВИСИМОСТИ ---
+    service: IndividualService = Depends(),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получить список всех физических лиц с фильтрацией и сортировкой.
+    """
+    return service.get_all(
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        full_name=full_name,
+        inn=inn,
+        phone_number=phone_number,
+        email=email,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )

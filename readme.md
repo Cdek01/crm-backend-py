@@ -41,6 +41,7 @@ Bash
 Generated bash
 python3 -m venv venv
 source venv/bin/activate
+знерщт 
 
 Bash
 Шаг 3: Установить зависимости Python

@@ -1,7 +1,7 @@
 # api/endpoints/data.py
 from fastapi import APIRouter, Depends, status, Body
-from typing import List, Dict, Any
-
+from typing import List, Dict, Any, Optional
+import json
 from db import models
 from services.eav_service import EAVService
 from api.deps import get_current_user
@@ -62,3 +62,35 @@ def delete_entity(
 ):
     """Удалить запись."""
     return service.delete_entity(entity_id)
+
+
+@router.get("/{entity_type_name}", response_model=List[Dict[str, Any]])
+def get_all_entities(
+        entity_type_name: str,
+        # --- НОВЫЕ ПАРАМЕТРЫ ---
+        # Фильтры передаем как JSON-строку: '[{"field":"budget", "op":">=", "value":5000}]'
+        filters: Optional[str] = None,
+        sort_by: Optional[str] = 'created_at',
+        sort_order: str = 'desc',
+        # --- ---------------- ---
+        service: EAVService = Depends(),
+        current_user: models.User = Depends(get_current_user)
+):
+    """Получить все записи для указанного типа сущности с фильтрацией и сортировкой."""
+    parsed_filters = []
+    if filters:
+        try:
+            parsed_filters = json.loads(filters)
+            if not isinstance(parsed_filters, list):
+                parsed_filters = [] # Ожидаем список
+        except json.JSONDecodeError:
+            # Можно выбросить ошибку или просто проигнорировать некорректный фильтр
+            pass
+
+    return service.get_all_entities_for_type(
+        entity_type_name=entity_type_name,
+        current_user=current_user,
+        filters=parsed_filters,
+        sort_by=sort_by,
+        sort_order=sort_order
+    )
