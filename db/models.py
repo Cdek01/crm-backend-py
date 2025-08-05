@@ -251,3 +251,26 @@ class AttributeValue(Base):
 
     entity = relationship("Entity", back_populates="values")
     attribute = relationship("Attribute", back_populates="values")
+
+
+
+
+class AttributeAlias(Base):
+    """Хранит пользовательские названия (псевдонимы) для колонок таблиц."""
+    __tablename__ = 'attribute_aliases'
+
+    id = Column(Integer, primary_key=True)
+    # Системное имя таблицы, например 'leads' или 'custom_projects'
+    table_name = Column(String, index=True, nullable=False)
+    # Системное имя атрибута, например 'organization_name' или 'project_budget'
+    attribute_name = Column(String, index=True, nullable=False)
+    # Пользовательское название, которое будет отображаться
+    display_name = Column(String, nullable=False)
+
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+
+    # Гарантируем, что для одного пользователя может быть только одно переименование
+    # для одной колонки в одной таблице.
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'table_name', 'attribute_name', name='_tenant_table_attr_uc'),
+    )

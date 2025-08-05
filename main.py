@@ -9,7 +9,7 @@ from core import security
 from core.config import settings
 from api.deps import get_current_user
 from schemas.user import User # Этот импорт нужен для response_model
-from api.endpoints import auth, leads, legal_entities, individuals, meta, data # <-- ДОБАВЬТЕ meta, data
+from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases  # <-- ДОБАВЬТЕ meta, data
 
 
 
@@ -82,6 +82,8 @@ app.include_router(
 # --- НОВЫЕ РОУТЕРЫ ДЛЯ КОНСТРУКТОРА ---
 app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Table Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom Tables)"])
+app.include_router(aliases.router, prefix="/api/aliases", tags=["Aliases (Column Renaming)"])
+
 
 def get_current_user(db: Session = Depends(session.get_db), token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
