@@ -108,3 +108,17 @@ def get_all_legal_entities(
         sort_by=sort_by,
         sort_order=sort_order
     )
+
+
+
+router.post("/bulk-load", status_code=status.HTTP_200_OK)
+def create_multiple_legal_entities(
+    entities_in: List[LegalEntityCreate],
+    current_user: User = Depends(get_current_user),
+    service: LegalEntityService = Depends()
+):
+    created_count = service.create_multiple(
+        entities_in=entities_in,
+        current_user=current_user
+    )
+    return {"created_count": created_count}

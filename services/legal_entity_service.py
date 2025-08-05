@@ -116,27 +116,15 @@ class LegalEntityService:
         self.db.commit()
         return num_deleted
 
-    # def get_by_id(self, entity_id: int) -> LegalEntity:
-    #     entity = legal_entity_crud.get(self.db, id=entity_id)
-    #     if not entity:
-    #         raise HTTPException(status_code=404, detail="Юридическое лицо не найдено")
-    #     return entity
-    #
-    # def create(self, entity_in: LegalEntityCreate) -> LegalEntity:
-    #     # Бизнес-логика: проверка на уникальность по ИНН
-    #     existing_entity = legal_entity_crud.get_by_inn(self.db, inn=entity_in.inn)
-    #     if existing_entity:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_400_BAD_REQUEST,
-    #             detail="Юридическое лицо с таким ИНН уже существует"
-    #         )
-    #     return legal_entity_crud.create(self.db, obj_in=entity_in)
-    #
-    # def update(self, entity_id: int, entity_in: LegalEntityUpdate) -> LegalEntity:
-    #     db_entity = self.get_by_id(entity_id) # Проверка на существование
-    #     return legal_entity_crud.update(self.db, db_obj=db_entity, obj_in=entity_in)
-    #
-    # def delete(self, entity_id: int):
-    #     self.get_by_id(entity_id) # Проверка на существование
-    #     legal_entity_crud.remove(self.db, id=entity_id)
-    #     return None
+    def create_multiple(self, entities_in: List[LegalEntityCreate], current_user: models.User) -> int:
+        new_entities = []
+        for entity_in in entities_in:
+            # Здесь можно добавить проверку на уникальность ИНН в рамках батча, если нужно
+            entity_data = entity_in.model_dump()
+            entity_data['tenant_id'] = current_user.tenant_id
+            new_entity = models.LegalEntity(**entity_data)
+            new_entities.append(new_entity)
+
+        self.db.add_all(new_entities)
+        self.db.commit()
+        return len(new_entities)

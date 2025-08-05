@@ -1,12 +1,12 @@
 # api/endpoints/leads.py
 from fastapi import APIRouter, Depends, status, Body
 from typing import List, Optional
-from pydantic import BaseModel # <--- Добавьте BaseModel
+from pydantic import BaseModel
 
 from db import models
 from schemas.lead import Lead, LeadCreate, LeadUpdate
 from api.deps import get_current_user
-from services.lead_service import LeadService # <-- ИМПОРТИРУЕМ СЕРВИС
+from services.lead_service import LeadService
 
 router = APIRouter()
 
@@ -133,3 +133,19 @@ def delete_multiple_leads(
         current_user=current_user
     )
     return {"deleted_count": deleted_count}
+
+
+@router.post("/bulk-load", status_code=status.HTTP_200_OK)
+def create_multiple_leads(
+    leads_in: List[LeadCreate], # <--- Принимаем список объектов
+    current_user: models.User = Depends(get_current_user),
+    lead_service: LeadService = Depends(LeadService)
+):
+    """
+    Массовое создание лидов из списка.
+    """
+    created_count = lead_service.create_multiple(
+        leads_in=leads_in,
+        current_user=current_user
+    )
+    return {"created_count": created_count}

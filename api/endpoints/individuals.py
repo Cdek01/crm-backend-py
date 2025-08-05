@@ -146,3 +146,16 @@ def get_all_individuals(
         sort_by=sort_by,
         sort_order=sort_order
     )
+
+
+@router.post("/bulk-load", status_code=status.HTTP_200_OK)
+def create_multiple_individuals(
+    individuals_in: List[IndividualCreate],
+    current_user: User = Depends(get_current_user),
+    service: IndividualService = Depends()
+):
+    created_count = service.create_multiple(
+        individuals_in=individuals_in,
+        current_user=current_user
+    )
+    return {"created_count": created_count}

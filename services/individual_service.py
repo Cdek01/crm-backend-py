@@ -103,30 +103,6 @@ class IndividualService:
         self.db.commit()
         return None
 
-    # def get_by_id(self, individual_id: int) -> Individual:
-    #     ind = individual_crud.get(self.db, id=individual_id)
-    #     if not ind:
-    #         raise HTTPException(status_code=404, detail="Физическое лицо не найдено")
-    #     return ind
-    #
-    # def create(self, individual_in: IndividualCreate) -> Individual:
-    #     if individual_in.inn:
-    #         existing = individual_crud.get_by_inn(self.db, inn=individual_in.inn)
-    #         if existing:
-    #             raise HTTPException(
-    #                 status_code=status.HTTP_400_BAD_REQUEST,
-    #                 detail="Физическое лицо с таким ИНН уже существует"
-    #             )
-    #     return individual_crud.create(self.db, obj_in=individual_in)
-    #
-    # def update(self, individual_id: int, individual_in: IndividualUpdate) -> Individual:
-    #     db_obj = self.get_by_id(individual_id)
-    #     return individual_crud.update(self.db, db_obj=db_obj, obj_in=individual_in)
-    #
-    # def delete(self, individual_id: int):
-    #     self.get_by_id(individual_id)
-    #     individual_crud.remove(self.db, id=individual_id)
-    #     return None
 
     # Добавьте новый метод
     def delete_multiple(self, ids: List[int], current_user: models.User) -> int:
@@ -137,3 +113,16 @@ class IndividualService:
         num_deleted = query.delete(synchronize_session=False)
         self.db.commit()
         return num_deleted
+
+
+    def create_multiple(self, individuals_in: List[IndividualCreate], current_user: models.User) -> int:
+        new_individuals = []
+        for individual_in in individuals_in:
+            individual_data = individual_in.model_dump()
+            individual_data['tenant_id'] = current_user.tenant_id
+            new_individual = models.Individual(**individual_data)
+            new_individuals.append(new_individual)
+
+        self.db.add_all(new_individuals)
+        self.db.commit()
+        return len(new_individuals)

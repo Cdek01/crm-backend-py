@@ -167,3 +167,30 @@ class LeadService:
 
         # 4. Возвращаем количество
         return num_deleted
+
+    def create_multiple(self, leads_in: List[LeadCreate], current_user: models.User) -> int:
+        """
+        Создает несколько лидов из списка.
+        Все операции выполняются в одной транзакции.
+        """
+        new_leads = []
+        for lead_in in leads_in:
+            # Преобразуем Pydantic схему в словарь
+            lead_data = lead_in.model_dump()
+
+            # Применяем ту же бизнес-логику, что и при создании одного лида
+            lead_data['responsible_manager_id'] = current_user.id
+            lead_data['tenant_id'] = current_user.tenant_id
+
+            # Создаем объект модели, но пока не коммитим
+            new_lead = models.Lead(**lead_data)
+            new_leads.append(new_lead)
+
+        # Добавляем все новые объекты в сессию одним разом
+        self.db.add_all(new_leads)
+
+        # Коммитим транзакцию ОДИН раз после добавления всех
+        self.db.commit()
+
+        # Возвращаем количество созданных записей
+        return len(new_leads)
