@@ -6,6 +6,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     full_name: Optional[str] = None
+    registration_token: str
+
 
 # Схема для отображения пользователя (без пароля!)
 class User(BaseModel):
