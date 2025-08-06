@@ -116,6 +116,8 @@ class LegalEntityService:
         self.db.commit()
         return num_deleted
 
+
+
     def create_multiple(self, entities_in: List[LegalEntityCreate], current_user: models.User) -> int:
         new_entities = []
         for entity_in in entities_in:

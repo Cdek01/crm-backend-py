@@ -111,7 +111,7 @@ def get_all_legal_entities(
 
 
 
-router.post("/bulk-load", status_code=status.HTTP_200_OK)
+@router.post("/bulk-load", status_code=status.HTTP_200_OK)
 def create_multiple_legal_entities(
     entities_in: List[LegalEntityCreate],
     current_user: User = Depends(get_current_user),
