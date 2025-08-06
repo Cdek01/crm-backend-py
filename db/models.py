@@ -92,7 +92,7 @@ class LegalEntity(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-
+    tenant = relationship("Tenant")
 
 
 class Individual(Base):
@@ -121,7 +121,7 @@ class Individual(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-
+    tenant = relationship("Tenant")
 
 class Lead(Base):
     """Модель для Лидов (воронка продаж)"""
@@ -172,7 +172,7 @@ class Lead(Base):
 
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
 
-
+    tenant = relationship("Tenant")
 
 # ... (в конце файла, после существующих моделей User, Lead и т.д.)
 
@@ -189,7 +189,7 @@ class EntityType(Base):
     attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
     entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-
+    tenant = relationship("Tenant")
     # --- ИЗМЕНЕНИЕ 2: Добавляем композитное ограничение ---
     # Это говорит базе данных: "Комбинация значений в колонках 'name' и 'tenant_id'
     # должна быть уникальной во всей таблице".
@@ -268,9 +268,28 @@ class AttributeAlias(Base):
     display_name = Column(String, nullable=False)
 
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-
+    tenant = relationship("Tenant")
     # Гарантируем, что для одного пользователя может быть только одно переименование
     # для одной колонки в одной таблице.
     __table_args__ = (
         UniqueConstraint('tenant_id', 'table_name', 'attribute_name', name='_tenant_table_attr_uc'),
+    )
+
+
+class TableAlias(Base):
+    """Хранит пользовательские названия (псевдонимы) для таблиц."""
+    __tablename__ = 'table_aliases'
+
+    id = Column(Integer, primary_key=True)
+    # Системное имя таблицы, например 'leads' или 'custom_projects'
+    table_name = Column(String, index=True, nullable=False)
+    # Пользовательское название, которое будет отображаться
+    display_name = Column(String, nullable=False)
+
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+    tenant = relationship("Tenant")
+
+    # Гарантируем, что для одного пользователя может быть только одно переименование для одной таблицы.
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'table_name', name='_tenant_table_name_uc'),
     )

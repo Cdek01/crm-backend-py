@@ -143,79 +143,75 @@ def test_delete_attribute_flow(base_url, headers):
     print("\n🎉 Все тесты для удаления атрибутов успешно пройдены!")
 
 
-
-
-
 def main():
     """Основная функция для запуска тестов."""
     print("--- ЗАПУСК ТЕСТИРОВАНИЯ META API ---")
 
     # --- Шаг 1: Регистрация и Вход ---
     print("\n--- Шаг 1: Регистрация и Авторизация ---")
+    import time
 
-    timestamp = int(datetime.now().timestamp())
-    unique_email = f"testuser_{timestamp}@test.com"
-
-    # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    # Сделаем full_name тоже уникальным для каждого запуска теста
-    unique_full_name = f"Meta Tester {timestamp}"
-
-    password = "superstrongpassword123"
-
+    # Используем уникальные данные для каждого запуска
+    UNIQUE_ID = int(time.time())
+    USER_EMAIL = f"meta_tester_{UNIQUE_ID}@example.com"
+    USER_PASSWORD = "a_very_secure_password_123!"
+    CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
     try:
         # Регистрация
-        reg_response = requests.post(
-            f"{BASE_URL}/api/auth/register",
-            # Используем нашу новую уникальную переменную
-            json={"email": unique_email, "password": password, "full_name": unique_full_name}
-        )
-        assert reg_response.status_code == 201
-        print_status(True, f"Пользователь {unique_email} ({unique_full_name}) успешно зарегистрирован.")
+        register_payload = {
+            "email": USER_EMAIL,
+            "password": USER_PASSWORD,
+            "full_name": f"Meta Tester {UNIQUE_ID}",
+            "registration_token": CORRECT_REGISTRATION_TOKEN
+        }
+        reg_response = requests.post(f"{BASE_URL}/api/auth/register", json=register_payload)
+        # Проверяем, что регистрация прошла успешно
+        assert reg_response.status_code == 201, f"Ошибка регистрации: {reg_response.text}"
 
         # Вход
-        login_response = requests.post(
-            f"{BASE_URL}/api/auth/token",
-            data={"username": unique_email, "password": password}
-        )
-        assert login_response.status_code == 200
-        token = login_response.json()["access_token"]
+        auth_payload_form = {'username': USER_EMAIL, 'password': USER_PASSWORD}
+        auth_response = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload_form)
+        assert auth_response.status_code == 200, f"Ошибка входа: {auth_response.text}"
+
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Сохраняем токен и заголовки в ГЛОБАЛЬНЫЙ test_state
+        token = auth_response.json()["access_token"]
         test_state["token"] = token
         test_state["headers"] = {"Authorization": f"Bearer {token}"}
-        print_status(True, "Успешно получен JWT токен.")
+        # -------------------------
+
+        print_status(True, "Успешно зарегистрирован и получен токен.")
 
     except (requests.exceptions.RequestException, AssertionError) as e:
         print_status(False, f"Ошибка на шаге авторизации: {e}")
-        return
+        return  # Выходим, если не удалось авторизоваться
 
     # --- Шаг 2: Создание Типов Сущностей ---
     print("\n--- Шаг 2: Создание новых 'таблиц' (Entity Types) ---")
     try:
+        # Теперь test_state["headers"] содержит правильный токен
+        headers = test_state["headers"]
+
         # Создаем "Проекты"
-        project_payload = {"name": "prottoooeqqr", "display_name": "Проttoooeqqr"}
-        response = requests.post(
-            f"{BASE_URL}/api/meta/entity-types",
-            headers=test_state["headers"],
-            json=project_payload
-        )
-        assert response.status_code == 201
+        project_payload = {"name": f"projects_{UNIQUE_ID}", "display_name": f"Проекты {UNIQUE_ID}"}
+        response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=project_payload)
+        assert response.status_code == 201, f"Ошибка создания 'Проектов': {response.text}"
         project_data = response.json()
         test_state["project_type_id"] = project_data["id"]
         print_status(True, f"Создан тип 'Проекты' с ID: {test_state['project_type_id']}")
 
         # Создаем "Задачи"
-        task_payload = {"name": "tasttoooeqqr", "display_name": "Задttoooeqqr"}
-        response = requests.post(
-            f"{BASE_URL}/api/meta/entity-types",
-            headers=test_state["headers"],
-            json=task_payload
-        )
-        assert response.status_code == 201
+        task_payload = {"name": f"tasks_{UNIQUE_ID}", "display_name": f"Задачи {UNIQUE_ID}"}
+        response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=task_payload)
+        assert response.status_code == 201, f"Ошибка создания 'Задач': {response.text}"
         task_data = response.json()
         test_state["task_type_id"] = task_data["id"]
         print_status(True, f"Создан тип 'Задачи' с ID: {test_state['task_type_id']}")
 
     except (requests.exceptions.RequestException, AssertionError) as e:
+        # Добавим вывод текста ошибки для лучшей диагностики
         print_status(False, f"Ошибка при создании типов сущностей: {e}")
+        return
 
     # --- Шаг 3: Получение списка всех Типов Сущностей ---
     print("\n--- Шаг 3: Проверка получения списка 'таблиц' (GET /api/meta/entity-types) ---")

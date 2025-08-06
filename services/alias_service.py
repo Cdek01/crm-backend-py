@@ -82,3 +82,58 @@ class AliasService:
         self.db.delete(alias_to_delete)
         self.db.commit()
         return None
+
+    # --- НОВЫЕ МЕТОДЫ ДЛЯ ПСЕВДОНИМОВ ТАБЛИЦ ---
+
+    def set_table_alias(
+            self,
+            table_name: str,
+            display_name: str,
+            current_user: models.User
+    ) -> models.TableAlias:
+        """Устанавливает или обновляет псевдоним для таблицы."""
+        existing_alias = self.db.query(models.TableAlias).filter_by(
+            tenant_id=current_user.tenant_id,
+            table_name=table_name
+        ).first()
+
+        if existing_alias:
+            existing_alias.display_name = display_name
+            db_obj = existing_alias
+        else:
+            db_obj = models.TableAlias(
+                tenant_id=current_user.tenant_id,
+                table_name=table_name,
+                display_name=display_name
+            )
+
+        self.db.add(db_obj)
+        self.db.commit()
+        self.db.refresh(db_obj)
+        return db_obj
+
+    def get_table_aliases_for_tenant(self, current_user: models.User) -> Dict[str, str]:
+        """Получает все псевдонимы таблиц для текущего пользователя."""
+        aliases = self.db.query(models.TableAlias).filter_by(
+            tenant_id=current_user.tenant_id
+        ).all()
+
+        # Форматируем в простой словарь: { 'leads': 'Воронка продаж' }
+        return {alias.table_name: alias.display_name for alias in aliases}
+
+    def delete_table_alias(self, table_name: str, current_user: models.User):
+        """Удаляет (сбрасывает) псевдоним таблицы."""
+        alias_to_delete = self.db.query(models.TableAlias).filter_by(
+            tenant_id=current_user.tenant_id,
+            table_name=table_name
+        ).first()
+
+        if not alias_to_delete:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Псевдоним для данной таблицы не найден"
+            )
+
+        self.db.delete(alias_to_delete)
+        self.db.commit()
+        return None

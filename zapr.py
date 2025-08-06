@@ -182,12 +182,13 @@ import json
 import time
 
 # --- НАСТРОЙТЕ ЭТИ ПЕРЕМЕННЫЕ ---
-BASE_URL = "http://89.111.169.47:8005"  # IP-адрес вашего локального сервера
-
+# BASE_URL = "http://89.111.169.47:8005"  # IP-адрес вашего локального сервера
+BASE_URL = "http://127.0.0.1:8005"
 # Мы будем генерировать уникального пользователя для каждого теста
 UNIQUE_ID = int(time.time())
 USER_EMAIL = f"bulk_delete_tester_{UNIQUE_ID}@example.com"
 USER_PASSWORD = "a_very_secure_password_123!"
+CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
 
 
 # ---------------------------------
@@ -219,7 +220,7 @@ def run_bulk_delete_test():
         print("-" * 50)
         print("1. РЕГИСТРАЦИЯ И АВТОРИЗАЦИЯ")
         # Регистрация
-        register_payload = {"email": USER_EMAIL, "password": USER_PASSWORD, "full_name": "Bulk Tester"}
+        register_payload = {"email": USER_EMAIL, "password": USER_PASSWORD, "registration_token": CORRECT_REGISTRATION_TOKEN}
         register_response = requests.post(f"{BASE_URL}/api/auth/register", json=register_payload)
         register_response.raise_for_status()
         # Вход
