@@ -31,10 +31,10 @@ class UserAdmin(ModelView, model=models.User):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.User.email, models.User.full_name]
 
-    # ИСПРАВЛЕНИЕ: Убираем label
-    column_filters = [
-        ForeignKeyFilter(models.User.tenant, "name")
-    ]
+    # # ИСПРАВЛЕНИЕ: Убираем label
+    # column_filters = [
+    #     ForeignKeyFilter(models.User.tenant, "name")
+    # ]
 
 
 class LeadAdmin(ModelView, model=models.Lead):
@@ -45,11 +45,11 @@ class LeadAdmin(ModelView, model=models.Lead):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.Lead.organization_name, models.Lead.inn]
 
-    column_filters = [
-        models.Lead.lead_status,
-        models.Lead.source,
-        ForeignKeyFilter(models.Lead.tenant, "name")
-    ]
+    # column_filters = [
+    #     models.Lead.lead_status,
+    #     models.Lead.source,
+    #     ForeignKeyFilter(models.Lead.tenant, "name")
+    # ]
 
 
 class LegalEntityAdmin(ModelView, model=models.LegalEntity):
@@ -60,10 +60,10 @@ class LegalEntityAdmin(ModelView, model=models.LegalEntity):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.LegalEntity.short_name, models.LegalEntity.inn]
 
-    column_filters = [
-        models.LegalEntity.status,
-        ForeignKeyFilter(models.LegalEntity.tenant, "name")
-    ]
+    # column_filters = [
+    #     models.LegalEntity.status,
+    #     ForeignKeyFilter(models.LegalEntity.tenant, "name")
+    # ]
 
 
 class IndividualAdmin(ModelView, model=models.Individual):
@@ -74,10 +74,10 @@ class IndividualAdmin(ModelView, model=models.Individual):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.Individual.full_name, models.Individual.email, models.Individual.inn]
 
-    column_filters = [
-        BooleanFilter(models.Individual.is_sole_proprietor),
-        ForeignKeyFilter(models.Individual.tenant, "name")
-    ]
+    # column_filters = [
+    #     BooleanFilter(models.Individual.is_sole_proprietor),
+    #     ForeignKeyFilter(models.Individual.tenant, "name")
+    # ]
 
 
 class EntityTypeAdmin(ModelView, model=models.EntityType):
@@ -87,9 +87,9 @@ class EntityTypeAdmin(ModelView, model=models.EntityType):
     column_list = [models.EntityType.id, models.EntityType.name, models.EntityType.display_name, "tenant"]
     column_formatters = {"tenant": tenant_formatter}
 
-    column_filters = [
-        ForeignKeyFilter(models.EntityType.tenant, "name")
-    ]
+    # column_filters = [
+    #     ForeignKeyFilter(models.EntityType.tenant, "name")
+    # ]
 
 
 class AttributeAdmin(ModelView, model=models.Attribute):
@@ -100,10 +100,10 @@ class AttributeAdmin(ModelView, model=models.Attribute):
                    models.Attribute.value_type, "entity_type"]
     column_formatters = {"entity_type": entity_type_formatter}
 
-    column_filters = [
-        ForeignKeyFilter(models.Attribute.entity_type, "name"),
-        models.Attribute.value_type,
-    ]
+    # column_filters = [
+    #     ForeignKeyFilter(models.Attribute.entity_type, "name"),
+    #     models.Attribute.value_type,
+    # ]
 
 
 class AttributeAliasAdmin(ModelView, model=models.AttributeAlias):
@@ -116,10 +116,10 @@ class AttributeAliasAdmin(ModelView, model=models.AttributeAlias):
     column_searchable_list = [models.AttributeAlias.table_name, models.AttributeAlias.attribute_name,
                               models.AttributeAlias.display_name]
 
-    column_filters = [
-        models.AttributeAlias.table_name,
-        ForeignKeyFilter(models.AttributeAlias.tenant, "name")
-    ]
+    # column_filters = [
+    #     models.AttributeAlias.table_name,
+    #     ForeignKeyFilter(models.AttributeAlias.tenant, "name")
+    # ]
 
 
 class TableAliasAdmin(ModelView, model=models.TableAlias):
@@ -131,7 +131,7 @@ class TableAliasAdmin(ModelView, model=models.TableAlias):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.TableAlias.table_name, models.TableAlias.display_name]
 
-    column_filters = [
-        models.TableAlias.table_name,
-        ForeignKeyFilter(models.TableAlias.tenant, "name")
-    ]
+    # column_filters = [
+    #     models.TableAlias.table_name,
+    #     ForeignKeyFilter(models.TableAlias.tenant, "name")
+    # ]
