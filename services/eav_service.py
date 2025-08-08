@@ -466,10 +466,14 @@ class EAVService:
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         """
         Получить все типы сущностей ('таблицы') для ТЕКУЩЕГО пользователя,
-        с примененными псевдонимами.
+        с примененными псевдонимами для таблиц И их атрибутов.
         """
-        # ШАГ 1: Получаем все "чистые" объекты из БД
-        db_entity_types = self.db.query(models.EntityType).filter(
+        # ШАГ 1: Получаем все "чистые" объекты из БД, но СРАЗУ ЖЕ
+        # подгружаем связанные с ними атрибуты (колонки).
+        # ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: options(joinedload(models.EntityType.attributes))
+        db_entity_types = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes)
+        ).filter(
             models.EntityType.tenant_id == current_user.tenant_id
         ).all()
 
@@ -480,18 +484,22 @@ class EAVService:
         # ШАГ 3: Преобразуем и "патчим" каждый объект в списке
         response_list = []
         for db_entity_type in db_entity_types:
-            # Создаем Pydantic-схему
+            # Создаем Pydantic-схему (используя правильный метод для Pydantic V2)
             response_entity = EntityType.model_validate(db_entity_type)
 
-            # Применяем псевдоним к таблице
+            # Применяем псевдоним к самой таблице
             if response_entity.name in table_aliases:
                 response_entity.display_name = table_aliases[response_entity.name]
 
-            # Применяем псевдонимы к атрибутам (если они есть для этой таблицы)
+            # --- ДОБАВЛЕНА НЕДОСТАЮЩАЯ ЛОГИКА ---
+            # Применяем псевдонимы к атрибутам (колонкам) этой таблицы.
+            # Теперь response_entity.attributes гарантированно содержит данные.
             table_attr_aliases = attr_aliases.get(response_entity.name, {})
-            # Важно: атрибуты не загружаются в этом запросе по умолчанию,
-            # поэтому мы здесь не итерируемся по ним. Для get_all это обычно и не нужно.
-            # Если вам нужны атрибуты и здесь, добавьте .options(joinedload(models.EntityType.attributes)) в запрос.
+            if table_attr_aliases:  # Проверяем, есть ли вообще псевдонимы для колонок этой таблицы
+                for attribute in response_entity.attributes:
+                    if attribute.name in table_attr_aliases:
+                        attribute.display_name = table_attr_aliases[attribute.name]
+            # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
 
             response_list.append(response_entity)
 
