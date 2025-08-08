@@ -7,6 +7,7 @@ from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate
 from services.eav_service import EAVService
 from api.deps import get_current_user
 
+
 router = APIRouter()
 
 
@@ -32,7 +33,10 @@ def get_entity_type(
     Получить детальную информацию о конкретном типе сущности по его ID,
     включая все его атрибуты ('колонки').
     """
+    # Этот вызов теперь вернет объект с примененными псевдонимами
     return service.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
+
+# ... (остальные эндпоинты без изменений)
 
 
 

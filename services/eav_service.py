@@ -1,6 +1,5 @@
 # services/eav_service.py
 from datetime import datetime
-
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any
@@ -8,6 +7,9 @@ from sqlalchemy import and_, asc, desc
 from sqlalchemy.orm import aliased
 from db import models, session
 from schemas.eav import EntityTypeCreate, AttributeCreate
+from schemas.eav import EntityTypeCreate, AttributeCreate, EntityType
+from .alias_service import AliasService
+
 
 # Маппинг строкового типа на имя поля в модели AttributeValue
 VALUE_FIELD_MAP = {
@@ -20,8 +22,9 @@ VALUE_FIELD_MAP = {
 
 
 class EAVService:
-    def __init__(self, db: Session = Depends(session.get_db)):
+    def __init__(self, db: Session = Depends(session.get_db), alias_service: AliasService = Depends()):
         self.db = db
+        self.alias_service = alias_service
 
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ ---
     # >>> ДОБАВЬТЕ ЭТИ ДВА МЕТОДА <<<
@@ -149,23 +152,46 @@ class EAVService:
         entities = final_query.all()
         return [self._pivot_data(e) for e in entities]
 
-    def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> models.EntityType:
+    def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         """
-        Получить один тип сущности по его ID.
+        Получить один тип сущности по его ID, с примененными псевдонимами.
         """
-        # Ищем по ID, но СТРОГО в рамках текущего tenant_id.
-        # Это не позволяет одному клиенту "подсмотреть" структуру таблиц другого.
-        entity_type = self.db.query(models.EntityType).filter(
+        # ШАГ 1: Получаем "чистый" объект из БД
+        db_entity_type = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes)  # Загружаем атрибуты сразу
+        ).filter(
             models.EntityType.id == entity_type_id,
             models.EntityType.tenant_id == current_user.tenant_id
         ).first()
 
-        if not entity_type:
+        if not db_entity_type:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Тип сущности не найден"
             )
-        return entity_type
+
+        # ШАГ 2: Загружаем все псевдонимы для данного пользователя
+        # Наш сервис теперь имеет доступ к другому сервису!
+        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+
+        # ШАГ 3: Создаем Pydantic-схему из объекта SQLAlchemy
+        # Это безопасный способ, который не меняет объект сессии БД
+        response_entity_type = EntityType.model_validate(db_entity_type)
+
+        # ШАГ 4: "Патчим" данные псевдонимами
+        # Сначала для самой таблицы
+        table_name = response_entity_type.name
+        if table_name in table_aliases:
+            response_entity_type.display_name = table_aliases[table_name]
+
+        # Теперь для каждого атрибута (колонки)
+        table_attr_aliases = attr_aliases.get(table_name, {})
+        for attribute in response_entity_type.attributes:
+            if attribute.name in table_attr_aliases:
+                attribute.display_name = table_attr_aliases[attribute.name]
+
+        return response_entity_type
 
 
 
@@ -437,11 +463,36 @@ class EAVService:
         self.db.commit()
         return None
 
-    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
+    def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         """
-        Получить все типы сущностей ('таблицы') для ТЕКУЩЕГО пользователя.
+        Получить все типы сущностей ('таблицы') для ТЕКУЩЕГО пользователя,
+        с примененными псевдонимами.
         """
-        # Ключевое исправление - добавляем фильтр по tenant_id
-        return self.db.query(models.EntityType).filter(
+        # ШАГ 1: Получаем все "чистые" объекты из БД
+        db_entity_types = self.db.query(models.EntityType).filter(
             models.EntityType.tenant_id == current_user.tenant_id
         ).all()
+
+        # ШАГ 2: Загружаем все псевдонимы ОДНИМ РАЗОМ (это эффективно)
+        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+
+        # ШАГ 3: Преобразуем и "патчим" каждый объект в списке
+        response_list = []
+        for db_entity_type in db_entity_types:
+            # Создаем Pydantic-схему
+            response_entity = EntityType.model_validate(db_entity_type)
+
+            # Применяем псевдоним к таблице
+            if response_entity.name in table_aliases:
+                response_entity.display_name = table_aliases[response_entity.name]
+
+            # Применяем псевдонимы к атрибутам (если они есть для этой таблицы)
+            table_attr_aliases = attr_aliases.get(response_entity.name, {})
+            # Важно: атрибуты не загружаются в этом запросе по умолчанию,
+            # поэтому мы здесь не итерируемся по ним. Для get_all это обычно и не нужно.
+            # Если вам нужны атрибуты и здесь, добавьте .options(joinedload(models.EntityType.attributes)) в запрос.
+
+            response_list.append(response_entity)
+
+        return response_list
