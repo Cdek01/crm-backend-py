@@ -1,4 +1,5 @@
 # db/models.py
+from sqlalchemy import Table, Column, Integer, String, ForeignKey, UniqueConstraint
 
 from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
                         Boolean, Text, ForeignKey, UniqueConstraint)
@@ -11,18 +12,11 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+    def __str__(self):
+        return self.name
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True, index=True) # Сделаем nullable=True на время
-    tenant = relationship("Tenant")
 
 
 # --- НОВЫЕ И ПОЛНЫЕ МОДЕЛИ ---
@@ -293,3 +287,72 @@ class TableAlias(Base):
     __table_args__ = (
         UniqueConstraint('tenant_id', 'table_name', name='_tenant_table_name_uc'),
     )
+
+
+# Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
+role_permissions_table = Table('role_permissions', Base.metadata,
+                               Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True),
+                               Column('permission_id', Integer, ForeignKey('permissions.id', ondelete="CASCADE"),
+                                      primary_key=True)
+                               )
+
+# Таблица-связка для отношения "Многие-ко-Многим" между пользователями и ролями
+user_roles_table = Table('user_roles', Base.metadata,
+                         Column('user_id', Integer, ForeignKey('users.id', ondelete="CASCADE"), primary_key=True),
+                         Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True)
+                         )
+
+
+class Permission(Base):
+    """Модель атомарного разрешения (например, 'leads:view')"""
+    __tablename__ = 'permissions'
+    id = Column(Integer, primary_key=True)
+    # Системное имя, например "leads:view" или "projects:edit"
+    name = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)  # Описание для UI, например "Просмотр списка лидов"
+    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+    def __str__(self):
+        return self.name
+
+class Role(Base):
+    """Модель роли, которая объединяет набор разрешений"""
+    __tablename__ = 'roles'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)  # Например, "Менеджер" или "Администратор"
+
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+    tenant = relationship("Tenant")
+
+    # Связь с разрешениями (Многие-ко-Многим)
+    permissions = relationship("Permission", secondary=role_permissions_table, backref="roles")
+
+    # Гарантируем, что имена ролей уникальны в рамках одного клиента (тенанта)
+    __table_args__ = (
+        UniqueConstraint('name', 'tenant_id', name='_role_name_tenant_uc'),
+    )
+    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+    def __str__(self):
+        return self.name
+# Теперь нам нужно обновить существующую модель User, добавив ей связь с ролями
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+
+    full_name = Column(String, index=True)
+
+    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
+    is_superuser = Column(Boolean, default=False, nullable=False)
+    # -------------------------
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True, index=True)
+    tenant = relationship("Tenant")
+
+    roles = relationship("Role", secondary=user_roles_table, backref="users")
+
+    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+    def __str__(self):
+        return self.email

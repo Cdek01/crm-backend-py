@@ -101,5 +101,8 @@ def create_attribute(
     service: EAVService = Depends(),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Создать новый атрибут (пользовательскую 'колонку') для типа сущности."""
-    return service.create_attribute_for_type(entity_type_id, attribute_in)
+    return service.create_attribute_for_type(
+        entity_type_id=entity_type_id,
+        attribute_in=attribute_in,
+        current_user=current_user # <-- Важный аргумент
+    )

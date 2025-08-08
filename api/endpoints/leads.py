@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, status, Body
 from typing import List, Optional
 from pydantic import BaseModel
+from api.deps import get_current_user, require_permission
 
 from db import models
 from schemas.lead import Lead, LeadCreate, LeadUpdate
@@ -33,19 +34,7 @@ def create_lead(
     """
     return lead_service.create_lead(lead_in=lead_in, current_user=current_user)
 
-# api/endpoints/leads.py
-# @router.get("/", response_model=List[Lead])
-# def get_all_leads(
-#     skip: int = 0,
-#     limit: int = 100,
-#     current_user: models.User = Depends(get_current_user),
-#     lead_service: LeadService = Depends(LeadService)
-# ):
-#     """
-#     Получить список всех лидов.
-#     """
-#     # Передаем current_user в сервисный метод
-#     return lead_service.get_all(current_user=current_user, skip=skip, limit=limit)
+
 
 @router.get("/{lead_id}", response_model=Lead)
 def get_lead_by_id(

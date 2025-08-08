@@ -22,7 +22,8 @@ from sqladmin import Admin
 from sqladmin.authentication import AuthenticationBackend
 from admin import (
     TenantAdmin, UserAdmin, LeadAdmin, LegalEntityAdmin,
-    IndividualAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin
+    IndividualAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
+    RoleAdmin, PermissionAdmin
 )
 
 # --------------------------------------------------------------------------
@@ -103,6 +104,8 @@ admin.add_view(EntityTypeAdmin)
 admin.add_view(AttributeAdmin)
 admin.add_view(AttributeAliasAdmin)
 admin.add_view(TableAliasAdmin)
+admin.add_view(RoleAdmin)
+admin.add_view(PermissionAdmin)
 # Если вы создали AttributeAliasAdmin, раскомментируйте следующую строку
 # admin.add_view(AttributeAliasAdmin)
 
