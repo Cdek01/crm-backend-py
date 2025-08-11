@@ -134,20 +134,32 @@ def read_root():
 
 
 @app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
-def read_users_me(current_user: models.User = Depends(get_current_user)):
+def read_users_me(
+        current_user: models.User = Depends(get_current_user),
+        # --- ИСПРАВЛЕНИЕ: Получаем сессию через зависимость ---
+        db: Session = Depends(session.get_db)
+):
     """
     Получить информацию о текущем пользователе и его разрешениях.
     """
-    # Загружаем пользователя со всеми его ролями и правами за один запрос
+    # Загружаем пользователя со всеми его ролями и правами за один запрос,
+    # используя сессию `db`, полученную через Depends.
     user_with_perms = (
-        current_user.session.query(models.User)
+        db.query(models.User)
         .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
         .filter(models.User.id == current_user.id)
-        .one()
+        .first()  # Используем .first(), так как .one() может выбросить ошибку
     )
 
+    # Если по какой-то причине пользователя не нашли (маловероятно),
+    # вернем пустой список прав.
+    if not user_with_perms:
+        response_user = UserWithPermissions.model_validate(current_user)
+        response_user.permissions = []
+        return response_user
+
     # Собираем все уникальные имена разрешений
-    user_permissions = {perm.name for role in user_with_perms.roles for perm in user_with_perms.permissions}
+    user_permissions = {perm.name for role in user_with_perms.roles for perm in role.permissions}
 
     # Создаем объект Pydantic, добавляя к нему список прав
     response_user = UserWithPermissions.model_validate(user_with_perms)
