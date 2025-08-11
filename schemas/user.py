@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 
 # Схема для получения данных при создании пользователя
 class UserCreate(BaseModel):
@@ -17,3 +17,6 @@ class User(BaseModel):
 
     class Config:
         from_attributes = True # Раньше называлось orm_mode
+
+class UserWithPermissions(User):
+    permissions: List[str] = []

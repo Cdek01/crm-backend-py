@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from db import models, base, session
 
 # Схемы и зависимости для API
-from schemas.user import User
+from schemas.user import User, UserWithPermissions
 from api.deps import get_current_user
+from sqlalchemy.orm import joinedload # <-- Добавьте импорт
 
 # Роутеры для всех ваших API эндпоинтов
 from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases
@@ -128,6 +129,25 @@ app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
 def read_root():
     return {"message": "Welcome to CRM API"}
 
-@app.get("/api/users/me", response_model=User, tags=["Users"])
+
+@app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
 def read_users_me(current_user: models.User = Depends(get_current_user)):
-    return current_user
+    """
+    Получить информацию о текущем пользователе и его разрешениях.
+    """
+    # Загружаем пользователя со всеми его ролями и правами за один запрос
+    user_with_perms = (
+        current_user.session.query(models.User)
+        .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
+        .filter(models.User.id == current_user.id)
+        .one()
+    )
+
+    # Собираем все уникальные имена разрешений
+    user_permissions = {perm.name for role in user_with_perms.roles for perm in user_with_perms.permissions}
+
+    # Создаем объект Pydantic, добавляя к нему список прав
+    response_user = UserWithPermissions.model_validate(user_with_perms)
+    response_user.permissions = sorted(list(user_permissions))
+
+    return response_user
