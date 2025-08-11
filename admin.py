@@ -48,34 +48,16 @@ class UserAdmin(ModelView, model=models.User):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.User.email, models.User.full_name]
 
-    # --- ИЗМЕНЕНИЕ: ЯВНОЕ ОПРЕДЕЛЕНИЕ ФОРМЫ ---
-    # Убираем form_columns, так как мы определим поля ниже
-    # form_columns = [...]
-
-    # 1. Явно указываем, как обрабатывать поле 'roles'
-    form_overrides = {
-        'roles': QuerySelectMultipleField
-    }
-
-    # 2. Указываем, какие поля и в каком порядке показывать на форме
-    form_create_rules = [
-        'email',
-        'full_name',
-        'tenant',
-        'is_superuser',
-        'roles',  # Наше кастомное поле
+    # --- ИЗМЕНЕНИЕ: Упрощаем до предела ---
+    # Этот список полей - единственное, что нам нужно.
+    # SQLAdmin сам разберется, как построить форму для этих полей.
+    form_columns = [
+        models.User.email,
+        models.User.full_name,
+        models.User.tenant,
+        models.User.is_superuser,
+        models.User.roles, # Это поле для связи "многие-ко-многим"
     ]
-    # Используем те же поля для редактирования
-    form_edit_rules = form_create_rules
-
-    # 3. Настраиваем поле 'roles'
-    form_args = {
-        'roles': {
-            'label': 'Роли',
-            # Это 'фабрика', которая будет загружать список всех ролей для выбора
-            'query_factory': lambda: models.Role.query,
-        }
-    }
 
 class LeadAdmin(ModelView, model=models.Lead):
     name = "Лид"
