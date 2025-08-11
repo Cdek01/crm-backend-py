@@ -38,28 +38,44 @@ class UserAdmin(ModelView, model=models.User):
     name_plural = "Пользователи"
     icon = "fa-solid fa-user"
 
-    # 1. Список колонок для отображения в таблице. Убираем отсюда пароль.
     column_list = [
         models.User.id,
         models.User.email,
         models.User.full_name,
         "tenant",
-        models.User.is_superuser
+        models.User.is_superuser,
     ]
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.User.email, models.User.full_name]
 
-    # 2. Список полей для формы создания и редактирования.
-    # Мы просто не включаем сюда 'hashed_password'.
-    # SQLAdmin не будет его показывать, но база данных все равно потребует его.
-    # Чтобы это обойти, мы сделаем его nullable=True в модели.
-    form_columns = [
-        models.User.email,
-        models.User.full_name,
-        models.User.tenant,
-        models.User.is_superuser,
-        models.User.roles
+    # --- ИЗМЕНЕНИЕ: ЯВНОЕ ОПРЕДЕЛЕНИЕ ФОРМЫ ---
+    # Убираем form_columns, так как мы определим поля ниже
+    # form_columns = [...]
+
+    # 1. Явно указываем, как обрабатывать поле 'roles'
+    form_overrides = {
+        'roles': QuerySelectMultipleField
+    }
+
+    # 2. Указываем, какие поля и в каком порядке показывать на форме
+    form_create_rules = [
+        'email',
+        'full_name',
+        'tenant',
+        'is_superuser',
+        'roles',  # Наше кастомное поле
     ]
+    # Используем те же поля для редактирования
+    form_edit_rules = form_create_rules
+
+    # 3. Настраиваем поле 'roles'
+    form_args = {
+        'roles': {
+            'label': 'Роли',
+            # Это 'фабрика', которая будет загружать список всех ролей для выбора
+            'query_factory': lambda: models.Role.query,
+        }
+    }
 
 class LeadAdmin(ModelView, model=models.Lead):
     name = "Лид"

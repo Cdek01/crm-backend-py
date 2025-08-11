@@ -138,11 +138,6 @@ def read_users_me(
         current_user: models.User = Depends(get_current_user),
         db: Session = Depends(session.get_db)
 ):
-    """
-    Получить информацию о текущем пользователе и его разрешениях.
-    """
-    # Загружаем пользователя со всеми его ролями и правами этих ролей
-    # за один эффективный запрос.
     user_with_roles = (
         db.query(models.User)
         .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
@@ -151,20 +146,15 @@ def read_users_me(
     )
 
     if not user_with_roles:
-        # Этот случай маловероятен, но лучше его обработать
         response_user = UserWithPermissions.model_validate(current_user)
         response_user.permissions = []
         return response_user
 
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-    # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
     user_permissions = set()
     for role in user_with_roles.roles:
         for perm in role.permissions:
             user_permissions.add(perm.name)
-    # -------------------------
 
-    # Создаем объект Pydantic для ответа
     response_user = UserWithPermissions.model_validate(user_with_roles)
     response_user.permissions = sorted(list(user_permissions))
 
