@@ -48,17 +48,14 @@ class UserAdmin(ModelView, model=models.User):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.User.email, models.User.full_name]
 
-    # --- ИЗМЕНЕНИЕ: Упрощаем до предела ---
-    # Этот список полей - единственное, что нам нужно.
-    # SQLAdmin сам разберется, как построить форму для этих полей.
+    # Указываем поля для формы. SQLAdmin должен сам обработать связь 'roles'.
     form_columns = [
         models.User.email,
         models.User.full_name,
         models.User.tenant,
         models.User.is_superuser,
-        models.User.roles, # Это поле для связи "многие-ко-многим"
+        models.User.roles,
     ]
-
 class LeadAdmin(ModelView, model=models.Lead):
     name = "Лид"
     name_plural = "Лиды"

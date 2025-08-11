@@ -478,7 +478,7 @@ USER_PASSWORD = "string"
 
 # --- Системное имя кастомной таблицы для просмотра ---
 # Это поле 'name', а не 'display_name'
-TABLE_NAME_TO_VIEW = "klienty"  # <--- ЗАМЕНИТЕ НА ИМЯ ВАШЕЙ ТАБЛИЦЫ
+# TABLE_NAME_TO_VIEW = "klienty"  # <--- ЗАМЕНИТЕ НА ИМЯ ВАШЕЙ ТАБЛИЦЫ
 
 
 
