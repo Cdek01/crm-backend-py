@@ -473,7 +473,7 @@ import json
 BASE_URL = "http://89.111.169.47:8005"
 
 # --- Данные пользователя, которому вы дали доступ ---   SELECT id, email FROM users WHERE email = 'user@example.com';
-USER_EMAIL = "user@example.com"
+USER_EMAIL = "user2@example.com"
 USER_PASSWORD = "string"
 
 # --- Системное имя кастомной таблицы для просмотра ---
