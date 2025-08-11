@@ -136,33 +136,36 @@ def read_root():
 @app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
 def read_users_me(
         current_user: models.User = Depends(get_current_user),
-        # --- ИСПРАВЛЕНИЕ: Получаем сессию через зависимость ---
         db: Session = Depends(session.get_db)
 ):
     """
     Получить информацию о текущем пользователе и его разрешениях.
     """
-    # Загружаем пользователя со всеми его ролями и правами за один запрос,
-    # используя сессию `db`, полученную через Depends.
-    user_with_perms = (
+    # Загружаем пользователя со всеми его ролями и правами этих ролей
+    # за один эффективный запрос.
+    user_with_roles = (
         db.query(models.User)
         .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
         .filter(models.User.id == current_user.id)
-        .first()  # Используем .first(), так как .one() может выбросить ошибку
+        .first()
     )
 
-    # Если по какой-то причине пользователя не нашли (маловероятно),
-    # вернем пустой список прав.
-    if not user_with_perms:
+    if not user_with_roles:
+        # Этот случай маловероятен, но лучше его обработать
         response_user = UserWithPermissions.model_validate(current_user)
         response_user.permissions = []
         return response_user
 
-    # Собираем все уникальные имена разрешений
-    user_permissions = {perm.name for role in user_with_perms.roles for perm in role.permissions}
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
+    user_permissions = set()
+    for role in user_with_roles.roles:
+        for perm in role.permissions:
+            user_permissions.add(perm.name)
+    # -------------------------
 
-    # Создаем объект Pydantic, добавляя к нему список прав
-    response_user = UserWithPermissions.model_validate(user_with_perms)
+    # Создаем объект Pydantic для ответа
+    response_user = UserWithPermissions.model_validate(user_with_roles)
     response_user.permissions = sorted(list(user_permissions))
 
     return response_user
