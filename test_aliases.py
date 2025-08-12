@@ -757,6 +757,7 @@ import time
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
 
 BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
+# BASE_URL = "http://89.111.169.47:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
 
 # Секретный токен для регистрации новых пользователей
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
@@ -784,7 +785,7 @@ def register_and_login():
     email = f"attr_tester_{unique_id}@example.com"
     password = "password123"
 
-    reg_payload = {"email": email, "password": password, "full_name": "Attribute Tester",
+    reg_payload = {"email": email, "password": password, "full_name": "Attributet Tester",
                    "registration_token": CORRECT_REGISTRATION_TOKEN}
     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
 
