@@ -232,7 +232,7 @@ class Entity(Base):
     def __str__(self):
         # Отображаем как "Запись #ID в таблице 'Имя таблицы'"
         return f"Запись #{self.id} в таблице '{self.entity_type.display_name}'"
-    
+
 
 class AttributeValue(Base):
     """Хранит одно конкретное значение для одной строки и одной колонки."""
@@ -252,6 +252,7 @@ class AttributeValue(Base):
 
     entity = relationship("Entity", back_populates="values")
     attribute = relationship("Attribute", back_populates="values")
+
 
 
 

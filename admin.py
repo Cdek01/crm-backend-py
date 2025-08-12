@@ -120,7 +120,13 @@ class EntityTypeAdmin(ModelView, model=models.EntityType):
     icon = "fa-solid fa-table-list"
     column_list = [models.EntityType.id, models.EntityType.name, models.EntityType.display_name, "tenant"]
     column_formatters = {"tenant": tenant_formatter}
-
+    # Указываем, какие связанные поля нужно загружать сразу
+    # при запросе списка или деталей EntityType.
+    list_query_options = [
+        joinedload(models.EntityType.attributes),
+        joinedload(models.EntityType.entities).joinedload(models.Entity.entity_type),
+    ]
+    details_query_options = list_query_options
 
 
 
