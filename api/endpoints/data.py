@@ -173,16 +173,22 @@ def delete_entity(
 @router.get("/{entity_type_name}", response_model=List[Dict[str, Any]])
 def get_all_entities(
         entity_type_name: str,
-        tenant_id: Optional[int] = Query(
-            None,
-            description="ID клиента (тенанта). Доступно только для суперадминистраторов."
-        ),
+
+        tenant_id: Optional[int] = Query(...),
         filters: Optional[str] = None,
         sort_by: Optional[str] = 'created_at',
         sort_order: str = 'desc',
+
+        # --- ДОБАВЬТЕ ЭТИ ДВА ПАРАМЕТРА ---
+        skip: int = Query(0, ge=0, description="Сколько записей пропустить (смещение)"),
+        limit: int = Query(100, ge=1, le=1000, description="Максимальное количество записей для возврата"),
+        # ---------------------------------
+
         service: EAVService = Depends(),
         current_user: models.User = Depends(get_current_user)
 ):
+
+
     """
     Получить все записи для указанного типа сущности с фильтрацией и сортировкой.
     """
@@ -198,9 +204,13 @@ def get_all_entities(
     # --- ИСПРАВЛЕНИЕ: Передаем ВСЕ необходимые аргументы в сервис ---
     return service.get_all_entities_for_type(
         entity_type_name=entity_type_name,
-        current_user=current_user,  # <-- Передаем текущего пользователя
+        current_user=current_user,
         tenant_id=tenant_id,
         filters=parsed_filters,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        # --- ПЕРЕДАЕМ НОВЫЕ ПАРАМЕТРЫ В СЕРВИС ---
+        skip=skip,
+        limit=limit
+        # -----------------------------------------
     )
