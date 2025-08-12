@@ -5,6 +5,8 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
+from sqladmin import BaseView, expose
+import os # <-- Убедитесь, что этот импорт есть вверху файла
 
 # --- ШАГ 2: ИМПОРТЫ ИЗ ВАШЕГО ПРОЕКТА ---
 # Модули для работы с БД и конфигурацией
@@ -14,9 +16,11 @@ from db import models, base, session
 from schemas.user import User, UserWithPermissions
 from api.deps import get_current_user
 from sqlalchemy.orm import joinedload # <-- Добавьте импорт
+from fastapi.responses import RedirectResponse, HTMLResponse # <-- Добавьте HTMLResponse
 
 # Роутеры для всех ваших API эндпоинтов
 from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases
+from starlette.templating import Jinja2Templates # <-- Убедитесь, что этот импорт есть
 
 # Модули для админ-панели
 from sqladmin import Admin
@@ -24,8 +28,12 @@ from sqladmin.authentication import AuthenticationBackend
 from admin import (
     TenantAdmin, UserAdmin, LeadAdmin, LegalEntityAdmin,
     IndividualAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
-    RoleAdmin, PermissionAdmin
+    RoleAdmin, PermissionAdmin,
+    AssignRoleView
 )
+from api.endpoints import roles # <-- добавьте roles
+
+
 
 # --------------------------------------------------------------------------
 # --- ШАГ 3: ИНИЦИАЛИЗАЦИЯ БД И ПРИЛОЖЕНИЯ ---
@@ -37,6 +45,7 @@ base.Base.metadata.create_all(bind=session.engine)
 # Создаем главный экземпляр FastAPI ОДИН РАЗ
 app = FastAPI(title="CRM API")
 
+templates = Jinja2Templates(directory="templates")
 
 # --------------------------------------------------------------------------
 # --- ШАГ 4: НАСТРОЙКА MIDDLEWARE (ПОСРЕДНИКОВ) ---
@@ -64,10 +73,64 @@ app.add_middleware(
     session_cookie="admin_session_cookie"  # Уникальное имя для cookie админки
 )
 
-
+app.include_router(roles.router, prefix="/api/roles", tags=["Roles"])
 # --------------------------------------------------------------------------
 # --- ШАГ 5: НАСТРОЙКА И РЕГИСТРАЦИЯ АДМИН-ПАНЕЛИ ---
 # --------------------------------------------------------------------------
+
+
+# class AssignRoleView(BaseView):
+#     name = "Назначение Ролей"
+#     icon = "fa-solid fa-user-tag"
+#
+#     @expose("/assign-role", methods=["GET", "POST"])
+#     async def assign_role_page(self, request: Request):
+#         db = session.SessionLocal()
+#         try:
+#             users = db.query(models.User).order_by(models.User.email).all()
+#             roles = db.query(models.Role).order_by(models.Role.name).all()
+#
+#             if request.method == "GET":
+#                 # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+#                 # Используем наш объект `templates` и его метод `TemplateResponse`
+#                 return templates.TemplateResponse(
+#                     "assign_role.html",
+#                     {
+#                         "request": request,
+#                         "users": users,
+#                         "roles": roles,
+#                         "success": request.query_params.get("success"),
+#                     },
+#                 )
+#                 # -------------------------
+#
+#             # Логика для POST-запроса (остается без изменений)
+#             form_data = await request.form()
+#             user_id = form_data.get("user_id")
+#             role_ids = form_data.getlist("role_ids")
+#
+#             if not user_id:
+#                 return RedirectResponse(request.url, status_code=302)
+#
+#             user_to_update = db.query(models.User).filter(models.User.id == int(user_id)).one()
+#
+#             if role_ids:
+#                 selected_roles = db.query(models.Role).filter(
+#                     models.Role.id.in_([int(pk) for pk in role_ids])
+#                 ).all()
+#                 user_to_update.roles = selected_roles
+#             else:
+#                 user_to_update.roles = []
+#
+#             db.commit()
+#
+#             return RedirectResponse(f"{request.url_for('admin:assign-role')}?success=true", status_code=302)
+#
+#         finally:
+#             db.close()
+
+
+
 
 # Класс для кастомной аутентификации в админ-панели
 class AdminAuth(AuthenticationBackend):
@@ -92,8 +155,18 @@ class AdminAuth(AuthenticationBackend):
 
 # Создаем экземпляр бэкенда аутентификации
 authentication_backend = AdminAuth(secret_key="a_very_secret_key_for_auth_backend")
-# Создаем экземпляр админки и "прикрепляем" его к нашему приложению и движку БД
-admin = Admin(app=app, engine=session.engine, authentication_backend=authentication_backend)
+# Получаем абсолютный путь к директории, где лежит main.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Создаем абсолютный путь к папке templates
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+# Инициализируем Admin, передавая ему путь к нашим шаблонам
+admin = Admin(
+    app=app,
+    engine=session.engine,
+    authentication_backend=authentication_backend,
+    templates_dir=TEMPLATES_DIR  # <-- ВОТ КЛЮЧЕВАЯ СТРОКА
+)
 
 # Регистрируем все представления моделей, которые хотим видеть в админке
 admin.add_view(TenantAdmin)
@@ -107,6 +180,8 @@ admin.add_view(AttributeAliasAdmin)
 admin.add_view(TableAliasAdmin)
 admin.add_view(RoleAdmin)
 admin.add_view(PermissionAdmin)
+admin.add_view(AssignRoleView) # <-- ДОБАВЬТЕ ЭТО
+
 # Если вы создали AttributeAliasAdmin, раскомментируйте следующую строку
 # admin.add_view(AttributeAliasAdmin)
 
@@ -138,9 +213,16 @@ def read_users_me(
         current_user: models.User = Depends(get_current_user),
         db: Session = Depends(session.get_db)
 ):
+    """
+    Получить информацию о текущем пользователе и его разрешениях.
+    """
+    # Загружаем пользователя со всеми его ролями и правами этих ролей
     user_with_roles = (
         db.query(models.User)
-        .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
+        .options(
+            joinedload(models.User.roles).
+            joinedload(models.Role.permissions)
+        )
         .filter(models.User.id == current_user.id)
         .first()
     )
@@ -150,6 +232,7 @@ def read_users_me(
         response_user.permissions = []
         return response_user
 
+    # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
     user_permissions = set()
     for role in user_with_roles.roles:
         for perm in role.permissions:

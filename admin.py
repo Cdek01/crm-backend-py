@@ -1,12 +1,24 @@
 # admin.py
 from sqladmin import ModelView
+from sqladmin import BaseView, expose # <-- Добавьте/проверьте импорт
+from fastapi.responses import RedirectResponse
+from starlette.templating import Jinja2Templates # <-- Убедитесь, что этот импорт есть
+from sqlalchemy.orm import joinedload # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter
-from db import models
+from db import models, session
 from fastapi import Request, HTTPException # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
-from wtforms import Form, StringField, PasswordField  # <-- ИЗМЕНИТЕ ИМПОРТ
+from wtforms import Form, StringField, PasswordField, BooleanField  # <-- ИЗМЕНИТЕ ИМПОРТ
 from wtforms.validators import DataRequired  # <-- ДОБАВЬТЕ ИМПОРТ
 from core import security # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 from sqladmin.fields import QuerySelectField, QuerySelectMultipleField # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+
+
+templates = Jinja2Templates(directory="templates")
+
+
+
+
 
 # --- Функции-форматтеры ---
 def tenant_formatter(model, name):
@@ -33,6 +45,17 @@ class UserCreateForm(Form):
     password = PasswordField('Password', validators=[DataRequired()])
 
 
+# 1. Определяем кастомный класс формы
+class UserForm(Form):
+    email = StringField("Email", validators=[DataRequired()])
+    full_name = StringField("Full Name")
+    is_superuser = BooleanField("Is Superuser")  # Добавляем поле для флага суперадминистратора
+
+    # Определяем поля для связей. Мы наполним их вариантами выбора в `scaffold_form`.
+    tenant = QuerySelectField("Tenant", allow_blank=False, validators=[DataRequired()])
+    roles = QuerySelectMultipleField("Roles")
+
+
 class UserAdmin(ModelView, model=models.User):
     name = "Пользователь"
     name_plural = "Пользователи"
@@ -48,14 +71,19 @@ class UserAdmin(ModelView, model=models.User):
     column_formatters = {"tenant": tenant_formatter}
     column_searchable_list = [models.User.email, models.User.full_name]
 
-    # Указываем поля для формы. SQLAdmin должен сам обработать связь 'roles'.
+    # УБИРАЕМ `roles` ИЗ ФОРМЫ.
+    # Теперь эта форма будет работать только с полями самого пользователя.
     form_columns = [
         models.User.email,
         models.User.full_name,
         models.User.tenant,
         models.User.is_superuser,
-        models.User.roles,
     ]
+
+
+
+
+
 class LeadAdmin(ModelView, model=models.Lead):
     name = "Лид"
     name_plural = "Лиды"
@@ -204,3 +232,63 @@ class RoleAdmin(ModelView, model=models.Role):
         models.Role.tenant,
         models.Role.permissions,
     ]
+
+
+# --- ДОБАВЬТЕ ЭТОТ НОВЫЙ КЛАСС В КОНЕЦ ФАЙЛА ---
+
+class AssignRoleView(BaseView):
+    name = "Назначение Ролей"
+    icon = "fa-solid fa-user-tag"
+
+    @expose("/assign-role", methods=["GET", "POST"])
+    async def assign_role_page(self, request: Request):
+        db = session.SessionLocal()
+        try:
+            # --- GET-обработчик (остается без изменений) ---
+            if request.method == "GET":
+                users = db.query(models.User).order_by(models.User.email).all()
+                return templates.TemplateResponse(
+                    "assign_role.html",
+                    {
+                        "request": request,
+                        "users": users,
+                    },
+                )
+
+            # --- POST-обработчик (полностью переписан) ---
+            form_data = await request.form()
+            user_id = form_data.get("user_id")
+            role_ids_str = form_data.getlist("role_ids")
+
+            if not user_id:
+                return RedirectResponse(request.url, status_code=302)
+
+            # 1. Загружаем пользователя, обязательно с его текущими ролями
+            user_to_update = (
+                db.query(models.User)
+                .options(joinedload(models.User.roles))
+                .filter(models.User.id == int(user_id))
+                .one()
+            )
+
+            # 2. Очищаем ВСЕ текущие роли пользователя
+            user_to_update.roles.clear()
+
+            # 3. Если в форме были выбраны новые роли, добавляем их
+            if role_ids_str:
+                role_ids = [int(pk) for pk in role_ids_str]
+                selected_roles = db.query(models.Role).filter(
+                    models.Role.id.in_(role_ids)
+                ).all()
+
+                # Добавляем новые роли
+                for role in selected_roles:
+                    user_to_update.roles.append(role)
+
+            # 4. Сохраняем изменения
+            db.commit()
+
+            redirect_url = f"{request.url.path}?success=true"
+            return RedirectResponse(redirect_url, status_code=302)
+        finally:
+            db.close()

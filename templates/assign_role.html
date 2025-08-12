@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Назначение Ролей</title>
+    <!-- Подключаем стили Bootstrap для красивого вида -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <!-- ... (заголовок и success alert остаются) ... -->
+
+        <div class="card">
+            <div class="card-body">
+                <form method="post" id="assignRoleForm">
+                    <div class="mb-3">
+                        <label for="user_id" class="form-label"><b>1. Выберите пользователя:</b></label>
+                        <select name="user_id" id="user_id" class="form-select" required>
+                            <option value="">-- Не выбрано --</option>
+                            {% for user in users %}
+                                <!-- Сохраняем tenant_id пользователя в data-атрибуте -->
+                                <option value="{{ user.id }}" data-tenant-id="{{ user.tenant_id }}">{{ user }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="role_ids" class="form-label"><b>2. Выберите роли:</b></label>
+                        <select name="role_ids" id="role_ids" class="form-select" multiple size="8" disabled>
+                             <!-- Роли будут загружены сюда динамически -->
+                        </select>
+                        <div id="roles-loader" class="d-none mt-2">Загрузка ролей...</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="saveButton" disabled>Сохранить</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const userSelect = document.getElementById('user_id');
+        const roleSelect = document.getElementById('role_ids');
+        const saveButton = document.getElementById('saveButton');
+        const loader = document.getElementById('roles-loader');
+
+        userSelect.addEventListener('change', async (event) => {
+            const selectedOption = event.target.options[event.target.selectedIndex];
+            const tenantId = selectedOption.getAttribute('data-tenant-id');
+
+            // Очищаем и блокируем поля
+            roleSelect.innerHTML = '';
+            roleSelect.disabled = true;
+            saveButton.disabled = true;
+
+            if (!tenantId) {
+                return;
+            }
+
+            // Показываем загрузчик
+            loader.classList.remove('d-none');
+
+            try {
+                // Делаем запрос на наш новый API эндпоинт
+                const response = await fetch(`/api/roles/tenant/${tenantId}`);
+                if (!response.ok) {
+                    throw new Error('Ошибка при загрузке ролей');
+                }
+                const roles = await response.json();
+
+                if (roles.length === 0) {
+                    roleSelect.innerHTML = '<option disabled>Для этого клиента роли не найдены</option>';
+                } else {
+                    roles.forEach(role => {
+                        const option = document.createElement('option');
+                        option.value = role.id;
+                        option.textContent = role.name;
+                        roleSelect.appendChild(option);
+                    });
+                    // Разблокируем поля
+                    roleSelect.disabled = false;
+                    saveButton.disabled = false;
+                }
+            } catch (error) {
+                console.error(error);
+                roleSelect.innerHTML = '<option disabled>Ошибка загрузки</option>';
+            } finally {
+                // Прячем загрузчик
+                loader.classList.add('d-none');
+            }
+        });
+    </script>
+</body>
+</html>

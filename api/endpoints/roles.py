@@ -1,21 +1,29 @@
-from fastapi import APIRouter, Depends, Body
-from pydantic import BaseModel
-from db import models
-from api.deps import get_current_user, require_permission
-from services.role_service import RoleService
+from fastapi import APIRouter, Depends
+from typing import List
+from db import models, session
+from api.deps import get_current_user
+from sqlalchemy.orm import Session
+from pydantic import BaseModel # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+from api.deps import get_current_admin_user
+
 
 router = APIRouter()
 
-class RoleCreateRequest(BaseModel):
+class RoleSchema(BaseModel):
+    id: int
     name: str
 
-@router.post("/", dependencies=[Depends(require_permission("roles:manage"))])
-def create_new_role(
-    request: RoleCreateRequest,
-    service: RoleService = Depends(),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Создать новую роль для текущего клиента (тенанта)"""
-    return service.create_role(name=request.name, current_user=current_user)
+    class Config:
+        from_attributes = True
 
-# Здесь же будут эндпоинты для назначения прав и т.д.
+@router.get("/tenant/{tenant_id}", response_model=List[RoleSchema])
+def get_roles_for_tenant(
+    tenant_id: int,
+    db: Session = Depends(session.get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    """Получить список ролей для конкретного тенанта."""
+    # В будущем здесь можно добавить проверку, что current_user имеет право
+    # видеть данные этого tenant_id (например, если он суперадмин).
+    roles = db.query(models.Role).filter(models.Role.tenant_id == tenant_id).all()
+    return roles

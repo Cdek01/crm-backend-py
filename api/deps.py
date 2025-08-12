@@ -1,6 +1,6 @@
 # api/deps.py
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
@@ -70,3 +70,28 @@ def require_permission(permission_name: str):
         return True
 
     return permission_checker
+
+
+# --- ДОБАВЬТЕ ЭТУ ФУНКЦИЮ ---
+def get_current_admin_user(request: Request, db: Session = Depends(session.get_db)):
+    """
+    Проверяет, аутентифицирован ли пользователь в сессии админки.
+    Возвращает "заглушку" пользователя, если аутентификация пройдена.
+    """
+    if "token" not in request.session or request.session["token"] != "admin_logged_in":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated in admin panel"
+        )
+
+    # Так как у нас простая аутентификация в админке, мы не знаем, какой именно
+    # пользователь залогинен. Мы можем вернуть первого суперадмина или просто
+    # "заглушку". Для нашей цели (просто пройти проверку) этого достаточно.
+    # В реальном приложении здесь была бы более сложная логика.
+    superuser = db.query(models.User).filter(models.User.is_superuser == True).first()
+    if not superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No superuser configured"
+        )
+    return superuser

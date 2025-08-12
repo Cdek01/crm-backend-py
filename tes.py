@@ -469,12 +469,12 @@ import json
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
 
 # Адрес вашего запущенного API
-# BASE_URL = "http://127.0.0.1:8000"  # ИЛИ "http://89.111.169.47:8005" для сервера
-BASE_URL = "http://89.111.169.47:8005"
+BASE_URL = "http://127.0.0.1:8005"
+# BASE_URL = "http://89.111.169.47:8005"
 
 # --- Данные пользователя, которому вы дали доступ ---   SELECT id, email FROM users WHERE email = 'user@example.com';
 USER_EMAIL = "user2@example.com"
-USER_PASSWORD = "string"
+USER_PASSWORD = "password_b"
 
 # --- Системное имя кастомной таблицы для просмотра ---
 # Это поле 'name', а не 'display_name'

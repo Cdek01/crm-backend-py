@@ -333,6 +333,7 @@ class Role(Base):
     # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
     def __str__(self):
         return self.name
+
 # Теперь нам нужно обновить существующую модель User, добавив ей связь с ролями
 class User(Base):
     __tablename__ = "users"
@@ -343,9 +344,7 @@ class User(Base):
 
     full_name = Column(String, index=True)
 
-    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
     is_superuser = Column(Boolean, default=False, nullable=False)
-    # -------------------------
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True, index=True)
@@ -353,6 +352,5 @@ class User(Base):
 
     roles = relationship("Role", secondary=user_roles_table, backref="users")
 
-    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
     def __str__(self):
         return self.email
