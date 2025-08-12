@@ -181,7 +181,13 @@ class EntityType(Base):
 
     display_name = Column(String, nullable=False)
 
-    attributes = relationship("Attribute", back_populates="entity_type", cascade="all, delete-orphan")
+    # Добавляем `order_by="Attribute.id"` в `relationship`
+    attributes = relationship(
+        "Attribute",
+        back_populates="entity_type",
+        cascade="all, delete-orphan",
+        order_by="Attribute.id"  # <-- ВОТ ЭТО ИЗМЕНЕНИЕ
+    )
     entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
     tenant = relationship("Tenant")
