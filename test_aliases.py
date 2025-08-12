@@ -750,6 +750,144 @@
 #     run_multi_tenancy_test()
 
 
+# import requests
+# import json
+# import time
+#
+# # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
+#
+# # BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
+# BASE_URL = "http://89.111.169.47:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
+#
+# # Секретный токен для регистрации новых пользователей
+# CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
+#
+#
+# # ----------------------------------------------------
+#
+# def print_status(ok, message):
+#     if ok:
+#         print(f"✅ [PASS] {message}")
+#     else:
+#         print(f"❌ [FAIL] {message}")
+#         exit(1)
+#
+#
+# def print_header(title):
+#     print("\n" + "=" * 60)
+#     print(f" {title} ".center(60, "="))
+#     print("=" * 60)
+#
+#
+# def register_and_login():
+#     """Регистрирует нового пользователя и возвращает заголовки с токеном."""
+#     unique_id = int(time.time())
+#     email = f"attr_tester_{unique_id}@example.com"
+#     password = "password123"
+#
+#     reg_payload = {"email": email, "password": password, "full_name": "Attributet Tester",
+#                    "registration_token": CORRECT_REGISTRATION_TOKEN}
+#     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
+#
+#     auth_payload = {'username': email, 'password': password}
+#     token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
+#     return {'Authorization': f'Bearer {token}'}
+#
+#
+# def get_table_details(headers, table_id):
+#     """Получает детальную информацию о таблице, включая ее атрибуты."""
+#     response = requests.get(f"{BASE_URL}/api/meta/entity-types/{table_id}", headers=headers)
+#     response.raise_for_status()
+#     return response.json()
+#
+#
+# def run_attribute_test():
+#     try:
+#         # --- ШАГ 1: ПОДГОТОВКА ---
+#         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
+#         headers = register_and_login()
+#
+#         table_config = {"name": f"candidates_{int(time.time())}", "display_name": "Кандидаты"}
+#         table_response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config)
+#         table_response.raise_for_status()
+#         table_id = table_response.json()['id']
+#         print_status(True, f"Создана тестовая таблица 'Кандидаты' с ID: {table_id}")
+#
+#         # --- ШАГ 2: СОЗДАНИЕ КОЛОНОК ---
+#         print_header("ШАГ 2: СОЗДАНИЕ ТРЕХ КОЛОНОК")
+#
+#         attrs_to_create = [
+#             {"name": "full_name", "display_name": "ФИО", "value_type": "string"},
+#             {"name": "salary_expectation", "display_name": "Ожидаемая ЗП", "value_type": "integer"},
+#             {"name": "contact_phone", "display_name": "Контактный телефон", "value_type": "string"},
+#         ]
+#
+#         for attr in attrs_to_create:
+#             url = f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes"
+#             requests.post(url, headers=headers, json=attr).raise_for_status()
+#             print(f" -> Создана колонка '{attr['display_name']}'")
+#
+#         # --- ШАГ 3: ПРОВЕРКА СОЗДАНИЯ ---
+#         print_header("ШАГ 3: ПРОВЕРКА, ЧТО ВСЕ КОЛОНКИ СОЗДАНЫ")
+#
+#         table_details = get_table_details(headers, table_id)
+#         # Отфильтровываем системные атрибуты (sms_*, phone_number, etc.)
+#         custom_attributes = [attr for attr in table_details['attributes'] if
+#                              not attr['name'].startswith('sms_') and attr['name'] not in (
+#                              'phone_number', 'message_text', 'send_sms_trigger')]
+#
+#         print(f" -> В таблице найдено {len(custom_attributes)} пользовательских колонок.")
+#         print_status(len(custom_attributes) == 3, "Количество созданных колонок совпадает с ожидаемым.")
+#
+#         created_attr_names = {attr['name'] for attr in custom_attributes}
+#         print_status('salary_expectation' in created_attr_names, "Колонка 'salary_expectation' присутствует.")
+#
+#         # --- ШАГ 4: УДАЛЕНИЕ ОДНОЙ КОЛОНКИ ---
+#         print_header("ШАГ 4: УДАЛЕНИЕ КОЛОНКИ 'contact_phone'")
+#
+#         # Находим ID колонки, которую хотим удалить
+#         attr_to_delete = next((attr for attr in custom_attributes if attr['name'] == 'contact_phone'), None)
+#         print_status(attr_to_delete is not None, "Найдена колонка 'contact_phone' для удаления.")
+#
+#         if attr_to_delete:
+#             attr_id_to_delete = attr_to_delete['id']
+#             url = f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes/{attr_id_to_delete}"
+#             delete_response = requests.delete(url, headers=headers)
+#
+#             print_status(delete_response.status_code == 204, "Запрос на удаление прошел успешно (статус 204).")
+#
+#         # --- ШАГ 5: ФИНАЛЬНАЯ ПРОВЕРКА ---
+#         print_header("ШАГ 5: ПРОВЕРКА, ЧТО КОЛОНКА УДАЛЕНА, А ОСТАЛЬНЫЕ НА МЕСТЕ")
+#
+#         final_table_details = get_table_details(headers, table_id)
+#         final_custom_attributes = [attr for attr in final_table_details['attributes'] if
+#                                    not attr['name'].startswith('sms_') and attr['name'] not in (
+#                                    'phone_number', 'message_text', 'send_sms_trigger')]
+#
+#         print(f" -> В таблице осталось {len(final_custom_attributes)} пользовательских колонок.")
+#         print_status(len(final_custom_attributes) == 2, "Итоговое количество колонок совпадает с ожидаемым.")
+#
+#         final_attr_names = {attr['name'] for attr in final_custom_attributes}
+#         print_status('contact_phone' not in final_attr_names, "Колонка 'contact_phone' успешно удалена.")
+#         print_status('full_name' in final_attr_names, "Колонка 'full_name' осталась на месте.")
+#         print_status('salary_expectation' in final_attr_names, "Колонка 'salary_expectation' осталась на месте.")
+#
+#         print("\n" + "=" * 60)
+#         print("🎉🎉🎉 ТЕСТ ЖИЗНЕННОГО ЦИКЛА КОЛОНОК ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+#
+#     except requests.exceptions.HTTPError as e:
+#         print(f"\n❌ ОШИБКА HTTP.")
+#         print(f"URL: {e.request.method} {e.request.url}")
+#         print(f"Статус: {e.response.status_code}")
+#         print(f"Ответ: {e.response.text}")
+#     except Exception as e:
+#         print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+#
+#
+# if __name__ == "__main__":
+#     run_attribute_test()
+
+
 import requests
 import json
 import time
@@ -757,7 +895,6 @@ import time
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
 
 BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
-# BASE_URL = "http://89.111.169.47:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
 
 # Секретный токен для регистрации новых пользователей
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
@@ -782,10 +919,10 @@ def print_header(title):
 def register_and_login():
     """Регистрирует нового пользователя и возвращает заголовки с токеном."""
     unique_id = int(time.time())
-    email = f"attr_tester_{unique_id}@example.com"
+    email = f"table_deleter_{unique_id}@example.com"
     password = "password123"
 
-    reg_payload = {"email": email, "password": password, "full_name": "Attributet Tester",
+    reg_payload = {"email": email, "password": password, "full_name": "Table Deleter",
                    "registration_token": CORRECT_REGISTRATION_TOKEN}
     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
 
@@ -794,86 +931,70 @@ def register_and_login():
     return {'Authorization': f'Bearer {token}'}
 
 
-def get_table_details(headers, table_id):
-    """Получает детальную информацию о таблице, включая ее атрибуты."""
-    response = requests.get(f"{BASE_URL}/api/meta/entity-types/{table_id}", headers=headers)
-    response.raise_for_status()
-    return response.json()
-
-
-def run_attribute_test():
+def run_table_deletion_test():
     try:
         # --- ШАГ 1: ПОДГОТОВКА ---
-        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
+        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ДВУХ ТАБЛИЦ")
         headers = register_and_login()
 
-        table_config = {"name": f"candidates_{int(time.time())}", "display_name": "Кандидаты"}
-        table_response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config)
-        table_response.raise_for_status()
-        table_id = table_response.json()['id']
-        print_status(True, f"Создана тестовая таблица 'Кандидаты' с ID: {table_id}")
+        # Таблица 1 (для удаления)
+        table_to_delete_config = {"name": f"projects_to_delete_{int(time.time())}",
+                                  "display_name": "Проекты на удаление"}
+        response1 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_delete_config)
+        response1.raise_for_status()
+        table_to_delete_id = response1.json()['id']
+        print(f" -> Создана таблица '{table_to_delete_config['display_name']}' с ID: {table_to_delete_id}")
 
-        # --- ШАГ 2: СОЗДАНИЕ КОЛОНОК ---
-        print_header("ШАГ 2: СОЗДАНИЕ ТРЕХ КОЛОНОК")
+        # Таблица 2 (для проверки)
+        table_to_keep_config = {"name": f"tasks_to_keep_{int(time.time())}", "display_name": "Задачи для проверки"}
+        response2 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_keep_config)
+        response2.raise_for_status()
+        table_to_keep_id = response2.json()['id']
+        print(f" -> Создана таблица '{table_to_keep_config['display_name']}' с ID: {table_to_keep_id}")
 
-        attrs_to_create = [
-            {"name": "full_name", "display_name": "ФИО", "value_type": "string"},
-            {"name": "salary_expectation", "display_name": "Ожидаемая ЗП", "value_type": "integer"},
-            {"name": "contact_phone", "display_name": "Контактный телефон", "value_type": "string"},
-        ]
+        # --- ШАГ 2: ПРОВЕРКА СОЗДАНИЯ ---
+        list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
+        all_tables = list_response.json()
+        table_names = {t['name'] for t in all_tables}
 
-        for attr in attrs_to_create:
-            url = f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes"
-            requests.post(url, headers=headers, json=attr).raise_for_status()
-            print(f" -> Создана колонка '{attr['display_name']}'")
+        print_status(
+            table_to_delete_config['name'] in table_names and table_to_keep_config['name'] in table_names,
+            "Обе таблицы присутствуют в общем списке."
+        )
 
-        # --- ШАГ 3: ПРОВЕРКА СОЗДАНИЯ ---
-        print_header("ШАГ 3: ПРОВЕРКА, ЧТО ВСЕ КОЛОНКИ СОЗДАНЫ")
+        # --- ШАГ 3: УДАЛЕНИЕ ОДНОЙ ТАБЛИЦЫ ---
+        print_header(f"ШАГ 3: УДАЛЕНИЕ ТАБЛИЦЫ ID={table_to_delete_id}")
 
-        table_details = get_table_details(headers, table_id)
-        # Отфильтровываем системные атрибуты (sms_*, phone_number, etc.)
-        custom_attributes = [attr for attr in table_details['attributes'] if
-                             not attr['name'].startswith('sms_') and attr['name'] not in (
-                             'phone_number', 'message_text', 'send_sms_trigger')]
+        delete_url = f"{BASE_URL}/api/meta/entity-types/{table_to_delete_id}"
+        delete_response = requests.delete(delete_url, headers=headers)
 
-        print(f" -> В таблице найдено {len(custom_attributes)} пользовательских колонок.")
-        print_status(len(custom_attributes) == 3, "Количество созданных колонок совпадает с ожидаемым.")
+        print_status(delete_response.status_code == 204, "Запрос на удаление таблицы прошел успешно (статус 204).")
 
-        created_attr_names = {attr['name'] for attr in custom_attributes}
-        print_status('salary_expectation' in created_attr_names, "Колонка 'salary_expectation' присутствует.")
+        # --- ШАГ 4: ФИНАЛЬНАЯ ПРОВЕРКА ---
+        print_header("ШАГ 4: ПРОВЕРКА ПОСЛЕДСТВИЙ УДАЛЕНИЯ")
 
-        # --- ШАГ 4: УДАЛЕНИЕ ОДНОЙ КОЛОНКИ ---
-        print_header("ШАГ 4: УДАЛЕНИЕ КОЛОНКИ 'contact_phone'")
+        # Проверка 1: Удаленная таблица должна возвращать 404
+        print(f" -> Проверяем доступ к удаленной таблице ID={table_to_delete_id}...")
+        deleted_table_response = requests.get(delete_url, headers=headers)
+        print_status(deleted_table_response.status_code == 404, "Удаленная таблица недоступна (получен статус 404).")
 
-        # Находим ID колонки, которую хотим удалить
-        attr_to_delete = next((attr for attr in custom_attributes if attr['name'] == 'contact_phone'), None)
-        print_status(attr_to_delete is not None, "Найдена колонка 'contact_phone' для удаления.")
+        # Проверка 2: Вторая таблица должна остаться
+        print(f" -> Проверяем доступ к оставшейся таблице ID={table_to_keep_id}...")
+        kept_table_response = requests.get(f"{BASE_URL}/api/meta/entity-types/{table_to_keep_id}", headers=headers)
+        print_status(kept_table_response.status_code == 200, "Вторая таблица осталась на месте и доступна.")
 
-        if attr_to_delete:
-            attr_id_to_delete = attr_to_delete['id']
-            url = f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes/{attr_id_to_delete}"
-            delete_response = requests.delete(url, headers=headers)
+        # Проверка 3: Общий список должен содержать только одну таблицу
+        final_list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
+        final_all_tables = final_list_response.json()
+        final_table_names = {t['name'] for t in final_all_tables}
 
-            print_status(delete_response.status_code == 204, "Запрос на удаление прошел успешно (статус 204).")
-
-        # --- ШАГ 5: ФИНАЛЬНАЯ ПРОВЕРКА ---
-        print_header("ШАГ 5: ПРОВЕРКА, ЧТО КОЛОНКА УДАЛЕНА, А ОСТАЛЬНЫЕ НА МЕСТЕ")
-
-        final_table_details = get_table_details(headers, table_id)
-        final_custom_attributes = [attr for attr in final_table_details['attributes'] if
-                                   not attr['name'].startswith('sms_') and attr['name'] not in (
-                                   'phone_number', 'message_text', 'send_sms_trigger')]
-
-        print(f" -> В таблице осталось {len(final_custom_attributes)} пользовательских колонок.")
-        print_status(len(final_custom_attributes) == 2, "Итоговое количество колонок совпадает с ожидаемым.")
-
-        final_attr_names = {attr['name'] for attr in final_custom_attributes}
-        print_status('contact_phone' not in final_attr_names, "Колонка 'contact_phone' успешно удалена.")
-        print_status('full_name' in final_attr_names, "Колонка 'full_name' осталась на месте.")
-        print_status('salary_expectation' in final_attr_names, "Колонка 'salary_expectation' осталась на месте.")
+        print(f" -> В общем списке остались таблицы: {final_table_names}")
+        print_status(len(final_all_tables) == 1, "В общем списке осталась только одна таблица.")
+        print_status(table_to_keep_config['name'] in final_table_names,
+                     "Оставшаяся таблица корректно присутствует в списке.")
 
         print("\n" + "=" * 60)
-        print("🎉🎉🎉 ТЕСТ ЖИЗНЕННОГО ЦИКЛА КОЛОНОК ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+        print("🎉🎉🎉 ТЕСТ НА УДАЛЕНИЕ ТАБЛИЦ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
 
     except requests.exceptions.HTTPError as e:
         print(f"\n❌ ОШИБКА HTTP.")
@@ -885,4 +1006,4 @@ def run_attribute_test():
 
 
 if __name__ == "__main__":
-    run_attribute_test()
+    run_table_deletion_test()

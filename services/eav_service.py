@@ -673,8 +673,32 @@ class EAVService:
     # так как они либо создают сущность в текущем тенанте,
     # либо используют get_entity_type_by_id, который уже содержит проверки.
 
-    # ... (здесь идут create_entity_type, delete_entity_type, etc. - их можно не менять)
+    def delete_entity_type(self, entity_type_id: int, current_user: models.User):
+        """
+        Удалить тип сущности и ВСЕ связанные с ним данные (атрибуты, сущности, значения).
+        Это необратимая операция!
+        """
+        # 1. Находим таблицу, которую нужно удалить.
+        # Метод get_entity_type_by_id уже содержит проверку прав (tenant_id).
+        entity_type_to_delete = self.get_entity_type_by_id(
+            entity_type_id=entity_type_id,
+            current_user=current_user
+        )
 
+        # SQLAlchemy объект, возвращенный из get_entity_type_by_id, - это Pydantic модель.
+        # Нам нужен оригинальный объект SQLAlchemy для удаления.
+        db_entity_type = self.db.query(models.EntityType).filter(
+            models.EntityType.id == entity_type_id
+        ).first()
+
+        # 2. Удаляем объект. Благодаря cascade="all, delete-orphan" в моделях,
+        # SQLAlchemy и база данных позаботятся об удалении всех дочерних записей.
+        if db_entity_type:
+            self.db.delete(db_entity_type)
+            self.db.commit()
+
+        # Для операции DELETE принято возвращать None.
+        return None
     # --- МЕТОДЫ ДЛЯ ДАННЫХ (Строки в таблицах) ---
 
     def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
