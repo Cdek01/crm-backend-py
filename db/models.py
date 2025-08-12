@@ -1,5 +1,6 @@
 # db/models.py
 from sqlalchemy import Table, Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import inspect # <-- Убедитесь, что этот импорт есть вверху файла
 
 from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
                         Boolean, Text, ForeignKey, UniqueConstraint)
@@ -230,8 +231,19 @@ class Entity(Base):
     values = relationship("AttributeValue", back_populates="entity", cascade="all, delete-orphan")
     entity_type = relationship("EntityType", back_populates="entities")
     def __str__(self):
-        # Отображаем как "Запись #ID в таблице 'Имя таблицы'"
-        return f"Запись #{self.id} в таблице '{self.entity_type.display_name}'"
+        # Получаем инспектор для этого объекта.
+        # Это стандартный способ проверить состояние объекта в SQLAlchemy.
+        ins = inspect(self)
+
+        # Проверяем, был ли атрибут 'entity_type' уже загружен.
+        # 'entity_type' not in ins.unloaded - означает "атрибут НЕ находится в списке незагруженных".
+        if 'entity_type' not in ins.unloaded:
+            # Если он загружен, безопасно обращаемся к нему
+            return f"Запись #{self.id} в таблице '{self.entity_type.display_name}'"
+        else:
+            # Если он НЕ загружен, возвращаем только ID,
+            # чтобы избежать ошибки DetachedInstanceError.
+            return f"Запись #{self.id}"
 
 
 class AttributeValue(Base):
