@@ -620,7 +620,11 @@ class EAVService:
         """
         Получить все типы сущностей. Суперадминистратор видит таблицы всех клиентов.
         """
-        query = self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes))
+        query = (
+            self.db.query(models.EntityType)
+            .options(joinedload(models.EntityType.attributes))
+            .order_by(models.EntityType.id) # <-- ВОТ ЭТО ИЗМЕНЕНИЕ
+        )
         if not current_user.is_superuser:
             query = query.filter(models.EntityType.tenant_id == current_user.tenant_id)
         db_entity_types = query.all()
@@ -641,6 +645,8 @@ class EAVService:
                         attribute.display_name = table_attr_aliases[attribute.name]
             response_list.append(response_entity)
         return response_list
+
+
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         """
