@@ -557,8 +557,8 @@
 #
 #
 #
-# services/eav_service.py
-# from tasks.messaging import send_sms_for_entity_task
+#services/eav_service.py
+from tasks.messaging import send_sms_for_entity_task
 
 from datetime import datetime
 from fastapi import Depends, HTTPException, status
@@ -920,8 +920,10 @@ class EAVService:
             data["sms_status"] = "pending"
             data["send_sms_trigger"] = False  # Сбрасываем триггер
             # Запускаем фоновую задачу
-            send_sms_for_entity_task.delay(entity_id=entity_id)
-
+            send_sms_for_entity_task.delay(
+                entity_id=entity_id,
+                user_id=current_user.id # <-- Передаем ID
+            )
         # 3. Обновляем значения атрибутов
         for key, value in data.items():
             if key not in attributes_map:

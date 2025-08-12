@@ -2,67 +2,70 @@
 import logging
 from celery_worker import celery_app
 from api.wappi import api as send_wappi_text_message
-
+from db import models
 from db.session import SessionLocal
 from services.eav_service import EAVService
+from api import wappi
+
 
 # Настраиваем логгер
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, name="send_sms_for_entity")
-def send_sms_for_entity_task(self, entity_id: int):
+@celery_app.task
+def send_sms_for_entity_task(entity_id: int, user_id: int):  # <-- Добавляем user_id
     """
-    Фоновая задача, которая отправляет сообщение и обновляет статус.
-    `bind=True` позволяет получить доступ к самой задаче через `self`.
+    Фоновая задача для отправки SMS.
     """
-    logger.info(f"Начинаю задачу для entity_id: {entity_id}")
-    logger.info(f"Начинаю задачу для entity_id: {entity_id}")
-    db = SessionLocal()
-    eav_service = EAVService(db=db)
+    print(f"Запущена задача для entity_id={entity_id}, инициирована user_id={user_id}")
 
+    db: Session = SessionLocal()
     try:
-        # ... (код обновления статуса и получения данных без изменений)
-        eav_service.update_entity(entity_id, {"sms_status": "processing"})
-        entity_data = eav_service.get_entity_by_id(entity_id)
-        phone = entity_data.get("phone_number")
-        text = entity_data.get("message_text")
+        from services.eav_service import EAVService
 
-        logger.info(f"Данные для отправки: phone={phone}, text='{text}'")
+        # 1. Загружаем объект пользователя из БД
+        initiator_user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not initiator_user:
+            print(f"Критическая ошибка: пользователь с ID={user_id} не найден. Задача прервана.")
+            # Можно обновить статус на error, но без пользователя это сложно
+            return
 
-        if not phone or not text:
-            raise ValueError("Не указан номер телефона или текст сообщения")
+        # 2. Создаем экземпляр сервиса
+        eav_service = EAVService(db=db)
 
-        # 3. Вызываем ваш API для отправки
-        logger.info(f"Отправляю сообщение через Wappi для entity_id: {entity_id}")
+        # 3. Получаем данные сущности (объект-словарь)
+        # Мы передаем initiator_user, чтобы get_entity_by_id мог проверить права
+        entity_data = eav_service.get_entity_by_id(entity_id, current_user=initiator_user)
 
-        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-        # Убираем третий аргумент `folder_path`
-        has_error = send_wappi_text_message(nomer=phone, text=text)
+        phone_number = entity_data.get("phone_number")
+        message_text = entity_data.get("message_text")
 
-        # 4. Обновляем финальный статус
+        if not phone_number or not message_text:
+            error_message = "Отсутствует номер телефона или текст сообщения."
+            eav_service.update_entity(
+                entity_id,
+                {"sms_status": "error", "sms_last_error": error_message},
+                current_user=initiator_user  # <-- Передаем пользователя
+            )
+            return
+
+        # 4. Вызываем функцию отправки
+        has_error = wappi.api(nomer=phone_number, text=message_text)
+
+        # 5. Обновляем статус в базе данных
         if has_error:
-            # ... (остальной код обработки ошибок без изменений)
-            error_message = "Не удалось отправить текстовое сообщение через Wappi."
-            logger.error(f"Ошибка Wappi для entity_id: {entity_id}. {error_message}")
-            eav_service.update_entity(entity_id, {
-                "sms_status": "error",
-                "sms_last_error": error_message
-            })
+            eav_service.update_entity(
+                entity_id,
+                {"sms_status": "error", "sms_last_error": "Ошибка при отправке через API Wappi."},
+                current_user=initiator_user  # <-- Передаем пользователя
+            )
         else:
-            logger.info(f"Успешная отправка для entity_id: {entity_id}. Обновляю статус на 'sent'")
-            eav_service.update_entity(entity_id, {"sms_status": "sent"})
+            eav_service.update_entity(
+                entity_id,
+                {"sms_status": "sent", "sms_last_error": None},
+                current_user=initiator_user  # <-- Передаем пользователя
+            )
+            print(f"Задача для entity_id={entity_id} успешно выполнена.")
 
-    except Exception as e:
-        logger.error(f"Критическая ошибка в задаче для entity_id: {entity_id}", exc_info=True)
-        # exc_info=True добавит полный traceback в лог
-        try:
-            eav_service.update_entity(entity_id, {
-                "sms_status": "error",
-                "sms_last_error": str(e)
-            })
-        except Exception as db_err:
-            logger.error(f"НЕ УДАЛОСЬ ОБНОВИТЬ СТАТУС ОШИБКИ для entity_id: {entity_id}. Ошибка БД: {db_err}")
     finally:
         db.close()
-        logger.info(f"Задача для entity_id: {entity_id} завершена.")
