@@ -558,7 +558,6 @@
 #
 #
 #services/eav_service.py
-from tasks.messaging import send_sms_for_entity_task
 
 from datetime import datetime
 from fastapi import Depends, HTTPException, status
