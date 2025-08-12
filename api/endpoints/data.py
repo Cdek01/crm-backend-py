@@ -174,7 +174,12 @@ def delete_entity(
 def get_all_entities(
         entity_type_name: str,
 
-        tenant_id: Optional[int] = Query(...),
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Заменяем `Query(...)` на `Query(None, ...)`
+        tenant_id: Optional[int] = Query(
+            None,  # <-- `None` в качестве первого аргумента делает параметр необязательным
+            description="ID клиента (тенанта). Доступно только для суперадминистраторов."
+        ),
         filters: Optional[str] = None,
         sort_by: Optional[str] = 'created_at',
         sort_order: str = 'desc',
