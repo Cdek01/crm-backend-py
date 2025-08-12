@@ -122,11 +122,21 @@ class EntityTypeAdmin(ModelView, model=models.EntityType):
     column_formatters = {"tenant": tenant_formatter}
     # Указываем, какие связанные поля нужно загружать сразу
     # при запросе списка или деталей EntityType.
-    list_query_options = [
+    # Для страницы ДЕТАЛЕЙ нам нужна полная загрузка всего
+    details_query_options = [
+        # Загружаем атрибуты (колонки) этого типа таблицы
         joinedload(models.EntityType.attributes),
-        joinedload(models.EntityType.entities).joinedload(models.Entity.entity_type),
+
+        # Загружаем сущности (строки), и для каждой строки...
+        joinedload(models.EntityType.entities)
+        # ...сразу же загружаем ее тип (чтобы __str__ работал)
+        .joinedload(models.Entity.entity_type),
     ]
-    details_query_options = list_query_options
+
+    # Для страницы СПИСКА нам не нужны все детали, чтобы не замедлять загрузку
+    list_query_options = [
+        joinedload(models.EntityType.tenant),  # Загружаем тенанта для отображения
+    ]
 
 
 
