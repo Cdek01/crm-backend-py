@@ -190,6 +190,8 @@ class EntityType(Base):
     __table_args__ = (
         UniqueConstraint('name', 'tenant_id', name='_name_tenant_uc'),
     )
+    def __str__(self):
+        return self.display_name # Будет отображаться "Логи отправки SMS"
 
 
 class Attribute(Base):
@@ -213,6 +215,8 @@ class Attribute(Base):
     # "delete" (в составе "all") - удаляет все связанные 'AttributeValue', когда удаляется сам 'Attribute'.
     values = relationship("AttributeValue", cascade="all, delete-orphan")
 
+    def __str__(self):
+        return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
 
 class Entity(Base):
     """Представляет одну 'строку' в пользовательской таблице. Например, конкретный проект."""
@@ -225,7 +229,10 @@ class Entity(Base):
     # Связь для каскадного удаления всех значений при удалении сущности
     values = relationship("AttributeValue", back_populates="entity", cascade="all, delete-orphan")
     entity_type = relationship("EntityType", back_populates="entities")
-
+    def __str__(self):
+        # Отображаем как "Запись #ID в таблице 'Имя таблицы'"
+        return f"Запись #{self.id} в таблице '{self.entity_type.display_name}'"
+    
 
 class AttributeValue(Base):
     """Хранит одно конкретное значение для одной строки и одной колонки."""
