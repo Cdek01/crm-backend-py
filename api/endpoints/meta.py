@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from typing import List
 
 from db import models
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate,EntityTypeUpdate
 from services.eav_service import EAVService
 from api.deps import get_current_user
 
@@ -106,3 +106,19 @@ def create_attribute(
         attribute_in=attribute_in,
         current_user=current_user # <-- Важный аргумент
     )
+
+@router.put("/entity-types/{entity_type_id}", response_model=EntityType)
+def update_entity_type(
+    entity_type_id: int,
+    entity_type_in: EntityTypeUpdate,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+    ):
+    """
+    Обновить отображаемое имя для типа сущности ('таблицы').
+    """
+    return service.update_entity_type(
+    entity_type_id=entity_type_id,
+    entity_type_in=entity_type_in,
+    current_user=current_user
+)

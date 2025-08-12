@@ -888,122 +888,123 @@
 #     run_attribute_test()
 
 
-import requests
-import json
-import time
-
-# --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
-
-BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
-
-# Секретный токен для регистрации новых пользователей
-CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
-
-
-# ----------------------------------------------------
-
-def print_status(ok, message):
-    if ok:
-        print(f"✅ [PASS] {message}")
-    else:
-        print(f"❌ [FAIL] {message}")
-        exit(1)
-
-
-def print_header(title):
-    print("\n" + "=" * 60)
-    print(f" {title} ".center(60, "="))
-    print("=" * 60)
-
-
-def register_and_login():
-    """Регистрирует нового пользователя и возвращает заголовки с токеном."""
-    unique_id = int(time.time())
-    email = f"table_deleter_{unique_id}@example.com"
-    password = "password123"
-
-    reg_payload = {"email": email, "password": password, "full_name": "Table Deleter",
-                   "registration_token": CORRECT_REGISTRATION_TOKEN}
-    requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
-
-    auth_payload = {'username': email, 'password': password}
-    token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
-    return {'Authorization': f'Bearer {token}'}
-
-
-def run_table_deletion_test():
-    try:
-        # --- ШАГ 1: ПОДГОТОВКА ---
-        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ДВУХ ТАБЛИЦ")
-        headers = register_and_login()
-
-        # Таблица 1 (для удаления)
-        table_to_delete_config = {"name": f"projects_to_delete_{int(time.time())}",
-                                  "display_name": "Проекты на удаление"}
-        response1 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_delete_config)
-        response1.raise_for_status()
-        table_to_delete_id = response1.json()['id']
-        print(f" -> Создана таблица '{table_to_delete_config['display_name']}' с ID: {table_to_delete_id}")
-
-        # Таблица 2 (для проверки)
-        table_to_keep_config = {"name": f"tasks_to_keep_{int(time.time())}", "display_name": "Задачи для проверки"}
-        response2 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_keep_config)
-        response2.raise_for_status()
-        table_to_keep_id = response2.json()['id']
-        print(f" -> Создана таблица '{table_to_keep_config['display_name']}' с ID: {table_to_keep_id}")
-
-        # --- ШАГ 2: ПРОВЕРКА СОЗДАНИЯ ---
-        list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
-        all_tables = list_response.json()
-        table_names = {t['name'] for t in all_tables}
-
-        print_status(
-            table_to_delete_config['name'] in table_names and table_to_keep_config['name'] in table_names,
-            "Обе таблицы присутствуют в общем списке."
-        )
-
-        # --- ШАГ 3: УДАЛЕНИЕ ОДНОЙ ТАБЛИЦЫ ---
-        print_header(f"ШАГ 3: УДАЛЕНИЕ ТАБЛИЦЫ ID={table_to_delete_id}")
-
-        delete_url = f"{BASE_URL}/api/meta/entity-types/{table_to_delete_id}"
-        delete_response = requests.delete(delete_url, headers=headers)
-
-        print_status(delete_response.status_code == 204, "Запрос на удаление таблицы прошел успешно (статус 204).")
-
-        # --- ШАГ 4: ФИНАЛЬНАЯ ПРОВЕРКА ---
-        print_header("ШАГ 4: ПРОВЕРКА ПОСЛЕДСТВИЙ УДАЛЕНИЯ")
-
-        # Проверка 1: Удаленная таблица должна возвращать 404
-        print(f" -> Проверяем доступ к удаленной таблице ID={table_to_delete_id}...")
-        deleted_table_response = requests.get(delete_url, headers=headers)
-        print_status(deleted_table_response.status_code == 404, "Удаленная таблица недоступна (получен статус 404).")
-
-        # Проверка 2: Вторая таблица должна остаться
-        print(f" -> Проверяем доступ к оставшейся таблице ID={table_to_keep_id}...")
-        kept_table_response = requests.get(f"{BASE_URL}/api/meta/entity-types/{table_to_keep_id}", headers=headers)
-        print_status(kept_table_response.status_code == 200, "Вторая таблица осталась на месте и доступна.")
-
-        # Проверка 3: Общий список должен содержать только одну таблицу
-        final_list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
-        final_all_tables = final_list_response.json()
-        final_table_names = {t['name'] for t in final_all_tables}
-
-        print(f" -> В общем списке остались таблицы: {final_table_names}")
-        print_status(len(final_all_tables) == 1, "В общем списке осталась только одна таблица.")
-        print_status(table_to_keep_config['name'] in final_table_names,
-                     "Оставшаяся таблица корректно присутствует в списке.")
-
-        print("\n" + "=" * 60)
-        print("🎉🎉🎉 ТЕСТ НА УДАЛЕНИЕ ТАБЛИЦ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
-
-    except requests.exceptions.HTTPError as e:
-        print(f"\n❌ ОШИБКА HTTP.")
-        print(f"URL: {e.request.method} {e.request.url}")
-        print(f"Статус: {e.response.status_code}")
-        print(f"Ответ: {e.response.text}")
-    except Exception as e:
-        print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
-
-
-if __name__ == "__main__":
-    run_table_deletion_test()
+# import requests
+# import json
+# import time
+#
+# # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
+#
+# # BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
+# BASE_URL = "http://89.111.169.47:8005"
+#
+# # Секретный токен для регистрации новых пользователей
+# CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
+#
+#
+# # ----------------------------------------------------
+#
+# def print_status(ok, message):
+#     if ok:
+#         print(f"✅ [PASS] {message}")
+#     else:
+#         print(f"❌ [FAIL] {message}")
+#         exit(1)
+#
+#
+# def print_header(title):
+#     print("\n" + "=" * 60)
+#     print(f" {title} ".center(60, "="))
+#     print("=" * 60)
+#
+#
+# def register_and_login():
+#     """Регистрирует нового пользователя и возвращает заголовки с токеном."""
+#     unique_id = int(time.time())
+#     email = f"table_deleter_{unique_id}@example.com"
+#     password = "password123"
+#
+#     reg_payload = {"email": email, "password": password, "full_name": "Table Deleter",
+#                    "registration_token": CORRECT_REGISTRATION_TOKEN}
+#     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
+#
+#     auth_payload = {'username': email, 'password': password}
+#     token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
+#     return {'Authorization': f'Bearer {token}'}
+#
+#
+# def run_table_deletion_test():
+#     try:
+#         # --- ШАГ 1: ПОДГОТОВКА ---
+#         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ДВУХ ТАБЛИЦ")
+#         headers = register_and_login()
+#
+#         # Таблица 1 (для удаления)
+#         table_to_delete_config = {"name": f"projects_to_delete_{int(time.time())}",
+#                                   "display_name": "Проекты на удаление"}
+#         response1 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_delete_config)
+#         response1.raise_for_status()
+#         table_to_delete_id = response1.json()['id']
+#         print(f" -> Создана таблица '{table_to_delete_config['display_name']}' с ID: {table_to_delete_id}")
+#
+#         # Таблица 2 (для проверки)
+#         table_to_keep_config = {"name": f"tasks_to_keep_{int(time.time())}", "display_name": "Задачи для проверки"}
+#         response2 = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_to_keep_config)
+#         response2.raise_for_status()
+#         table_to_keep_id = response2.json()['id']
+#         print(f" -> Создана таблица '{table_to_keep_config['display_name']}' с ID: {table_to_keep_id}")
+#
+#         # --- ШАГ 2: ПРОВЕРКА СОЗДАНИЯ ---
+#         list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
+#         all_tables = list_response.json()
+#         table_names = {t['name'] for t in all_tables}
+#
+#         print_status(
+#             table_to_delete_config['name'] in table_names and table_to_keep_config['name'] in table_names,
+#             "Обе таблицы присутствуют в общем списке."
+#         )
+#
+#         # --- ШАГ 3: УДАЛЕНИЕ ОДНОЙ ТАБЛИЦЫ ---
+#         print_header(f"ШАГ 3: УДАЛЕНИЕ ТАБЛИЦЫ ID={table_to_delete_id}")
+#
+#         delete_url = f"{BASE_URL}/api/meta/entity-types/{table_to_delete_id}"
+#         delete_response = requests.delete(delete_url, headers=headers)
+#
+#         print_status(delete_response.status_code == 204, "Запрос на удаление таблицы прошел успешно (статус 204).")
+#
+#         # --- ШАГ 4: ФИНАЛЬНАЯ ПРОВЕРКА ---
+#         print_header("ШАГ 4: ПРОВЕРКА ПОСЛЕДСТВИЙ УДАЛЕНИЯ")
+#
+#         # Проверка 1: Удаленная таблица должна возвращать 404
+#         print(f" -> Проверяем доступ к удаленной таблице ID={table_to_delete_id}...")
+#         deleted_table_response = requests.get(delete_url, headers=headers)
+#         print_status(deleted_table_response.status_code == 404, "Удаленная таблица недоступна (получен статус 404).")
+#
+#         # Проверка 2: Вторая таблица должна остаться
+#         print(f" -> Проверяем доступ к оставшейся таблице ID={table_to_keep_id}...")
+#         kept_table_response = requests.get(f"{BASE_URL}/api/meta/entity-types/{table_to_keep_id}", headers=headers)
+#         print_status(kept_table_response.status_code == 200, "Вторая таблица осталась на месте и доступна.")
+#
+#         # Проверка 3: Общий список должен содержать только одну таблицу
+#         final_list_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
+#         final_all_tables = final_list_response.json()
+#         final_table_names = {t['name'] for t in final_all_tables}
+#
+#         print(f" -> В общем списке остались таблицы: {final_table_names}")
+#         print_status(len(final_all_tables) == 1, "В общем списке осталась только одна таблица.")
+#         print_status(table_to_keep_config['name'] in final_table_names,
+#                      "Оставшаяся таблица корректно присутствует в списке.")
+#
+#         print("\n" + "=" * 60)
+#         print("🎉🎉🎉 ТЕСТ НА УДАЛЕНИЕ ТАБЛИЦ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+#
+#     except requests.exceptions.HTTPError as e:
+#         print(f"\n❌ ОШИБКА HTTP.")
+#         print(f"URL: {e.request.method} {e.request.url}")
+#         print(f"Статус: {e.response.status_code}")
+#         print(f"Ответ: {e.response.text}")
+#     except Exception as e:
+#         print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+#
+#
+# if __name__ == "__main__":
+#     run_table_deletion_test()

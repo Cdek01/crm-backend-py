@@ -463,119 +463,218 @@
 #     run_creation_script()
 
 
-import requests
-import json
-
-# --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
-
-# Адрес вашего запущенного API
-BASE_URL = "http://127.0.0.1:8005"
-# BASE_URL = "http://89.111.169.47:8005"
-
-# --- Данные пользователя, которому вы дали доступ ---   SELECT id, email FROM users WHERE email = 'user@example.com';
-USER_EMAIL = "user2@example.com"
-USER_PASSWORD = "password_b"
-
-# --- Системное имя кастомной таблицы для просмотра ---
-# Это поле 'name', а не 'display_name'
-# TABLE_NAME_TO_VIEW = "klienty"  # <--- ЗАМЕНИТЕ НА ИМЯ ВАШЕЙ ТАБЛИЦЫ
-
+# import requests
+# import json
+#
+# # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
+#
+# # Адрес вашего запущенного API
+# BASE_URL = "http://127.0.0.1:8005"
+# # BASE_URL = "http://89.111.169.47:8005"
+#
+# # --- Данные пользователя, которому вы дали доступ ---   SELECT id, email FROM users WHERE email = 'user@example.com';
+# USER_EMAIL = "user2@example.com"
+# USER_PASSWORD = "password_b"
+#
+# # --- Системное имя кастомной таблицы для просмотра ---
+# # Это поле 'name', а не 'display_name'
+# # TABLE_NAME_TO_VIEW = "klienty"  # <--- ЗАМЕНИТЕ НА ИМЯ ВАШЕЙ ТАБЛИЦЫ
+#
 
 
 # ----------------------------------------------------
 
+# def print_status(ok, message):
+#     """Выводит красивый статус операции."""
+#     if ok:
+#         print(f"✅ [SUCCESS] {message}")
+#     else:
+#         print(f"❌ [FAILURE] {message}")
+#         exit(1)
+#
+#
+# def list_accessible_tables():
+#     """
+#     Авторизуется, получает права пользователя и на их основе
+#     фильтрует общий список таблиц, чтобы показать только доступные.
+#     """
+#     headers = {}
+#
+#     try:
+#         # --- ШАГ 1: АВТОРИЗАЦИЯ И ПОЛУЧЕНИЕ ПРАВ ---
+#         print("-" * 60)
+#         print(f"ШАГ 1: Авторизация и получение прав для {USER_EMAIL}...")
+#
+#         # 1.1. Получаем токен
+#         auth_payload_form = {'username': USER_EMAIL, 'password': USER_PASSWORD}
+#         auth_response = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload_form)
+#         auth_response.raise_for_status()
+#         token = auth_response.json()['access_token']
+#         headers = {'Authorization': f'Bearer {token}'}
+#
+#         # 1.2. Получаем данные о пользователе, включая его разрешения
+#         me_response = requests.get(f"{BASE_URL}/api/users/me", headers=headers)
+#         me_response.raise_for_status()
+#         user_data = me_response.json()
+#         user_permissions = set(user_data.get("permissions", []))
+#
+#         print_status(True, f"Получено {len(user_permissions)} уникальных разрешений.")
+#         # print("Разрешения пользователя:", user_permissions)
+#
+#         # --- ШАГ 2: ПОЛУЧЕНИЕ ОБЩЕГО СПИСКА ВСЕХ ТАБЛИЦ ---
+#         print("\n" + "-" * 60)
+#         print("ШАГ 2: Получение общего списка всех кастомных таблиц...")
+#
+#         # Запрашиваем все кастомные таблицы, созданные в этом тенанте
+#         meta_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
+#         meta_response.raise_for_status()
+#         all_custom_tables = meta_response.json()
+#
+#         print(f" -> Найдено всего кастомных таблиц в тенанте: {len(all_custom_tables)}")
+#
+#         # --- ШАГ 3: ФИЛЬТРАЦИЯ И ВЫВОД РЕЗУЛЬТАТА ---
+#         print("\n" + "-" * 60)
+#         print("ШАГ 3: Фильтрация таблиц на основе прав пользователя...")
+#
+#         accessible_tables = []
+#
+#         # Проверяем доступ к стандартным сущностям
+#         if "leads:view" in user_permissions:
+#             accessible_tables.append({"display_name": "Лиды (стандартная)", "system_name": "leads"})
+#         if "legal_entities:view" in user_permissions:
+#             accessible_tables.append({"display_name": "Юр. лица (стандартная)", "system_name": "legal-entities"})
+#         if "individuals:view" in user_permissions:
+#             accessible_tables.append({"display_name": "Физ. лица (стандартная)", "system_name": "individuals"})
+#
+#         # Проверяем доступ к кастомным таблицам
+#         for table in all_custom_tables:
+#             view_permission_name = f"data:view:{table['name']}"
+#             if view_permission_name in user_permissions:
+#                 accessible_tables.append({
+#                     "display_name": table['display_name'],
+#                     "system_name": table['name']
+#                 })
+#
+#         print_status(True, f"Найдено доступных для просмотра таблиц: {len(accessible_tables)}")
+#
+#         # --- ШАГ 4: ВЫВОД СПИСКА ---
+#         print("\n" + "-" * 60)
+#         print("СПИСОК ТАБЛИЦ, ДОСТУПНЫХ ПОЛЬЗОВАТЕЛЮ:")
+#
+#         if not accessible_tables:
+#             print("\nУ пользователя нет доступа ни к одной таблице.")
+#         else:
+#             for table in accessible_tables:
+#                 print(f"  - {table['display_name']} (системное имя: {table['system_name']})")
+#
+#         print("\n" + "-" * 60)
+#
+#     except requests.exceptions.HTTPError as e:
+#         print(f"\n❌ ОШИБКА HTTP.")
+#         print(f"Статус код: {e.response.status_code}")
+#         print(f"Ответ сервера: {e.response.text}")
+#     except Exception as e:
+#         print(f"\n❌ ПРОИЗОШЛА НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+#
+#
+# if __name__ == "__main__":
+#     list_accessible_tables()
+
+
+import requests
+import time
+
+# --- НАСТРОЙКИ ---
+BASE_URL = "http://127.0.0.1:8005"
+CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
+
+
+# -----------------
+
 def print_status(ok, message):
-    """Выводит красивый статус операции."""
     if ok:
-        print(f"✅ [SUCCESS] {message}")
+        print(f"✅ [PASS] {message}")
     else:
-        print(f"❌ [FAILURE] {message}")
+        print(f"❌ [FAIL] {message}")
         exit(1)
 
 
-def list_accessible_tables():
-    """
-    Авторизуется, получает права пользователя и на их основе
-    фильтрует общий список таблиц, чтобы показать только доступные.
-    """
-    headers = {}
+def print_header(title):
+    print("\n" + "=" * 60)
+    print(f" {title} ".center(60, "="))
+    print("=" * 60)
 
+
+# ... (функция register_and_login из предыдущего скрипта)
+
+def run_rename_test():
     try:
-        # --- ШАГ 1: АВТОРИЗАЦИЯ И ПОЛУЧЕНИЕ ПРАВ ---
-        print("-" * 60)
-        print(f"ШАГ 1: Авторизация и получение прав для {USER_EMAIL}...")
+        # --- ШАГ 1: ПОДГОТОВКА ---
+        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
+        headers = register_and_login()
 
-        # 1.1. Получаем токен
-        auth_payload_form = {'username': USER_EMAIL, 'password': USER_PASSWORD}
-        auth_response = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload_form)
-        auth_response.raise_for_status()
-        token = auth_response.json()['access_token']
-        headers = {'Authorization': f'Bearer {token}'}
+        initial_name = "Старое Имя"
+        table_config = {"name": f"rename_test_{int(time.time())}", "display_name": initial_name}
 
-        # 1.2. Получаем данные о пользователе, включая его разрешения
-        me_response = requests.get(f"{BASE_URL}/api/users/me", headers=headers)
-        me_response.raise_for_status()
-        user_data = me_response.json()
-        user_permissions = set(user_data.get("permissions", []))
+        response = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config)
+        response.raise_for_status()
+        table_id = response.json()['id']
+        print_status(True, f"Создана таблица '{initial_name}' с ID: {table_id}")
 
-        print_status(True, f"Получено {len(user_permissions)} уникальных разрешений.")
-        # print("Разрешения пользователя:", user_permissions)
+        # --- ШАГ 2: ИЗМЕНЕНИЕ ИМЕНИ ---
+        print_header("ШАГ 2: ИЗМЕНЕНИЕ ОТОБРАЖАЕМОГО ИМЕНИ")
 
-        # --- ШАГ 2: ПОЛУЧЕНИЕ ОБЩЕГО СПИСКА ВСЕХ ТАБЛИЦ ---
-        print("\n" + "-" * 60)
-        print("ШАГ 2: Получение общего списка всех кастомных таблиц...")
+        new_name = "НОВОЕ ОБНОВЛЕННОЕ ИМЯ"
+        update_payload = {"display_name": new_name}
 
-        # Запрашиваем все кастомные таблицы, созданные в этом тенанте
-        meta_response = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers)
-        meta_response.raise_for_status()
-        all_custom_tables = meta_response.json()
+        url = f"{BASE_URL}/api/meta/entity-types/{table_id}"
+        update_response = requests.put(url, headers=headers, json=update_payload)
+        update_response.raise_for_status()
 
-        print(f" -> Найдено всего кастомных таблиц в тенанте: {len(all_custom_tables)}")
+        updated_table_data = update_response.json()
+        print_status(update_response.status_code == 200, "Запрос на обновление прошел успешно (статус 200).")
+        print_status(
+            updated_table_data.get('display_name') == new_name,
+            f"API в ответе вернуло новое имя: '{updated_table_data.get('display_name')}'"
+        )
 
-        # --- ШАГ 3: ФИЛЬТРАЦИЯ И ВЫВОД РЕЗУЛЬТАТА ---
-        print("\n" + "-" * 60)
-        print("ШАГ 3: Фильтрация таблиц на основе прав пользователя...")
+        # --- ШАГ 3: ФИНАЛЬНАЯ ПРОВЕРКА ---
+        print_header("ШАГ 3: ПРОВЕРКА, ЧТО ИЗМЕНЕНИЯ СОХРАНИЛИСЬ")
 
-        accessible_tables = []
+        get_response = requests.get(url, headers=headers)
+        get_response.raise_for_status()
+        final_table_data = get_response.json()
 
-        # Проверяем доступ к стандартным сущностям
-        if "leads:view" in user_permissions:
-            accessible_tables.append({"display_name": "Лиды (стандартная)", "system_name": "leads"})
-        if "legal_entities:view" in user_permissions:
-            accessible_tables.append({"display_name": "Юр. лица (стандартная)", "system_name": "legal-entities"})
-        if "individuals:view" in user_permissions:
-            accessible_tables.append({"display_name": "Физ. лица (стандартная)", "system_name": "individuals"})
+        print(f" -> Повторный GET-запрос вернул имя: '{final_table_data.get('display_name')}'")
+        print_status(
+            final_table_data.get('display_name') == new_name,
+            "Изменения успешно сохранены и подтверждены."
+        )
 
-        # Проверяем доступ к кастомным таблицам
-        for table in all_custom_tables:
-            view_permission_name = f"data:view:{table['name']}"
-            if view_permission_name in user_permissions:
-                accessible_tables.append({
-                    "display_name": table['display_name'],
-                    "system_name": table['name']
-                })
-
-        print_status(True, f"Найдено доступных для просмотра таблиц: {len(accessible_tables)}")
-
-        # --- ШАГ 4: ВЫВОД СПИСКА ---
-        print("\n" + "-" * 60)
-        print("СПИСОК ТАБЛИЦ, ДОСТУПНЫХ ПОЛЬЗОВАТЕЛЮ:")
-
-        if not accessible_tables:
-            print("\nУ пользователя нет доступа ни к одной таблице.")
-        else:
-            for table in accessible_tables:
-                print(f"  - {table['display_name']} (системное имя: {table['system_name']})")
-
-        print("\n" + "-" * 60)
+        print("\n" + "=" * 60)
+        print("🎉🎉🎉 ТЕСТ НА ИЗМЕНЕНИЕ ИМЕНИ ТАБЛИЦЫ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
 
     except requests.exceptions.HTTPError as e:
         print(f"\n❌ ОШИБКА HTTP.")
-        print(f"Статус код: {e.response.status_code}")
-        print(f"Ответ сервера: {e.response.text}")
+        print(f"URL: {e.request.method} {e.request.url}")
+        print(f"Статус: {e.response.status_code}")
+        print(f"Ответ: {e.response.text}")
     except Exception as e:
-        print(f"\n❌ ПРОИЗОШЛА НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+        print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+
+
+# (Вставьте сюда функцию register_and_login из предыдущего скрипта)
+def register_and_login():
+    unique_id = int(time.time())
+    email = f"rename_tester_{unique_id}@example.com"
+    password = "password123"
+    reg_payload = {"email": email, "password": password, "full_name": "Rename Tester",
+                   "registration_token": CORRECT_REGISTRATION_TOKEN}
+    requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
+    auth_payload = {'username': email, 'password': password}
+    token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
+    return {'Authorization': f'Bearer {token}'}
 
 
 if __name__ == "__main__":
-    list_accessible_tables()
+    run_rename_test()

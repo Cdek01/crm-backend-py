@@ -41,6 +41,10 @@ class EntityTypeBase(BaseModel):
 class EntityTypeCreate(EntityTypeBase):
     pass
 
+# --- ДОБАВЬТЕ ЭТУ СХЕМУ ---
+class EntityTypeUpdate(BaseModel):
+    display_name: str
+# --------------------------
 
 class EntityType(EntityTypeBase):
     id: int

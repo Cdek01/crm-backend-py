@@ -254,46 +254,46 @@
 #         # Для операции DELETE принято возвращать None или пустой ответ.
 #         return None
 #
-    # def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
-    #     """
-    #     Удалить атрибут ('колонку') из типа сущности и все его значения.
-    #     """
-    #     # 1. Сначала проверяем, что сам тип сущности (таблица) существует
-    #     # и принадлежит текущему пользователю. Это защищает от попытки удалить
-    #     # колонку из чужой таблицы.
-    #     self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
-    #
-    #     # 2. Находим сам атрибут, который нужно удалить.
-    #     # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
-    #     attribute_to_delete = self.db.query(models.Attribute).filter(
-    #         models.Attribute.id == attribute_id,
-    #         models.Attribute.entity_type_id == entity_type_id
-    #     ).first()
-    #
-    #     # 3. Если атрибут не найден, возвращаем ошибку.
-    #     if not attribute_to_delete:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_404_NOT_FOUND,
-    #             detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
-    #         )
-    #
-    #     # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
-    #     system_attributes = [
-    #         "send_sms_trigger", "sms_status", "sms_last_error",
-    #         "phone_number", "message_text"
-    #     ]
-    #     if attribute_to_delete.name in system_attributes:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_400_BAD_REQUEST,
-    #             detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
-    #         )
-    #
-    #     # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
-    #     # будут удалены автоматически на уровне базы данных.
-    #     self.db.delete(attribute_to_delete)
-    #     self.db.commit()
-    #
-    #     return None
+# def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
+#     """
+#     Удалить атрибут ('колонку') из типа сущности и все его значения.
+#     """
+#     # 1. Сначала проверяем, что сам тип сущности (таблица) существует
+#     # и принадлежит текущему пользователю. Это защищает от попытки удалить
+#     # колонку из чужой таблицы.
+#     self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
+#
+#     # 2. Находим сам атрибут, который нужно удалить.
+#     # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
+#     attribute_to_delete = self.db.query(models.Attribute).filter(
+#         models.Attribute.id == attribute_id,
+#         models.Attribute.entity_type_id == entity_type_id
+#     ).first()
+#
+#     # 3. Если атрибут не найден, возвращаем ошибку.
+#     if not attribute_to_delete:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
+#         )
+#
+#     # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
+#     system_attributes = [
+#         "send_sms_trigger", "sms_status", "sms_last_error",
+#         "phone_number", "message_text"
+#     ]
+#     if attribute_to_delete.name in system_attributes:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
+#         )
+#
+#     # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
+#     # будут удалены автоматически на уровне базы данных.
+#     self.db.delete(attribute_to_delete)
+#     self.db.commit()
+#
+#     return None
 #
 #
 #     # ИЗМЕНЕНИЕ: Добавляем current_user в аргументы
@@ -567,7 +567,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, asc, desc
 from sqlalchemy.orm import aliased
 from db import models, session
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
 from .alias_service import AliasService
 
 VALUE_FIELD_MAP = {
@@ -1046,3 +1046,36 @@ class EAVService:
         self.db.commit()
 
         return None
+
+    def update_entity_type(
+            self,
+            entity_type_id: int,
+            entity_type_in: EntityTypeUpdate,
+            current_user: models.User
+    ) -> models.EntityType:
+        """
+        Обновить отображаемое имя для типа сущности.
+        """
+        # 1. Находим объект SQLAlchemy для обновления, используя метод,
+        # который уже содержит проверку прав.
+        # Нам нужен именно объект БД, а не Pydantic-схема.
+        db_entity_type = self.db.query(models.EntityType).filter(
+            models.EntityType.id == entity_type_id
+        ).first()
+
+        # Проверяем, что объект найден и принадлежит пользователю
+        if not db_entity_type or (not current_user.is_superuser and db_entity_type.tenant_id != current_user.tenant_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Тип сущности не найден"
+            )
+
+        # 2. Обновляем поле
+        db_entity_type.display_name = entity_type_in.display_name
+
+        # 3. Сохраняем изменения
+        self.db.add(db_entity_type)
+        self.db.commit()
+        self.db.refresh(db_entity_type)
+
+        return db_entity_type
