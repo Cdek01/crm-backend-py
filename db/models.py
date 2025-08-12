@@ -253,7 +253,22 @@ class AttributeValue(Base):
     entity = relationship("Entity", back_populates="values")
     attribute = relationship("Attribute", back_populates="values")
 
+    def __str__(self):
+        # Эта функция вернет первое непустое значение из полей
+        value = (
+                self.value_string or
+                self.value_integer or
+                self.value_float or
+                self.value_date or
+                self.value_boolean
+        )
 
+        # Если по какой-то причине все поля пустые, вернем 'NULL'
+        if value is None:
+            return 'NULL'
+
+        # Преобразуем значение в строку и возвращаем
+        return str(value)
 
 
 
@@ -294,7 +309,7 @@ class AttributeAlias(Base):
         # Преобразуем значение в строку и возвращаем
         return str(value)
 
-    
+
 class TableAlias(Base):
     """Хранит пользовательские названия (псевдонимы) для таблиц."""
     __tablename__ = 'table_aliases'
