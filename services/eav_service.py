@@ -612,3 +612,27 @@ class EAVService:
         self.db.refresh(db_entity_type)
 
         return db_entity_type
+
+    # --- ДОБАВЬТЕ ЭТОТ НОВЫЙ МЕТОД ---
+    def create_entity_and_get_list(
+            self,
+            entity_type_name: str,
+            data: Dict[str, Any],
+            current_user: models.User
+    ) -> List[Dict[str, Any]]:
+        """
+        Создает новую сущность, а затем возвращает полный список всех сущностей
+        для этого типа, отсортированный по умолчанию (новые вверху).
+        """
+        # 1. Сначала просто создаем новую запись, используя уже существующий метод
+        self.create_entity(entity_type_name, data, current_user)
+
+        # 2. Теперь вызываем метод для получения полного списка
+        # Он уже умеет сортировать по умолчанию (created_at desc)
+        full_sorted_list = self.get_all_entities_for_type(
+            entity_type_name=entity_type_name,
+            current_user=current_user
+            # Мы не передаем другие параметры, чтобы использовались значения по умолчанию
+        )
+
+        return full_sorted_list
