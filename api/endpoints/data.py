@@ -5,12 +5,29 @@ import json
 from db import models
 from services.eav_service import EAVService
 from api.deps import get_current_user
+from schemas.data import BulkDeleteRequest
 
 router = APIRouter()
 
 
 
-
+@router.post("/{entity_type_name}/bulk-delete", status_code=status.HTTP_200_OK)
+def delete_multiple_entities(
+    entity_type_name: str,
+    delete_request: BulkDeleteRequest = Body(...),
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Массовое удаление записей по списку их ID.
+    Возвращает JSON с количеством удаленных записей.
+    """
+    deleted_count = service.delete_multiple_entities(
+        entity_type_name=entity_type_name,
+        ids=delete_request.ids,
+        current_user=current_user
+    )
+    return {"deleted_count": deleted_count}
 
 
 

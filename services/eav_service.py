@@ -636,3 +636,45 @@ class EAVService:
         )
 
         return full_sorted_list
+
+
+
+
+
+
+
+
+    def delete_multiple_entities(
+            self,
+            entity_type_name: str,
+            ids: List[int],
+            current_user: models.User
+    ) -> int:
+        """
+        Удаляет несколько записей (сущностей) по списку их ID.
+        Возвращает количество удаленных записей.
+        """
+        # 1. Сначала получаем метаданные таблицы, чтобы убедиться, что она
+        # существует и принадлежит текущему пользователю (проверка прав).
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+
+        # 2. Строим запрос на удаление.
+        query = self.db.query(models.Entity).filter(
+            models.Entity.entity_type_id == entity_type.id,
+            models.Entity.id.in_(ids)
+        )
+
+        # Для суперадминистратора эта проверка не нужна, но для обычного пользователя
+        # она гарантирует, что он не сможет удалить записи из чужой таблицы,
+        # даже если она имеет то же имя.
+        if not current_user.is_superuser:
+            query = query.filter(models.Entity.entity_type.has(tenant_id=current_user.tenant_id))
+
+        # 3. Выполняем удаление и получаем количество удаленных строк.
+        # synchronize_session=False рекомендуется для массовых операций.
+        num_deleted = query.delete(synchronize_session=False)
+
+        # 4. Коммитим транзакцию.
+        self.db.commit()
+
+        return num_deleted
