@@ -513,54 +513,119 @@ class EAVService:
 
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
+
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
-        """Создать новую запись."""
-        # Обычный пользователь может создать запись только в своей таблице.
+        """Создать новую запись с корректным преобразованием типов."""
+
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
 
-        # 1. Создаем саму сущность (строку)
         new_entity = models.Entity(entity_type_id=entity_type.id)
         self.db.add(new_entity)
-        self.db.flush()  # Получаем ID до коммита, чтобы использовать его ниже
+        self.db.flush()
 
-        # 3. Создаем "ячейки", обрабатывая типы данных
         for key, value in data.items():
-            if key not in attributes_map or value is None:
+            if key not in attributes_map:
                 continue
 
             attribute = attributes_map[key]
-            value_field_name = VALUE_FIELD_MAP[attribute.value_type]
 
+            # --- НОВАЯ, УЛУЧШЕННАЯ ЛОГИКА ОБРАБОТКИ ТИПОВ ---
             processed_value = value
+            value_type = attribute.value_type
 
-            # --- КЛЮЧЕВАЯ ЛОГИКА ПРЕОБРАЗОВАНИЯ ТИПОВ ---
-            # Если атрибут должен быть датой, а пришла строка, конвертируем
-            if attribute.value_type == 'date' and isinstance(value, str):
+            # 1. Если значение - пустая строка, превращаем ее в None,
+            #    чтобы избежать ошибок с числовыми/датными типами.
+            if processed_value == '':
+                processed_value = None
+
+            # 2. Пропускаем None значения, чтобы не создавать пустых записей в БД
+            if processed_value is None:
+                continue
+
+            # 3. Конвертируем строку в дату, если нужно
+            if value_type == 'date' and isinstance(processed_value, str):
                 try:
-                    processed_value = datetime.fromisoformat(value)
+                    processed_value = datetime.fromisoformat(processed_value)
                 except (ValueError, TypeError):
-                    # Если строка в неверном формате, пропускаем это поле
                     continue
 
-            # (Здесь можно добавить аналогичные проверки для integer, float, boolean,
-            # если данные могут приходить как строки "123", "true" и т.д.)
-            # -----------------------------------------------
+            # 4. (Опционально) Можно добавить конвертацию для чисел, если они приходят как строки
+            if value_type == 'integer' and isinstance(processed_value, str):
+                if processed_value.isdigit():
+                    processed_value = int(processed_value)
+                else:
+                    continue
 
-            # Создаем объект AttributeValue
+            if value_type == 'float' and isinstance(processed_value, str):
+                try:
+                    processed_value = float(processed_value)
+                except ValueError:
+                    continue
+            # ----------------------------------------------------
+
+            value_field_name = VALUE_FIELD_MAP[value_type]
+
             attr_value = models.AttributeValue(
                 entity_id=new_entity.id,
                 attribute_id=attribute.id,
             )
-            # Записываем обработанное значение в правильную колонку (value_date, value_string...)
             setattr(attr_value, value_field_name, processed_value)
             self.db.add(attr_value)
 
-        # 4. Сохраняем все в базе
         self.db.commit()
-
-        # 5. Возвращаем созданный объект
         return self.get_entity_by_id(new_entity.id, current_user)
+
+
+    
+    # def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+    #     """Создать новую запись."""
+    #     # Обычный пользователь может создать запись только в своей таблице.
+    #     entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+    #     attributes_map = {attr.name: attr for attr in entity_type.attributes}
+    #
+    #     # 1. Создаем саму сущность (строку)
+    #     new_entity = models.Entity(entity_type_id=entity_type.id)
+    #     self.db.add(new_entity)
+    #     self.db.flush()  # Получаем ID до коммита, чтобы использовать его ниже
+    #
+    #     # 3. Создаем "ячейки", обрабатывая типы данных
+    #     for key, value in data.items():
+    #         if key not in attributes_map or value is None:
+    #             continue
+    #
+    #         attribute = attributes_map[key]
+    #         value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+    #
+    #         processed_value = value
+    #
+    #         # --- КЛЮЧЕВАЯ ЛОГИКА ПРЕОБРАЗОВАНИЯ ТИПОВ ---
+    #         # Если атрибут должен быть датой, а пришла строка, конвертируем
+    #         if attribute.value_type == 'date' and isinstance(value, str):
+    #             try:
+    #                 processed_value = datetime.fromisoformat(value)
+    #             except (ValueError, TypeError):
+    #                 # Если строка в неверном формате, пропускаем это поле
+    #                 continue
+    #
+    #         # (Здесь можно добавить аналогичные проверки для integer, float, boolean,
+    #         # если данные могут приходить как строки "123", "true" и т.д.)
+    #         # -----------------------------------------------
+    #
+    #         # Создаем объект AttributeValue
+    #         attr_value = models.AttributeValue(
+    #             entity_id=new_entity.id,
+    #             attribute_id=attribute.id,
+    #         )
+    #         # Записываем обработанное значение в правильную колонку (value_date, value_string...)
+    #         setattr(attr_value, value_field_name, processed_value)
+    #         self.db.add(attr_value)
+    #
+    #     # 4. Сохраняем все в базе
+    #     self.db.commit()
+    #
+    #     # 5. Возвращаем созданный объект
+    #     return self.get_entity_by_id(new_entity.id, current_user)
 
 
 
