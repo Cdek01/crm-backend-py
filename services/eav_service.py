@@ -10,7 +10,7 @@ from db import models, session
 from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
 from .alias_service import AliasService
 from sqlalchemy import or_
-
+from datetime import datetime
 
 
 VALUE_FIELD_MAP = {
@@ -444,67 +444,74 @@ class EAVService:
 
         return self._pivot_data(entity)
 
-
-
-
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
-        """Обновить запись."""
-        # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
+        """Обновить запись с корректным преобразованием типов."""
         from tasks.messaging import send_sms_for_entity_task
 
-        # 1. Сначала получаем сущность с проверкой прав.
-        # Это также загрузит нам entity_type и его атрибуты.
-        entity_obj = self.get_entity_by_id(entity_id, current_user)
+        # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
+        self.get_entity_by_id(entity_id, current_user)
 
-        # Загружаем SQLAlchemy объект для работы
+        # 2. Загружаем сам SQLAlchemy объект для работы
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
         ).get(entity_id)
 
+        if not entity:  # Дополнительная проверка на случай, если сущность удалили
+            raise HTTPException(status_code=404, detail="Сущность не найдена")
+
         attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
 
-        # 2. Проверяем триггер SMS и модифицируем входящие данные
+        # 3. Проверяем триггер SMS и модифицируем входящие данные
         if data.get("send_sms_trigger") is True:
             data["sms_status"] = "pending"
             data["send_sms_trigger"] = False  # Сбрасываем триггер
-            # Запускаем фоновую задачу
-            send_sms_for_entity_task.delay(
-                entity_id=entity_id,
-                user_id=current_user.id # <-- Передаем ID
-            )
-        # 3. Обновляем значения атрибутов
+            send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
+
+        # 4. Обновляем значения атрибутов
         for key, value in data.items():
             if key not in attributes_map:
                 continue
 
             attribute = attributes_map[key]
+            # Используем нашу вспомогательную функцию для очистки и конвертации
+            processed_value = self._process_value(value, attribute.value_type)
             value_field_name = VALUE_FIELD_MAP[attribute.value_type]
 
-            # Ищем существующее значение для этого атрибута
+            # Ищем, существует ли уже значение для этого атрибута
             existing_value = self.db.query(models.AttributeValue).filter_by(
-                entity_id=entity_id,
-                attribute_id=attribute.id
+                entity_id=entity_id, attribute_id=attribute.id
             ).first()
 
             if existing_value:
-                # Если значение уже есть, обновляем его
-                setattr(existing_value, value_field_name, value)
-            elif value is not None:
-                # Если значения нет и новое значение не пустое, создаем его
-                new_value = models.AttributeValue(
-                    entity_id=entity_id,
-                    attribute_id=attribute.id
-                )
-                setattr(new_value, value_field_name, value)
+                if processed_value is None:
+                    # Если новое значение пустое, удаляем старое
+                    self.db.delete(existing_value)
+                else:
+                    # Иначе обновляем.
+                    # Сначала обнуляем все value_* поля на случай смены типа
+                    for field in VALUE_FIELD_MAP.values():
+                        setattr(existing_value, field, None)
+                    # Затем устанавливаем новое значение в правильное поле
+                    setattr(existing_value, value_field_name, processed_value)
+
+            elif processed_value is not None:
+                # Если значения не было, а новое не пустое, создаем его
+                new_value_data = {
+                    "entity_id": entity_id,
+                    "attribute_id": attribute.id,
+                    value_field_name: processed_value
+                }
+                new_value = models.AttributeValue(**new_value_data)
                 self.db.add(new_value)
 
-        # 4. Обновляем `updated_at` у самой сущности
+        # 5. Обновляем `updated_at` у самой сущности
         entity.updated_at = datetime.utcnow()
         self.db.add(entity)
 
+        # 6. Сохраняем все изменения
         self.db.commit()
 
-        # 5. Возвращаем ПОЛНЫЙ и ОБНОВЛЕННЫЙ объект
+        # 7. Возвращаем ПОЛНЫЙ и ОБНОВЛЕННЫЙ объект
         return self.get_entity_by_id(entity_id, current_user)
 
 
@@ -514,9 +521,32 @@ class EAVService:
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
 
+    def _process_value(self, value, value_type):
+        """Вспомогательная функция для обработки и конвертации значений."""
+        # 1. Сразу отсекаем None
+        if value is None:
+            return None
+
+        # 2. Пустые строки для всех типов считаем как None
+        if isinstance(value, str) and value.strip() == '':
+            return None
+
+        # 3. Конвертируем типы, если значение не None
+        try:
+            if value_type == 'date' and isinstance(value, str):
+                return datetime.fromisoformat(value)
+            if value_type == 'integer' and not isinstance(value, int):
+                return int(value)
+            if value_type == 'float' and not isinstance(value, float):
+                return float(value)
+        except (ValueError, TypeError):
+            # Если конвертация не удалась, считаем значение невалидным (None)
+            return None
+
+        return value
+
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         """Создать новую запись с корректным преобразованием типов."""
-
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
 
@@ -529,46 +559,14 @@ class EAVService:
                 continue
 
             attribute = attributes_map[key]
+            processed_value = self._process_value(value, attribute.value_type)
 
-            # --- НОВАЯ, УЛУЧШЕННАЯ ЛОГИКА ОБРАБОТКИ ТИПОВ ---
-            processed_value = value
-            value_type = attribute.value_type
-
-            # 1. Если значение - пустая строка, превращаем ее в None,
-            #    чтобы избежать ошибок с числовыми/датными типами.
-            if processed_value == '':
-                processed_value = None
-
-            # 2. Пропускаем None значения, чтобы не создавать пустых записей в БД
             if processed_value is None:
                 continue
 
-            # 3. Конвертируем строку в дату, если нужно
-            if value_type == 'date' and isinstance(processed_value, str):
-                try:
-                    processed_value = datetime.fromisoformat(processed_value)
-                except (ValueError, TypeError):
-                    continue
-
-            # 4. (Опционально) Можно добавить конвертацию для чисел, если они приходят как строки
-            if value_type == 'integer' and isinstance(processed_value, str):
-                if processed_value.isdigit():
-                    processed_value = int(processed_value)
-                else:
-                    continue
-
-            if value_type == 'float' and isinstance(processed_value, str):
-                try:
-                    processed_value = float(processed_value)
-                except ValueError:
-                    continue
-            # ----------------------------------------------------
-
-            value_field_name = VALUE_FIELD_MAP[value_type]
-
+            value_field_name = VALUE_FIELD_MAP[attribute.value_type]
             attr_value = models.AttributeValue(
-                entity_id=new_entity.id,
-                attribute_id=attribute.id,
+                entity_id=new_entity.id, attribute_id=attribute.id
             )
             setattr(attr_value, value_field_name, processed_value)
             self.db.add(attr_value)
@@ -577,55 +575,7 @@ class EAVService:
         return self.get_entity_by_id(new_entity.id, current_user)
 
 
-    
-    # def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
-    #     """Создать новую запись."""
-    #     # Обычный пользователь может создать запись только в своей таблице.
-    #     entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
-    #     attributes_map = {attr.name: attr for attr in entity_type.attributes}
-    #
-    #     # 1. Создаем саму сущность (строку)
-    #     new_entity = models.Entity(entity_type_id=entity_type.id)
-    #     self.db.add(new_entity)
-    #     self.db.flush()  # Получаем ID до коммита, чтобы использовать его ниже
-    #
-    #     # 3. Создаем "ячейки", обрабатывая типы данных
-    #     for key, value in data.items():
-    #         if key not in attributes_map or value is None:
-    #             continue
-    #
-    #         attribute = attributes_map[key]
-    #         value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-    #
-    #         processed_value = value
-    #
-    #         # --- КЛЮЧЕВАЯ ЛОГИКА ПРЕОБРАЗОВАНИЯ ТИПОВ ---
-    #         # Если атрибут должен быть датой, а пришла строка, конвертируем
-    #         if attribute.value_type == 'date' and isinstance(value, str):
-    #             try:
-    #                 processed_value = datetime.fromisoformat(value)
-    #             except (ValueError, TypeError):
-    #                 # Если строка в неверном формате, пропускаем это поле
-    #                 continue
-    #
-    #         # (Здесь можно добавить аналогичные проверки для integer, float, boolean,
-    #         # если данные могут приходить как строки "123", "true" и т.д.)
-    #         # -----------------------------------------------
-    #
-    #         # Создаем объект AttributeValue
-    #         attr_value = models.AttributeValue(
-    #             entity_id=new_entity.id,
-    #             attribute_id=attribute.id,
-    #         )
-    #         # Записываем обработанное значение в правильную колонку (value_date, value_string...)
-    #         setattr(attr_value, value_field_name, processed_value)
-    #         self.db.add(attr_value)
-    #
-    #     # 4. Сохраняем все в базе
-    #     self.db.commit()
-    #
-    #     # 5. Возвращаем созданный объект
-    #     return self.get_entity_by_id(new_entity.id, current_user)
+
 
 
 
@@ -687,6 +637,10 @@ class EAVService:
 
         return None
 
+
+
+
+
     def update_entity_type(
             self,
             entity_type_id: int,
@@ -719,6 +673,11 @@ class EAVService:
         self.db.refresh(db_entity_type)
 
         return db_entity_type
+
+
+
+
+
 
     # --- ДОБАВЬТЕ ЭТОТ НОВЫЙ МЕТОД ---
     def create_entity_and_get_list(
