@@ -308,3 +308,21 @@ class AssignRoleView(BaseView):
             return RedirectResponse(redirect_url, status_code=302)
         finally:
             db.close()
+
+
+class SharedEntityTypeAdmin(ModelView, model=models.SharedEntityType):
+    name = "Общие таблицы"
+    name_plural = "Общие таблицы"
+    icon = "fa-solid fa-share-alt"
+
+    # Теперь мы можем ссылаться на `user` и `entity_type`
+    column_list = [
+        models.SharedEntityType.id,
+        models.SharedEntityType.user,
+        models.SharedEntityType.entity_type,
+    ]
+
+    form_columns = [
+        models.SharedEntityType.user,
+        models.SharedEntityType.entity_type,
+    ]

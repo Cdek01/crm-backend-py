@@ -1008,3 +1008,133 @@
 #
 # if __name__ == "__main__":
 #     run_table_deletion_test()
+
+
+
+
+
+
+
+
+
+
+
+
+# Что будет делать скрипт:
+# Авторизуется под user@example.com.
+# Получит список всех его разрешений с сервера (для наглядности).
+# В цикле пройдет по списку ваших кастомных таблиц.
+# Для каждой таблицы:
+# Попытается получить список записей (GET /api/data/{table_name}).
+# Попытается создать новую тестовую запись (POST /api/data/{table_name}).
+# В конце выведет сводный отчет, какие действия разрешены, а какие — корректно заблокированы.
+import requests
+import json
+from faker import Faker
+import time
+# --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
+
+BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
+
+# --- Данные пользователя, чьи права мы проверяем ---
+USER_EMAIL = "user1@example.com"
+USER_PASSWORD = "password_a"
+#         user_a_email = f"user1@example.com"
+#         user_a_password = "password_a"
+# --- Список системных имен таблиц для проверки ---
+TABLES_TO_TEST = [
+    "leads_custom",
+    "archived_leads",
+    "monitoring",
+    "deals",
+    "contracts",
+    "founders_directors",
+]
+
+# ----------------------------------------------------------------------
+fake = Faker('ru_RU')
+
+
+def print_header(title):
+    print("\n" + "=" * 60)
+    print(f" {title} ".center(60, "="))
+    print("=" * 60)
+
+
+def run_permission_test():
+    print_header(f"ПРОВЕРКА ПРАВ ДОСТУПА ДЛЯ ПОЛЬЗОВАТЕЛЯ: {USER_EMAIL}")
+
+    try:
+        # --- ШАГ 1: АВТОРИЗАЦИЯ И ПОЛУЧЕНИЕ ПРАВ ---
+        print("\n--- Шаг 1: Авторизация и получение списка реальных прав ---")
+        auth_payload = {'username': USER_EMAIL, 'password': USER_PASSWORD}
+        auth_response = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload)
+
+        if auth_response.status_code != 200:
+            print(
+                f"❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось авторизоваться. Проверьте email и пароль. Ответ: {auth_response.text}")
+            return
+
+        token = auth_response.json()['access_token']
+        headers = {'Authorization': f'Bearer {token}'}
+
+        me_response = requests.get(f"{BASE_URL}/api/users/me", headers=headers)
+        user_permissions = set(me_response.json().get("permissions", []))
+
+        print(f"✅ Пользователь успешно авторизован.")
+        print(f"✅ Сервер сообщает, что у пользователя {len(user_permissions)} прав:")
+        for perm in sorted(list(user_permissions)):
+            print(f"   - {perm}")
+
+        # --- ШАГ 2: ЦИКЛ ПРОВЕРКИ ТАБЛИЦ ---
+        for table_name in TABLES_TO_TEST:
+            print_header(f"ПРОВЕРКА ТАБЛИЦЫ: '{table_name}'")
+
+            # --- 2.1 Проверка на ПРОСМОТР (GET) ---
+            print(f"\n -> 1. Попытка просмотра (GET /api/data/{table_name})")
+            view_permission_needed = f"data:view:{table_name}"
+
+            get_response = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers)
+
+            if get_response.status_code == 200:
+                print(f"   ✅ [УСПЕХ] Доступ на просмотр есть (статус 200).")
+                if view_permission_needed not in user_permissions:
+                    print(f"   ⚠️  ПРЕДУПРЕЖДЕНИЕ: Доступ есть, но права '{view_permission_needed}' нет в списке!")
+            elif get_response.status_code == 403:
+                print(f"   ✅ [КОРРЕКТНО ЗАБЛОКИРОВАНО] Доступ на просмотр запрещен (статус 403).")
+                if view_permission_needed in user_permissions:
+                    print(
+                        f"   ⚠️  ПРЕДУПРЕЖДЕНИЕ: Доступ запрещен, хотя право '{view_permission_needed}' есть в списке!")
+            else:
+                print(f"   ❌ [ОШИБКА] Неожиданный статус ответа: {get_response.status_code} - {get_response.text}")
+
+            # --- 2.2 Проверка на СОЗДАНИЕ (POST) ---
+            print(f"\n -> 2. Попытка создания (POST /api/data/{table_name})")
+            create_permission_needed = f"data:create:{table_name}"
+            # Отправляем минимально необходимые данные
+            post_payload = {"test_field": f"test_value_{int(time.time())}"}
+
+            post_response = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=post_payload)
+
+            # Для создания успешный статус - 201
+            if post_response.status_code == 201:
+                print(f"   ✅ [УСПЕХ] Доступ на создание есть (статус 201).")
+                if create_permission_needed not in user_permissions:
+                    print(f"   ⚠️  ПРЕДУПРЕЖДЕНИЕ: Доступ есть, но права '{create_permission_needed}' нет в списке!")
+            elif post_response.status_code == 403:
+                print(f"   ✅ [КОРРЕКТНО ЗАБЛОКИРОВАНО] Доступ на создание запрещен (статус 403).")
+                if create_permission_needed in user_permissions:
+                    print(
+                        f"   ⚠️  ПРЕДУПРЕЖДЕНИЕ: Доступ запрещен, хотя право '{create_permission_needed}' есть в списке!")
+            else:
+                print(f"   ❌ [ОШИБКА] Неожиданный статус ответа: {post_response.status_code} - {post_response.text}")
+
+        print("\n" + "=" * 60)
+        print("ПРОВЕРКА ПРАВ ЗАВЕРШЕНА.")
+
+    except Exception as e:
+        print(f"\n❌ КРИТИЧЕСКАЯ ОШИБКА В СКРИПТЕ: {e}")
+
+
+if __name__ == "__main__":
+    run_permission_test()

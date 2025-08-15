@@ -31,7 +31,7 @@ from admin import (
     RoleAdmin, PermissionAdmin,
     AssignRoleView
 )
-from api.endpoints import roles # <-- добавьте roles
+from api.endpoints import roles, shared # <-- добавьте roles
 
 
 
@@ -77,61 +77,6 @@ app.include_router(roles.router, prefix="/api/roles", tags=["Roles"])
 # --------------------------------------------------------------------------
 # --- ШАГ 5: НАСТРОЙКА И РЕГИСТРАЦИЯ АДМИН-ПАНЕЛИ ---
 # --------------------------------------------------------------------------
-
-
-# class AssignRoleView(BaseView):
-#     name = "Назначение Ролей"
-#     icon = "fa-solid fa-user-tag"
-#
-#     @expose("/assign-role", methods=["GET", "POST"])
-#     async def assign_role_page(self, request: Request):
-#         db = session.SessionLocal()
-#         try:
-#             users = db.query(models.User).order_by(models.User.email).all()
-#             roles = db.query(models.Role).order_by(models.Role.name).all()
-#
-#             if request.method == "GET":
-#                 # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-#                 # Используем наш объект `templates` и его метод `TemplateResponse`
-#                 return templates.TemplateResponse(
-#                     "assign_role.html",
-#                     {
-#                         "request": request,
-#                         "users": users,
-#                         "roles": roles,
-#                         "success": request.query_params.get("success"),
-#                     },
-#                 )
-#                 # -------------------------
-#
-#             # Логика для POST-запроса (остается без изменений)
-#             form_data = await request.form()
-#             user_id = form_data.get("user_id")
-#             role_ids = form_data.getlist("role_ids")
-#
-#             if not user_id:
-#                 return RedirectResponse(request.url, status_code=302)
-#
-#             user_to_update = db.query(models.User).filter(models.User.id == int(user_id)).one()
-#
-#             if role_ids:
-#                 selected_roles = db.query(models.Role).filter(
-#                     models.Role.id.in_([int(pk) for pk in role_ids])
-#                 ).all()
-#                 user_to_update.roles = selected_roles
-#             else:
-#                 user_to_update.roles = []
-#
-#             db.commit()
-#
-#             return RedirectResponse(f"{request.url_for('admin:assign-role')}?success=true", status_code=302)
-#
-#         finally:
-#             db.close()
-
-
-
-
 # Класс для кастомной аутентификации в админ-панели
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
@@ -197,6 +142,7 @@ app.include_router(individuals.router, prefix="/api/individuals", tags=["Individ
 app.include_router(aliases.router, prefix="/api/aliases", tags=["Aliases"])
 app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
+app.include_router(shared.router, prefix="/api/shares", tags=["Shares"])
 
 
 # --------------------------------------------------------------------------

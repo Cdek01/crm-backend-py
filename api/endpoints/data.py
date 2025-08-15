@@ -31,18 +31,6 @@ def delete_multiple_entities(
 
 
 
-
-# @router.post("/{entity_type_name}", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
-# def create_entity(
-#         entity_type_name: str,
-#         data: Dict[str, Any] = Body(...),
-#         service: EAVService = Depends(),
-#         current_user: models.User = Depends(get_current_user)
-# ):
-#     """Создать новую запись."""
-#     return service.create_entity(entity_type_name, data, current_user)
-
-# --- ИЗМЕНИТЕ `response_model` ---
 @router.post("/{entity_type_name}", response_model=List[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
 # ---------------------------------
 def create_entity(

@@ -409,6 +409,27 @@ class User(Base):
     tenant = relationship("Tenant")
 
     roles = relationship("Role", secondary=user_roles_table, backref="users")
-
+    shared_entity_types = relationship("SharedEntityType", back_populates="user")
     def __str__(self):
         return self.email
+
+
+class SharedEntityType(Base):
+    """
+    Представляет 'ссылку' на EntityType для пользователя из другого тенанта.
+    """
+    __tablename__ = 'shared_entity_types'
+
+    id = Column(Integer, primary_key=True)
+
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
+
+    # --- ДОБАВЬТЕ ЭТИ ДВЕ СВЯЗИ ---
+    user = relationship("User", back_populates="shared_entity_types")
+    entity_type = relationship("EntityType")
+    # ----------------------------
+
+    __table_args__ = (
+        UniqueConstraint('entity_type_id', 'user_id', name='_entity_type_user_uc'),
+    )
