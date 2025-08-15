@@ -38,46 +38,62 @@ class EAVService:
     ) -> models.EntityType:
         """
         Внутренний метод для поиска типа сущности по имени.
-        Теперь учитывает "общие" таблицы.
+        Корректно обрабатывает "общие" таблицы для обычных пользователей.
         """
-        query = self.db.query(models.EntityType).filter(models.EntityType.name == entity_type_name)
+        # --- НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ---
 
-        if not current_user.is_superuser:
-            # --- НОВАЯ, РАСШИРЕННАЯ ЛОГИКА ---
-            # 1. Находим ID "общих" таблиц для этого пользователя
-            shared_entity_type_ids_query = self.db.query(models.SharedEntityType.entity_type_id).filter(
+        # 1. Сначала ищем таблицу в собственном тенанте пользователя
+        own_entity_type = self.db.query(models.EntityType).filter(
+            models.EntityType.name == entity_type_name,
+            models.EntityType.tenant_id == current_user.tenant_id
+        ).first()
+
+        if own_entity_type:
+            # Если нашли свою, возвращаем ее с атрибутами
+            return self.db.query(models.EntityType).options(
+                joinedload(models.EntityType.attributes)
+            ).get(own_entity_type.id)
+
+        # 2. Если свою не нашли, ищем "общие" таблицы
+        shared_entity_type = (
+            self.db.query(models.EntityType)
+            .join(models.SharedEntityType, models.SharedEntityType.entity_type_id == models.EntityType.id)
+            .filter(
+                models.EntityType.name == entity_type_name,
                 models.SharedEntityType.user_id == current_user.id
             )
+            .first()
+        )
 
-            # 2. Обычный пользователь может найти таблицу, если:
-            #    - она принадлежит его тенанту
-            #    - ИЛИ ее ID есть в списке "общих" для него
-            query = query.filter(
-                or_(
-                    models.EntityType.tenant_id == current_user.tenant_id,
-                    models.EntityType.id.in_(shared_entity_type_ids_query)
-                )
-            )
-            # -----------------------------------
-        elif tenant_id:
-            # Логика для суперадмина остается прежней
-            query = query.filter(models.EntityType.tenant_id == tenant_id)
+        if shared_entity_type:
+            # Если нашли общую, возвращаем ее с атрибутами
+            return self.db.query(models.EntityType).options(
+                joinedload(models.EntityType.attributes)
+            ).get(shared_entity_type.id)
 
-        # Запрос может вернуть несколько таблиц, если имя не уникально между тенантами
-        results = query.all()
+        # 3. Логика для суперадминистратора
+        if current_user.is_superuser:
+            query = self.db.query(models.EntityType).filter(models.EntityType.name == entity_type_name)
+            if tenant_id:
+                query = query.filter(models.EntityType.tenant_id == tenant_id)
 
-        if not results:
-            raise HTTPException(status_code=404,
-                                detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
-        if len(results) > 1 and not tenant_id:
-            # Если нашлось несколько и суперадмин не уточнил, просим уточнить
-            raise HTTPException(status_code=400,
-                                detail=f"Найдено несколько таблиц с именем '{entity_type_name}'. Суперадминистратор должен указать 'tenant_id'.")
+            results = query.all()
+            if not results:
+                raise HTTPException(status_code=404, detail=f"Тип сущности '{entity_type_name}' не найден")
+            if len(results) > 1 and not tenant_id:
+                raise HTTPException(status_code=400,
+                                    detail=f"Найдено несколько таблиц с именем '{entity_type_name}'. Суперадминистратор должен указать 'tenant_id'.")
 
-        # Загружаем связанные атрибуты для найденной таблицы
-        return self.db.query(models.EntityType).options(
-            joinedload(models.EntityType.attributes)
-        ).get(results[0].id)
+            return self.db.query(models.EntityType).options(
+                joinedload(models.EntityType.attributes)
+            ).get(results[0].id)
+
+        # 4. Если ничего не найдено, выбрасываем 404
+        raise HTTPException(status_code=404,
+                            detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
+
+
+    
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ (Структура таблиц) ---
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:

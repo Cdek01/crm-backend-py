@@ -118,7 +118,6 @@ def get_all_entities(
         current_user: models.User = Depends(get_current_user)
 ):
 
-
     """
     Получить все записи для указанного типа сущности с фильтрацией и сортировкой.
     """
