@@ -126,7 +126,7 @@ admin.add_view(TableAliasAdmin)
 admin.add_view(RoleAdmin)
 admin.add_view(PermissionAdmin)
 admin.add_view(AssignRoleView) # <-- ДОБАВЬТЕ ЭТО
-
+# admin.add_view(SharedEntityTypeAdmin)
 # Если вы создали AttributeAliasAdmin, раскомментируйте следующую строку
 # admin.add_view(AttributeAliasAdmin)
 

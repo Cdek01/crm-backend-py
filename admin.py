@@ -310,19 +310,19 @@ class AssignRoleView(BaseView):
             db.close()
 
 
-class SharedEntityTypeAdmin(ModelView, model=models.SharedEntityType):
-    name = "Общие таблицы"
-    name_plural = "Общие таблицы"
-    icon = "fa-solid fa-share-alt"
-
-    # Теперь мы можем ссылаться на `user` и `entity_type`
-    column_list = [
-        models.SharedEntityType.id,
-        models.SharedEntityType.user,
-        models.SharedEntityType.entity_type,
-    ]
-
-    form_columns = [
-        models.SharedEntityType.user,
-        models.SharedEntityType.entity_type,
-    ]
+# class SharedEntityTypeAdmin(ModelView, model=models.SharedEntityType):
+#     name = "Общие таблицы"
+#     name_plural = "Общие таблицы"
+#     icon = "fa-solid fa-share-alt"
+#
+#     # Теперь мы можем ссылаться на `user` и `entity_type`
+#     column_list = [
+#         models.SharedEntityType.id,
+#         models.SharedEntityType.user,
+#         models.SharedEntityType.entity_type,
+#     ]
+#
+#     form_columns = [
+#         models.SharedEntityType.user,
+#         models.SharedEntityType.entity_type,
+#     ]
