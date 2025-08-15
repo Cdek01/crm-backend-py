@@ -93,7 +93,7 @@ class EAVService:
                             detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
 
 
-    
+
     # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ (Структура таблиц) ---
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
@@ -231,6 +231,11 @@ class EAVService:
         Получить все записи для указанного типа сущности с фильтрацией, сортировкой и пагинацией.
         """
         # 1. Получаем метаданные таблицы (проверка прав происходит внутри этого метода)
+        # 1. Если запрос от обычного пользователя, игнорируем tenant_id из запроса.
+        # Это "защита от дурака" на случай, если фронтенд пришлет неверный ID.
+        if not current_user.is_superuser:
+            tenant_id = None
+
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user, tenant_id)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
 
@@ -330,6 +335,9 @@ class EAVService:
         sorted_entities = [entities_map[id] for id in entity_ids_on_page if id in entities_map]
 
         return [self._pivot_data(e) for e in sorted_entities]
+
+
+
 
     def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
         """
