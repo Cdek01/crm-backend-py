@@ -227,6 +227,7 @@ class EAVService:
             for f in filters:
                 field_name = f.get("field")
                 op = f.get("op", "eq")
+
                 value = f.get("value")
 
                 if not field_name or field_name not in attributes_map:

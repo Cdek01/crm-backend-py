@@ -122,6 +122,16 @@ def get_all_entities(
     """
     Получить все записи для указанного типа сущности с фильтрацией и сортировкой.
     """
+
+    # --- ДОБАВЬТЕ ЭТУ ПРОВЕРКУ ---
+    final_tenant_id = tenant_id
+    if not current_user.is_superuser:
+        # Если пользователь не суперадмин, принудительно обнуляем tenant_id,
+        # даже если фронтенд его передал.
+        final_tenant_id = None
+    # ---------------------------
+
+
     parsed_filters = []
     if filters:
         try:
@@ -135,7 +145,7 @@ def get_all_entities(
     return service.get_all_entities_for_type(
         entity_type_name=entity_type_name,
         current_user=current_user,
-        tenant_id=tenant_id,
+        tenant_id=final_tenant_id,
         filters=parsed_filters,
         sort_by=sort_by,
         sort_order=sort_order,
