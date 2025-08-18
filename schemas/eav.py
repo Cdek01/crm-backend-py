@@ -20,8 +20,12 @@ class AttributeBase(BaseModel):
     value_type: ValueTypeEnum
 
 
-class AttributeCreate(AttributeBase):
-    pass
+
+
+class AttributeCreate(BaseModel):
+    name: str
+    display_name: str
+    value_type: ValueTypeEnum # <-- Тип данных обязателен!
 
 
 class Attribute(AttributeBase):
