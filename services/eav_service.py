@@ -233,51 +233,84 @@ class EAVService:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         """
-        Получить один тип сущности по ID. Суперадминистратор может получить любой.
+        Получает один тип сущности по ID и возвращает его атрибуты
+        в сохраненном для пользователя порядке.
         """
-        query = self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes))
-        query = query.filter(models.EntityType.id == entity_type_id)
-        if not current_user.is_superuser:
-            query = query.filter(models.EntityType.tenant_id == current_user.tenant_id)
-        db_entity_type = query.first()
+        # 1. Открываем новую, чистую сессию, чтобы избежать кэширования
+        db = session.SessionLocal()
+        try:
+            # 2. Находим основной объект EntityType с проверкой прав
+            query = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id)
+            if not current_user.is_superuser:
+                query = query.filter(models.EntityType.tenant_id == current_user.tenant_id)
+            db_entity_type = query.first()
 
-        if not db_entity_type:
-            raise HTTPException(status_code=404, detail="Тип сущности не найден")
+            if not db_entity_type:
+                raise HTTPException(status_code=404, detail="Тип сущности не найден")
+
+            # 3. Загружаем ВСЕ его атрибуты
+            all_attributes = db.query(models.Attribute).filter(
+                models.Attribute.entity_type_id == entity_type_id
+            ).all()
+
+            # 4. Загружаем сохраненный порядок для этого пользователя
+            saved_order_query = db.query(models.AttributeOrder.attribute_id).filter(
+                models.AttributeOrder.user_id == current_user.id,
+                models.AttributeOrder.entity_type_id == entity_type_id
+            ).order_by(models.AttributeOrder.position)
+
+            saved_order_ids = [item_id for item_id, in saved_order_query]
+
+            # 5. Применяем сортировку в Python
+            sorted_attributes = []
+            if saved_order_ids:
+                attributes_map = {attr.id: attr for attr in all_attributes}
+                for attr_id in saved_order_ids:
+                    if attr_id in attributes_map:
+                        sorted_attributes.append(attributes_map.pop(attr_id))
+
+                # Добавляем оставшиеся (новые) атрибуты, отсортировав их по ID
+                sorted_attributes.extend(sorted(attributes_map.values(), key=lambda attr: attr.id))
+            else:
+                # Сортировка по умолчанию
+                sorted_attributes = sorted(all_attributes, key=lambda attr: attr.id)
+
+            # 6. Создаем Pydantic-модель, подставляя в нее уже отсортированные атрибуты
+            response_entity_type = EntityType.model_validate(db_entity_type)
+            response_entity_type.attributes = sorted_attributes
+
+            # Применяем псевдонимы
+            # response_entity_type = EntityType.model_validate(db_entity_type)
+            attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+            table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+            table_name = response_entity_type.name
+            if table_name in table_aliases:
+                response_entity_type.display_name = table_aliases[table_name]
+
+            table_attr_aliases = attr_aliases.get(table_name, {})
+            for attribute in response_entity_type.attributes:
+                if attribute.name in table_attr_aliases:
+                    attribute.display_name = table_attr_aliases[attribute.name]
 
 
-        # Применяем псевдонимы
-        response_entity_type = EntityType.model_validate(db_entity_type)
-        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
-        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-        table_name = response_entity_type.name
-        if table_name in table_aliases:
-            response_entity_type.display_name = table_aliases[table_name]
-        table_attr_aliases = attr_aliases.get(table_name, {})
-        for attribute in response_entity_type.attributes:
-            if attribute.name in table_attr_aliases:
-                attribute.display_name = table_attr_aliases[attribute.name]
-        return response_entity_type
+            return response_entity_type
+
+        finally:
+            db.close()
+
+
+
+
 
     # Методы create/delete для метаданных остаются без изменений,
     # так как они либо создают сущность в текущем тенанте,
     # либо используют get_entity_type_by_id, который уже содержит проверки.
+
+
+
+
 
     def delete_entity_type(self, entity_type_id: int, current_user: models.User):
         """
@@ -872,3 +905,37 @@ class EAVService:
         self.db.commit()
 
         return num_deleted
+
+    def set_attribute_order(
+            self,
+            entity_type_id: int,
+            attribute_ids: List[int],
+            current_user: models.User
+    ):
+        """Сохраняет новый порядок колонок для пользователя."""
+        # Проверяем, что таблица существует и доступна пользователю
+        self.get_entity_type_by_id(entity_type_id, current_user)
+
+        # 1. Удаляем старый порядок для этого пользователя и этой таблицы
+        self.db.query(models.AttributeOrder).filter(
+            models.AttributeOrder.user_id == current_user.id,
+            models.AttributeOrder.entity_type_id == entity_type_id
+        ).delete(synchronize_session=False)
+
+        # 2. Создаем новые записи с новым порядком
+        new_order_entries = []
+        for position, attr_id in enumerate(attribute_ids):
+            new_order_entries.append(
+                models.AttributeOrder(
+                    user_id=current_user.id,
+                    entity_type_id=entity_type_id,
+                    attribute_id=attr_id,
+                    position=position
+                )
+            )
+
+        if new_order_entries:
+            self.db.add_all(new_order_entries)
+
+        self.db.commit()
+        return {"status": "ok", "ordered_ids": attribute_ids}

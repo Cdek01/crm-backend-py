@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from typing import List
 
 from db import models
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate,EntityTypeUpdate
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeOrderSetRequest
 from services.eav_service import EAVService
 from api.deps import get_current_user
 
@@ -122,3 +122,21 @@ def update_entity_type(
     entity_type_in=entity_type_in,
     current_user=current_user
 )
+
+
+
+@router.post("/entity-types/{entity_type_id}/attributes/order", status_code=status.HTTP_200_OK)
+def set_attribute_order(
+    entity_type_id: int,
+    order_in: AttributeOrderSetRequest,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Установить и сохранить новый порядок отображения колонок для таблицы.
+    """
+    return service.set_attribute_order(
+        entity_type_id=entity_type_id,
+        attribute_ids=order_in.attribute_ids,
+        current_user=current_user
+    )

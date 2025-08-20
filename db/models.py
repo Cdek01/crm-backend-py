@@ -433,3 +433,34 @@ class User(Base):
 #     __table_args__ = (
 #         UniqueConstraint('entity_type_id', 'user_id', name='_entity_type_user_uc'),
 #     )
+
+
+class AttributeOrder(Base):
+    """
+    Хранит пользовательский порядок отображения колонок (атрибутов)
+    для конкретного типа сущности (таблицы).
+    """
+    __tablename__ = 'attribute_order'
+
+    id = Column(Integer, primary_key=True)
+
+    # Для какого пользователя этот порядок
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # В какой таблице
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # Какая колонка
+    attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # На какой позиции (0, 1, 2, ...)
+    position = Column(Integer, nullable=False)
+
+    user = relationship("User")
+    entity_type = relationship("EntityType")
+    attribute = relationship("Attribute")
+
+    # Гарантируем, что для одной колонки в одной таблице у одного юзера может быть только одна позиция
+    __table_args__ = (
+        UniqueConstraint('user_id', 'entity_type_id', 'attribute_id', name='_user_type_attr_uc'),
+    )

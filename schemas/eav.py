@@ -1,5 +1,5 @@
 # schemas/eav.py
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional, List
 from enum import Enum
 
@@ -28,13 +28,30 @@ class AttributeCreate(BaseModel):
     value_type: ValueTypeEnum # <-- Тип данных обязателен!
 
 
+# class Attribute(AttributeBase):
+#     id: int
+#     entity_type_id: int
+#
+#     class Config:
+#         from_attributes = True
 class Attribute(AttributeBase):
     id: int
     entity_type_id: int
 
-    class Config:
-        from_attributes = True
+    # --- ИЗМЕНИТЕ/ДОБАВЬТЕ ЭТОТ БЛОК ---
+    model_config = ConfigDict(from_attributes=True)
 
+    @field_validator('value_type', mode='before')
+    @classmethod
+    def validate_value_type(cls, v):
+        """
+        Этот валидатор будет принимать строку из базы данных (например, "string")
+        и преобразовывать ее в член Enum (ValueTypeEnum.string) перед
+        созданием Pydantic-модели.
+        """
+        if isinstance(v, str):
+            return ValueTypeEnum(v)
+        return v
 
 # --- Схемы для Типов Сущностей ('таблиц') ---
 class EntityTypeBase(BaseModel):
@@ -56,3 +73,8 @@ class EntityType(EntityTypeBase):
 
     class Config:
         from_attributes = True
+
+
+class AttributeOrderSetRequest(BaseModel):
+    # Список ID атрибутов в новом, правильном порядке
+    attribute_ids: List[int]
