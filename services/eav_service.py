@@ -6,14 +6,11 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, asc, desc, func
 from sqlalchemy.orm import aliased
-from sqlalchemy import create_engine, event # <-- Добавьте event
-from core.config import settings
 from db import models, session
 from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
 from .alias_service import AliasService
 from sqlalchemy import or_
 from datetime import datetime
-from sqlalchemy.orm import sessionmaker
 
 
 VALUE_FIELD_MAP = {
@@ -25,51 +22,107 @@ VALUE_FIELD_MAP = {
 }
 
 
-def _setup_sqlite_pragma(dbapi_con, connection_record):
-    """
-    Регистрирует кастомную функцию LOWER() для SQLite,
-    которая корректно работает с Unicode (кириллицей).
-    """
-    # Создаем SQL-функцию 'lower' с одним аргументом,
-    # которая будет вызывать Python-функцию str.lower
-    dbapi_con.create_function("lower", 1, str.lower)
-
-    # Дополнительно можно включить поддержку внешних ключей
-    cursor = dbapi_con.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
-
-
-# -------------------------
-
-# Добавляем connect_args={"check_same_thread": False}
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
-
-# --- ДОБАВЬТЕ ЭТОТ БЛОК ---
-# Если мы используем SQLite, "слушаем" событие 'connect'
-# и вызываем нашу настроечную функцию.
-if "sqlite" in settings.DATABASE_URL:
-    event.listen(engine, "connect", _setup_sqlite_pragma)
-# -------------------------
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 class EAVService:
     def __init__(self, db: Session = Depends(session.get_db), alias_service: AliasService = Depends()):
         self.db = db
         self.alias_service = alias_service
 
+    # --- Внутренний метод для безопасного получения типа сущности по имени ---
+
+    # --- ПОЛНОСТЬЮ ЗАМЕНИТЕ ЭТОТ МЕТОД ---
+    # def _get_entity_type_by_name(
+    #         self,
+    #         entity_type_name: str,
+    #         current_user: models.User,
+    #         tenant_id: Optional[int] = None
+    # ) -> models.EntityType:
+    #     """
+    #     Ищет таблицу. Сначала в своем тенанте, потом в "общих".
+    #     """
+    #     # 1. Сначала ищем таблицу в собственном тенанте пользователя
+    #     if not current_user.is_superuser:
+    #         own_entity_type = self.db.query(models.EntityType).filter(
+    #             models.EntityType.name == entity_type_name,
+    #             models.EntityType.tenant_id == current_user.tenant_id
+    #         ).first()
+    #
+    #         if own_entity_type:
+    #             return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(
+    #                 own_entity_type.id)
+    #
+    #         # 2. Если свою не нашли, ищем "общие"
+    #         shared_entity_type = (
+    #             self.db.query(models.EntityType)
+    #             .join(models.SharedEntityType, models.SharedEntityType.entity_type_id == models.EntityType.id)
+    #             .filter(
+    #                 models.EntityType.name == entity_type_name,
+    #                 models.SharedEntityType.user_id == current_user.id
+    #             )
+    #             .first()
+    #         )
+    #
+    #         if shared_entity_type:
+    #             return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(
+    #                 shared_entity_type.id)
+    #
+    #     # 3. Логика для суперадминистратора
+    #     if current_user.is_superuser:
+    #         # ... (код для суперадмина)
+    #         pass
+    #
+    #     # 4. Если ничего не найдено
+    #     raise HTTPException(status_code=404,
+    #                         detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
+    #
+    #
+    #
+    # # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ (Структура таблиц) ---
+    #
+    # def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
+    #     """
+    #     Получить список всех кастомных таблиц, доступных пользователю:
+    #     - Его собственные таблицы.
+    #     - Таблицы, к которым ему предоставили доступ.
+    #     """
+    #     # 1. Находим ID "общих" таблиц для этого пользователя
+    #     shared_entity_type_ids_query = self.db.query(models.SharedEntityType.entity_type_id).filter(
+    #         models.SharedEntityType.user_id == current_user.id
+    #     )
+    #
+    #     # 2. Строим основной запрос к EntityType
+    #     query = self.db.query(models.EntityType).options(
+    #         joinedload(models.EntityType.attributes)
+    #     ).order_by(models.EntityType.id)
+    #
+    #     if not current_user.is_superuser:
+    #         # Обычный пользователь видит:
+    #         # - таблицы своего тенанта
+    #         # - ИЛИ таблицы, ID которых есть в списке "общих"
+    #         query = query.filter(
+    #             or_(
+    #                 models.EntityType.tenant_id == current_user.tenant_id,
+    #                 models.EntityType.id.in_(shared_entity_type_ids_query)
+    #             )
+    #         )
+    #
+    #     db_entity_types = query.all()
+    #
+    #     attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+    #     table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+    #
+    #     response_list = []
+    #     for db_entity_type in db_entity_types:
+    #         response_entity = EntityType.model_validate(db_entity_type)
+    #         if response_entity.name in table_aliases:
+    #             response_entity.display_name = table_aliases[response_entity.name]
+    #
+    #         table_attr_aliases = attr_aliases.get(response_entity.name, {})
+    #         if table_attr_aliases:
+    #             for attribute in response_entity.attributes:
+    #                 if attribute.name in table_attr_aliases:
+    #                     attribute.display_name = table_attr_aliases[attribute.name]
+    #         response_list.append(response_entity)
+    #     return response_list
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         """
@@ -300,10 +353,6 @@ class EAVService:
             result[attr_name] = getattr(value_obj, db_field)
         return result
 
-    # --- ДОБАВЬТЕ ЭТОТ КОД ---
-    # Эта функция будет вызываться для каждого нового соединения с базой SQLite.
-
-
     def get_all_entities_for_type(
             self,
             entity_type_name: str,
@@ -350,16 +399,18 @@ class EAVService:
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # --- ИСПРАВЛЕННАЯ ЛОГИКА ---
+                # Применяем операторы сравнения
                 if attribute.value_type == 'string' and isinstance(value, str):
-                    lower_value = value.lower()
-
+                    # Для строковых полей используем ILIKE (case-insensitive LIKE)
                     if op == "eq":
-                        subquery = subquery.filter(func.lower(value_column) == lower_value)
-                    elif op == "neq":
-                        subquery = subquery.filter(func.lower(value_column) != lower_value)
+                        # Точное совпадение без учета регистра
+                        subquery = subquery.filter(value_column.ilike(value))
                     elif op == "contains":
-                        subquery = subquery.filter(func.lower(value_column).contains(lower_value))
+                        # Поиск подстроки без учета регистра
+                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                    elif op == "neq":
+                        # НЕ равно без учета регистра
+                        subquery = subquery.filter(func.lower(value_column) != value.lower())
                     else:
                         continue
                 else:
