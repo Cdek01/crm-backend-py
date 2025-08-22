@@ -399,24 +399,40 @@ class EAVService:
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # Применяем операторы сравнения
-                if op == "eq":
-                    subquery = subquery.filter(value_column == value)
-                elif op == "neq":
-                    subquery = subquery.filter(value_column != value)
-                elif op == "gt":
-                    subquery = subquery.filter(value_column > value)
-                elif op == "gte":
-                    subquery = subquery.filter(value_column >= value)
-                elif op == "lt":
-                    subquery = subquery.filter(value_column < value)
-                elif op == "lte":
-                    subquery = subquery.filter(value_column <= value)
-                elif op == "contains" and attribute.value_type == 'string':
-                    search_value = str(value).lower()
-                    subquery = subquery.filter(func.lower(value_column).contains(search_value))
+                # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+                # Если это строковый атрибут и значение тоже строка,
+                # то делаем регистронезависимое сравнение.
+                if attribute.value_type == 'string' and isinstance(value, str):
+                    lower_value = value.lower()  # Преобразуем значение из фильтра в нижний регистр
+
+                    # Применяем SQL-функцию LOWER() к колонке в базе
+                    if op == "eq":
+                        subquery = subquery.filter(func.lower(value_column) == lower_value)
+                    elif op == "neq":
+                        subquery = subquery.filter(func.lower(value_column) != lower_value)
+                    elif op == "contains":
+                        subquery = subquery.filter(func.lower(value_column).contains(lower_value))
+                    else:
+                        # Для других операторов (>, <) регистр не имеет смысла,
+                        # поэтому оставляем как есть, но это маловероятный сценарий для строк.
+                        continue
                 else:
-                    continue
+                    # Для не-строковых типов данных (числа, даты) оставляем старую логику
+                    if op == "eq":
+                        subquery = subquery.filter(value_column == value)
+                    elif op == "neq":
+                        subquery = subquery.filter(value_column != value)
+                    elif op == "gt":
+                        subquery = subquery.filter(value_column > value)
+                    elif op == "gte":
+                        subquery = subquery.filter(value_column >= value)
+                    elif op == "lt":
+                        subquery = subquery.filter(value_column < value)
+                    elif op == "lte":
+                        subquery = subquery.filter(value_column <= value)
+                    else:
+                        continue
+                # -------------------------
 
                 query = query.filter(subquery.exists())
 
