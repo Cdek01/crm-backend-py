@@ -413,7 +413,8 @@ class EAVService:
                 elif op == "lte":
                     subquery = subquery.filter(value_column <= value)
                 elif op == "contains" and attribute.value_type == 'string':
-                    subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                    search_value = str(value).lower()
+                    subquery = subquery.filter(func.lower(value_column).contains(search_value))
                 else:
                     continue
 
