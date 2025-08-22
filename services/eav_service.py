@@ -400,36 +400,23 @@ class EAVService:
                 )
 
                 # Применяем операторы сравнения
-                if attribute.value_type == 'string' and isinstance(value, str):
-                    # Для строковых полей используем ILIKE (case-insensitive LIKE)
-                    if op == "eq":
-                        # Точное совпадение без учета регистра
-                        subquery = subquery.filter(value_column.ilike(value))
-                    elif op == "contains":
-                        # Поиск подстроки без учета регистра
-                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
-                    elif op == "neq":
-                        # НЕ равно без учета регистра
-                        subquery = subquery.filter(func.lower(value_column) != value.lower())
-                    else:
-                        continue
+                if op == "eq":
+                    subquery = subquery.filter(value_column == value)
+                elif op == "neq":
+                    subquery = subquery.filter(value_column != value)
+                elif op == "gt":
+                    subquery = subquery.filter(value_column > value)
+                elif op == "gte":
+                    subquery = subquery.filter(value_column >= value)
+                elif op == "lt":
+                    subquery = subquery.filter(value_column < value)
+                elif op == "lte":
+                    subquery = subquery.filter(value_column <= value)
+                elif op == "contains" and attribute.value_type == 'string':
+                    search_value = str(value).lower()
+                    subquery = subquery.filter(func.lower(value_column).contains(search_value))
                 else:
-                    # Для не-строковых типов данных оставляем старую логику
-                    if op == "eq":
-                        subquery = subquery.filter(value_column == value)
-                    elif op == "neq":
-                        subquery = subquery.filter(value_column != value)
-                    elif op == "gt":
-                        subquery = subquery.filter(value_column > value)
-                    elif op == "gte":
-                        subquery = subquery.filter(value_column >= value)
-                    elif op == "lt":
-                        subquery = subquery.filter(value_column < value)
-                    elif op == "lte":
-                        subquery = subquery.filter(value_column <= value)
-                    else:
-                        continue
-                # ---------------------------
+                    continue
 
                 query = query.filter(subquery.exists())
 
