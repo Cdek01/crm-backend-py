@@ -398,57 +398,24 @@ class EAVService:
                     models.AttributeValue.entity_id == models.Entity.id,
                     models.AttributeValue.attribute_id == attribute.id
                 )
-                # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
-                # Если это строковый атрибут и значение тоже строка,
-                # то делаем регистронезависимое сравнение.
-                if attribute.value_type == 'string' and isinstance(value, str):
-                    lower_value = value.lower()  # Преобразуем значение из фильтра в нижний регистр
 
-                    if op == "eq":
-                        subquery = subquery.filter(func.lower(value_column) == lower_value)
-                    elif op == "neq":
-                        subquery = subquery.filter(func.lower(value_column) != lower_value)
-                    elif op == "contains":
-                        # ilike уже регистронезависимый, но для консистентности можно и так
-                        subquery = subquery.filter(func.lower(value_column).contains(lower_value))
-                    else:
-                        # Для других операторов (>, < и т.д.) регистр не имеет смысла,
-                        # оставляем как есть
-                        subquery = subquery.filter(value_column == value)  # Оставим eq как fallback
+                # Применяем операторы сравнения
+                if op == "eq":
+                    subquery = subquery.filter(value_column == value)
+                elif op == "neq":
+                    subquery = subquery.filter(value_column != value)
+                elif op == "gt":
+                    subquery = subquery.filter(value_column > value)
+                elif op == "gte":
+                    subquery = subquery.filter(value_column >= value)
+                elif op == "lt":
+                    subquery = subquery.filter(value_column < value)
+                elif op == "lte":
+                    subquery = subquery.filter(value_column <= value)
+                elif op == "contains" and attribute.value_type == 'string':
+                    subquery = subquery.filter(value_column.ilike(f"%{value}%"))
                 else:
-                    # Для не-строковых типов данных оставляем старую логику
-                    if op == "eq":
-                        subquery = subquery.filter(value_column == value)
-                    elif op == "neq":
-                        subquery = subquery.filter(value_column != value)
-                    elif op == "gt":
-                        subquery = subquery.filter(value_column > value)
-                    elif op == "gte":
-                        subquery = subquery.filter(value_column >= value)
-                    elif op == "lt":
-                        subquery = subquery.filter(value_column < value)
-                    elif op == "lte":
-                        subquery = subquery.filter(value_column <= value)
-                    else:
-                        continue
-                # -------------------------
-                # # Применяем операторы сравнения
-                # if op == "eq":
-                #     subquery = subquery.filter(value_column == value)
-                # elif op == "neq":
-                #     subquery = subquery.filter(value_column != value)
-                # elif op == "gt":
-                #     subquery = subquery.filter(value_column > value)
-                # elif op == "gte":
-                #     subquery = subquery.filter(value_column >= value)
-                # elif op == "lt":
-                #     subquery = subquery.filter(value_column < value)
-                # elif op == "lte":
-                #     subquery = subquery.filter(value_column <= value)
-                # elif op == "contains" and attribute.value_type == 'string':
-                #     subquery = subquery.filter(value_column.ilike(f"%{value}%"))
-                # else:
-                #     continue
+                    continue
 
                 query = query.filter(subquery.exists())
 
