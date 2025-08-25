@@ -74,6 +74,33 @@ class EAVService:
     #                     attribute.display_name = table_attr_aliases[attribute.name]
     #         response_list.append(response_entity)
     #     return response_list
+    # 👉 вставь этот метод в класс
+    def _apply_attribute_order(
+        self,
+        db: Session,
+        entity_type_id: int,
+        attributes: List[models.Attribute],
+        current_user: models.User
+    ) -> List[models.Attribute]:
+        """Применяет сохранённый пользователем порядок к списку атрибутов"""
+        saved_order_ids = [
+            item_id for (item_id,) in db.query(models.AttributeOrder.attribute_id)
+            .filter(
+                models.AttributeOrder.user_id == current_user.id,
+                models.AttributeOrder.entity_type_id == entity_type_id
+            )
+            .order_by(models.AttributeOrder.position)
+        ]
+
+        if not saved_order_ids:
+            return sorted(attributes, key=lambda a: a.id)
+
+        attr_map = {a.id: a for a in attributes}
+        sorted_attrs = [attr_map[i] for i in saved_order_ids if i in attr_map]
+        sorted_attrs.extend(
+            sorted([a for a in attributes if a.id not in saved_order_ids], key=lambda a: a.id)
+        )
+        return sorted_attrs
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         """
         Получить список всех кастомных таблиц, доступных пользователю:
