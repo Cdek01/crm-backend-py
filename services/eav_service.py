@@ -270,7 +270,7 @@ class EAVService:
             response_entity_type = EntityType.model_validate(db_entity_type)
             response_entity_type.attributes = sorted_attributes
 
-            # 7. Применяем псевдонимы (ваш код)
+            # 7. Применяем псевдонимы
             attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
             table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
             table_name = response_entity_type.name
@@ -278,7 +278,7 @@ class EAVService:
                 response_entity_type.display_name = table_aliases[table_name]
 
             table_attr_aliases = attr_aliases.get(table_name, {})
-            for attribute in response_entity_type.attributes:  # Цикл по уже отсортированным атрибутам
+            for attribute in response_entity_type.attributes:
                 if attribute.name in table_attr_aliases:
                     attribute.display_name = table_attr_aliases[attribute.name]
 
