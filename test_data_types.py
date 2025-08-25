@@ -300,9 +300,9 @@ import json
 import time
 
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
-BASE_URL = "http://127.0.0.1:8005"
+# BASE_URL = "http://127.0.0.1:8005"
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
-# BASE_URL = "http://89.111.169.47:8005"
+BASE_URL = "http://89.111.169.47:8005"
 
 # -----------------
 
