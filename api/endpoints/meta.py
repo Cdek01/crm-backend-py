@@ -36,7 +36,6 @@ def get_entity_type(
     # Этот вызов теперь вернет объект с примененными псевдонимами
     return service.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-# ... (остальные эндпоинты без изменений)
 
 
 

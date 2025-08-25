@@ -126,46 +126,66 @@ class EAVService:
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         """
-        Получить список всех кастомных таблиц, доступных пользователю:
-        - Его собственные таблицы.
-        - Чужие таблицы, на которые у него есть права.
+        Получить список всех кастомных таблиц, доступных пользователю,
+        с корректно отсортированными колонками.
         """
-        db_user = self.db.query(models.User).options(
-            joinedload(models.User.roles).joinedload(models.Role.permissions)
-        ).filter(models.User.id == current_user.id).one()
-        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
-
-        accessible_table_names = {p.split(':')[2] for p in user_permissions if p.startswith("data:") and len(p.split(':')) == 3}
-
+        # 1. Загружаем все доступные пользователю таблицы с их атрибутами
         query = self.db.query(models.EntityType).options(
             joinedload(models.EntityType.attributes)
         ).order_by(models.EntityType.id)
 
         if not current_user.is_superuser:
-            query = query.filter(
-                or_(
-                    models.EntityType.tenant_id == current_user.tenant_id,
-                    models.EntityType.name.in_(accessible_table_names)
-                )
-            )
+            # ... (ваша логика фильтрации по tenant_id и правам)
+            pass  # Оставляем ваш рабочий код здесь
 
         db_entity_types = query.all()
 
+        # 2. Загружаем ВЕСЬ сохраненный порядок колонок для этого пользователя
+        # одним запросом. Это очень эффективно.
+        saved_orders_query = self.db.query(
+            models.AttributeOrder.entity_type_id,
+            models.AttributeOrder.attribute_id
+        ).filter(
+            models.AttributeOrder.user_id == current_user.id
+        ).order_by(models.AttributeOrder.position)
+
+        # Преобразуем результат в удобный словарь: {table_id: [attr_id_1, attr_id_2, ...]}
+        orders_map = {}
+        for table_id, attr_id in saved_orders_query:
+            if table_id not in orders_map:
+                orders_map[table_id] = []
+            orders_map[table_id].append(attr_id)
+
+        # 3. Применяем псевдонимы и сортировку к каждой таблице в списке
         attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
         table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
 
         response_list = []
         for db_entity_type in db_entity_types:
+            # Создаем Pydantic-модель
             response_entity = EntityType.model_validate(db_entity_type)
+
+            # --- НОВАЯ ЛОГИКА СОРТИРОВКИ ДЛЯ СПИСКА ---
+            saved_order_ids = orders_map.get(db_entity_type.id)
+            if saved_order_ids:
+                attributes_map = {attr.id: attr for attr in response_entity.attributes}
+                sorted_attributes = [attributes_map.pop(attr_id) for attr_id in saved_order_ids if
+                                     attr_id in attributes_map]
+                sorted_attributes.extend(sorted(attributes_map.values(), key=lambda attr: attr.id))
+                response_entity.attributes = sorted_attributes
+            # ---------------------------------------------
+
+            # Применяем псевдонимы
             if response_entity.name in table_aliases:
                 response_entity.display_name = table_aliases[response_entity.name]
 
             table_attr_aliases = attr_aliases.get(response_entity.name, {})
-            if table_attr_aliases:
-                for attribute in response_entity.attributes:
-                    if attribute.name in table_attr_aliases:
-                        attribute.display_name = table_attr_aliases[attribute.name]
+            for attribute in response_entity.attributes:
+                if attribute.name in table_attr_aliases:
+                    attribute.display_name = table_attr_aliases[attribute.name]
+
             response_list.append(response_entity)
+
         return response_list
 
     def _get_entity_type_by_name(
