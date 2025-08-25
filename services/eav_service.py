@@ -29,79 +29,30 @@ class EAVService:
 
     # --- Внутренний метод для безопасного получения типа сущности по имени ---
 
-    # --- ПОЛНОСТЬЮ ЗАМЕНИТЕ ЭТОТ МЕТОД ---
-    # def _get_entity_type_by_name(
-    #         self,
-    #         entity_type_name: str,
-    #         current_user: models.User,
-    #         tenant_id: Optional[int] = None
-    # ) -> models.EntityType:
-    #     """
-    #     Ищет таблицу. Сначала в своем тенанте, потом в "общих".
-    #     """
-    #     # 1. Сначала ищем таблицу в собственном тенанте пользователя
-    #     if not current_user.is_superuser:
-    #         own_entity_type = self.db.query(models.EntityType).filter(
-    #             models.EntityType.name == entity_type_name,
-    #             models.EntityType.tenant_id == current_user.tenant_id
-    #         ).first()
-    #
-    #         if own_entity_type:
-    #             return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(
-    #                 own_entity_type.id)
-    #
-    #         # 2. Если свою не нашли, ищем "общие"
-    #         shared_entity_type = (
-    #             self.db.query(models.EntityType)
-    #             .join(models.SharedEntityType, models.SharedEntityType.entity_type_id == models.EntityType.id)
-    #             .filter(
-    #                 models.EntityType.name == entity_type_name,
-    #                 models.SharedEntityType.user_id == current_user.id
-    #             )
-    #             .first()
-    #         )
-    #
-    #         if shared_entity_type:
-    #             return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(
-    #                 shared_entity_type.id)
-    #
-    #     # 3. Логика для суперадминистратора
-    #     if current_user.is_superuser:
-    #         # ... (код для суперадмина)
-    #         pass
-    #
-    #     # 4. Если ничего не найдено
-    #     raise HTTPException(status_code=404,
-    #                         detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
-    #
-    #
-    #
-    # # --- МЕТОДЫ ДЛЯ МЕТАДАННЫХ (Структура таблиц) ---
-    #
+
+
     # def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
     #     """
     #     Получить список всех кастомных таблиц, доступных пользователю:
     #     - Его собственные таблицы.
-    #     - Таблицы, к которым ему предоставили доступ.
+    #     - Чужие таблицы, на которые у него есть права.
     #     """
-    #     # 1. Находим ID "общих" таблиц для этого пользователя
-    #     shared_entity_type_ids_query = self.db.query(models.SharedEntityType.entity_type_id).filter(
-    #         models.SharedEntityType.user_id == current_user.id
-    #     )
+    #     db_user = self.db.query(models.User).options(
+    #         joinedload(models.User.roles).joinedload(models.Role.permissions)
+    #     ).filter(models.User.id == current_user.id).one()
+    #     user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
     #
-    #     # 2. Строим основной запрос к EntityType
+    #     accessible_table_names = {p.split(':')[2] for p in user_permissions if p.startswith("data:") and len(p.split(':')) == 3}
+    #
     #     query = self.db.query(models.EntityType).options(
     #         joinedload(models.EntityType.attributes)
     #     ).order_by(models.EntityType.id)
     #
     #     if not current_user.is_superuser:
-    #         # Обычный пользователь видит:
-    #         # - таблицы своего тенанта
-    #         # - ИЛИ таблицы, ID которых есть в списке "общих"
     #         query = query.filter(
     #             or_(
     #                 models.EntityType.tenant_id == current_user.tenant_id,
-    #                 models.EntityType.id.in_(shared_entity_type_ids_query)
+    #                 models.EntityType.name.in_(accessible_table_names)
     #             )
     #         )
     #
@@ -123,48 +74,64 @@ class EAVService:
     #                     attribute.display_name = table_attr_aliases[attribute.name]
     #         response_list.append(response_entity)
     #     return response_list
+    def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
+        """
+        Получить список всех кастомных таблиц, доступных пользователю:
+        - Его собственные таблицы.
+        - Чужие таблицы, на которые у него есть права.
+        """
+        db_user = self.db.query(models.User).options(
+            joinedload(models.User.roles).joinedload(models.Role.permissions)
+        ).filter(models.User.id == current_user.id).one()
+        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
 
+        accessible_table_names = {p.split(':')[2] for p in user_permissions if
+                                  p.startswith("data:") and len(p.split(':')) == 3}
 
+        query = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes)
+        ).order_by(models.EntityType.id)
 
-    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
-        entity_types = self.db.query(models.EntityType).all()
-        result = []
-
-        for et in entity_types:
-            # Берём сохранённый порядок из AttributeOrder
-            orders = (
-                self.db.query(models.AttributeOrder)
-                .filter(
-                    models.AttributeOrder.entity_type_id == et.id,
-                    models.AttributeOrder.user_id == current_user.id
-                )
-                .order_by(models.AttributeOrder.position)
-                .all()
-            )
-            ordered_ids = [o.attribute_id for o in orders]
-
-            # Атрибуты по умолчанию
-            attributes = et.attributes
-
-            # Если порядок сохранён → пересобираем список
-            if ordered_ids:
-                attr_map = {a.id: a for a in attributes}
-                ordered_attrs = [attr_map[i] for i in ordered_ids if i in attr_map]
-                # добавляем те, которых нет в сохранённом порядке (новые колонки)
-                ordered_attrs.extend([a for a in attributes if a.id not in ordered_ids])
-                attributes = ordered_attrs
-
-            # Записываем в результат
-            result.append(
-                models.EntityType(
-                    id=et.id,
-                    name=et.name,
-                    display_name=et.display_name,
-                    attributes=attributes,
+        if not current_user.is_superuser:
+            query = query.filter(
+                or_(
+                    models.EntityType.tenant_id == current_user.tenant_id,
+                    models.EntityType.name.in_(accessible_table_names)
                 )
             )
 
-        return result
+        db_entity_types = query.all()
+
+        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+
+        response_list = []
+        for db_entity_type in db_entity_types:
+            # применяем порядок
+            sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
+                                                       current_user)
+
+            response_entity = EntityType.model_validate(db_entity_type)
+            response_entity.attributes = sorted_attrs
+
+            # применяем алиасы
+            if response_entity.name in table_aliases:
+                response_entity.display_name = table_aliases[response_entity.name]
+
+            table_attr_aliases = attr_aliases.get(response_entity.name, {})
+            for attribute in response_entity.attributes:
+                if attribute.name in table_attr_aliases:
+                    attribute.display_name = table_attr_aliases[attribute.name]
+
+            response_list.append(response_entity)
+
+        return response_list
+
+
+
+
+
+
 
     def _get_entity_type_by_name(
             self,
