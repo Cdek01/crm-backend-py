@@ -10,7 +10,15 @@ from api.deps import get_current_user
 
 router = APIRouter()
 
-
+@router.post("/meta/entity-types/{entity_type_id}/attributes/order")
+def update_attribute_order(
+    entity_type_id: int,
+    order: List[int],
+    current_user: models.User = Depends(get_current_user),
+    eav_service: EAVService = Depends()
+):
+    eav_service.save_attribute_order(entity_type_id, order, current_user)
+    return {"status": "ok"}
 
 @router.get("/entity-types", response_model=List[EntityType])
 def get_all_entity_types(

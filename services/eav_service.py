@@ -287,8 +287,36 @@ class EAVService:
         finally:
             db.close()
 
+    def save_attribute_order(
+            self,
+            entity_type_id: int,
+            new_order: List[int],
+            current_user: models.User
+    ) -> None:
+        """
+        Сохраняет порядок атрибутов для конкретного пользователя.
+        new_order — список ID атрибутов в том порядке, как пользователь расставил.
+        """
+        # 1. Проверяем доступ к таблице
+        entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
 
+        # 2. Удаляем старый порядок
+        self.db.query(models.AttributeOrder).filter(
+            models.AttributeOrder.user_id == current_user.id,
+            models.AttributeOrder.entity_type_id == entity_type_id
+        ).delete()
 
+        # 3. Записываем новый порядок
+        for position, attr_id in enumerate(new_order):
+            order = models.AttributeOrder(
+                user_id=current_user.id,
+                entity_type_id=entity_type_id,
+                attribute_id=attr_id,
+                position=position
+            )
+            self.db.add(order)
+
+        self.db.commit()
 
 
     # Методы create/delete для метаданных остаются без изменений,
