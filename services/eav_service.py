@@ -124,9 +124,9 @@ class EAVService:
     #         response_list.append(response_entity)
     #     return response_list
 
-    from app import schemas
 
-    def get_all_entity_types(self, current_user: models.User) -> List[schemas.EntityType]:
+
+    def get_all_entity_types(self, current_user: models.User) -> List[models.EntityType]:
         entity_types = self.db.query(models.EntityType).all()
         result = []
 
@@ -156,7 +156,7 @@ class EAVService:
 
             # Записываем в результат
             result.append(
-                schemas.EntityType(
+                models.EntityType(
                     id=et.id,
                     name=et.name,
                     display_name=et.display_name,
