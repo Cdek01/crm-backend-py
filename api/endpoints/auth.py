@@ -34,7 +34,9 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
         )
 
     # --- (остальной код создания пользователя и tenant'а остается без изменений) ---
-    new_tenant = models.Tenant(name=f"Компания {user_in.full_name or user_in.email}")
+    # new_tenant = models.Tenant(name=f"Компания {user_in.full_name or user_in.email}")
+    new_tenant = models.Tenant(name=f"Компания {user_in.email}")
+
     db.add(new_tenant)
     db.flush()
 

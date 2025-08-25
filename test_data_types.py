@@ -300,9 +300,9 @@ import json
 import time
 
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
-# BASE_URL = "http://127.0.0.1:8005"
+BASE_URL = "http://127.0.0.1:8005"
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
-BASE_URL = "http://89.111.169.47:8005"
+# BASE_URL = "http://89.111.169.47:8005"
 
 # -----------------
 
@@ -320,24 +320,7 @@ def print_header(title):
     print("=" * 60)
 
 
-def register_and_login(email, password, full_name):
-    """
-    Регистрирует нового пользователя (если его нет) и затем входит в систему.
-    Возвращает словарь с заголовками для аутентификации.
-    """
-    reg_payload = {
-        "email": email, "password": password, "full_name": full_name,
-        "registration_token": CORRECT_REGISTRATION_TOKEN
-    }
-    reg_response = requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload)
-    if reg_response.status_code not in [201, 400]: reg_response.raise_for_status()
-    if reg_response.status_code == 400 and "уже существует" not in reg_response.text: reg_response.raise_for_status()
 
-    auth_payload = {'username': email, 'password': password}
-    auth_response = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload)
-    auth_response.raise_for_status()
-    token = auth_response.json()['access_token']
-    return {'Authorization': f'Bearer {token}'}
 
 def get_table_details(headers, table_id):
     """Получает детальную информацию о таблице, включая ее атрибуты."""
@@ -349,6 +332,7 @@ def get_table_details(headers, table_id):
 # --- ОСНОВНОЙ ТЕСТ ---
 def run_ordering_test():
     try:
+
         # --- ШАГ 1: ПОДГОТОВКА ---
         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ С КОЛОНКАМИ")
         headers = register_and_login()
