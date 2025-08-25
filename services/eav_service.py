@@ -230,9 +230,6 @@ class EAVService:
 
         return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(result.id)
 
-
-
-
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         """
         Получает один тип сущности по ID и возвращает его атрибуты
@@ -281,8 +278,7 @@ class EAVService:
             response_entity_type = EntityType.model_validate(db_entity_type)
             response_entity_type.attributes = sorted_attributes
 
-            # Применяем псевдонимы
-            # response_entity_type = EntityType.model_validate(db_entity_type)
+            # 7. Применяем псевдонимы к уже отсортированному объекту
             attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
             table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
             table_name = response_entity_type.name
@@ -293,7 +289,6 @@ class EAVService:
             for attribute in response_entity_type.attributes:
                 if attribute.name in table_attr_aliases:
                     attribute.display_name = table_attr_aliases[attribute.name]
-
 
             return response_entity_type
 
