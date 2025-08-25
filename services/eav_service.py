@@ -287,37 +287,49 @@ class EAVService:
         finally:
             db.close()
 
-    def save_attribute_order(
+    def set_attribute_order(
             self,
             entity_type_id: int,
-            new_order: List[int],
+            attribute_ids: List[int],
             current_user: models.User
-    ) -> None:
-        """
-        Сохраняет порядок атрибутов для конкретного пользователя.
-        new_order — список ID атрибутов в том порядке, как пользователь расставил.
-        """
-        # 1. Проверяем доступ к таблице
-        entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
+    ):
+        """Сохраняет новый порядок колонок для пользователя."""
+        # Открываем новую сессию для чистоты операции
+        db = session.SessionLocal()
+        try:
+            # 1. Проверяем, что таблица существует и доступна пользователю
+            # Важно! Вызываем get_entity_type_by_id с той же сессией `db`
+            # (Для этого его нужно немного доработать или просто проверить существование)
+            entity_type = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id).first()
+            if not entity_type or (not current_user.is_superuser and entity_type.tenant_id != current_user.tenant_id):
+                raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-        # 2. Удаляем старый порядок
-        self.db.query(models.AttributeOrder).filter(
-            models.AttributeOrder.user_id == current_user.id,
-            models.AttributeOrder.entity_type_id == entity_type_id
-        ).delete()
+            # 2. Удаляем старый порядок для этого пользователя и этой таблицы
+            db.query(models.AttributeOrder).filter(
+                models.AttributeOrder.user_id == current_user.id,
+                models.AttributeOrder.entity_type_id == entity_type_id
+            ).delete(synchronize_session=False)
 
-        # 3. Записываем новый порядок
-        for position, attr_id in enumerate(new_order):
-            order = models.AttributeOrder(
-                user_id=current_user.id,
-                entity_type_id=entity_type_id,
-                attribute_id=attr_id,
-                position=position
-            )
-            self.db.add(order)
+            # 3. Создаем новые записи с новым порядком
+            new_order_entries = []
+            for position, attr_id in enumerate(attribute_ids):
+                new_order_entries.append(
+                    models.AttributeOrder(
+                        user_id=current_user.id,
+                        entity_type_id=entity_type_id,
+                        attribute_id=attr_id,
+                        position=position
+                    )
+                )
 
-        self.db.commit()
+            if new_order_entries:
+                db.add_all(new_order_entries)
 
+            db.commit()
+        finally:
+            db.close()
+
+        return {"status": "ok", "ordered_ids": attribute_ids}
 
     # Методы create/delete для метаданных остаются без изменений,
     # так как они либо создают сущность в текущем тенанте,
