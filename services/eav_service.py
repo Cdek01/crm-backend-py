@@ -130,26 +130,18 @@ class EAVService:
         - Его собственные таблицы.
         - Чужие таблицы, на которые у него есть права.
         """
-        # 1. Получаем ПОЛНЫЙ список прав пользователя
-        user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
+        db_user = self.db.query(models.User).options(
+            joinedload(models.User.roles).joinedload(models.Role.permissions)
+        ).filter(models.User.id == current_user.id).one()
+        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
 
-        # 2. Из прав извлекаем имена таблиц, к которым есть доступ
-        accessible_table_names = set()
-        for perm in user_permissions:
-            # Ищем права, которые соответствуют шаблону "data:*:table_name"
-            if perm.startswith("data:") and len(perm.split(':')) == 3:
-                action, view, table_name = perm.split(':')
-                accessible_table_names.add(table_name)
+        accessible_table_names = {p.split(':')[2] for p in user_permissions if p.startswith("data:") and len(p.split(':')) == 3}
 
-        # 3. Строим запрос
         query = self.db.query(models.EntityType).options(
             joinedload(models.EntityType.attributes)
         ).order_by(models.EntityType.id)
 
         if not current_user.is_superuser:
-            # Обычный пользователь видит:
-            # - таблицы своего тенанта
-            # - ИЛИ таблицы, имена которых есть в списке доступных
             query = query.filter(
                 or_(
                     models.EntityType.tenant_id == current_user.tenant_id,
