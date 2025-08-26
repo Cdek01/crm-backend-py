@@ -128,12 +128,13 @@ from datetime import datetime, timedelta
 from faker import Faker
 
 # --- НАСТРОЙКИ ---
-BASE_URL = "http://89.111.169.47:8005"  # ИЛИ "http://89.111.169.47:8005"
+# BASE_URL = "http://89.111.169.47:8005"  # ИЛИ "http://89.111.169.47:8005"
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
+BASE_URL = "http://127.0.0.1:8005"  # ИЛИ "http://89.111.169.47:8005" для сервера
 
 # --- Данные пользователя для теста ---
-USER_EMAIL = "user@example.com"
-USER_PASSWORD = "string"
+USER_EMAIL = "success_user_1756208727@example.com"
+USER_PASSWORD = "password123"
 
 # -----------------
 fake = Faker('ru_RU')
@@ -196,6 +197,7 @@ def run_filtering_test():
             {"name": "department", "display_name": "Отдел", "value_type": "string"},
             {"name": "salary", "display_name": "Зарплата", "value_type": "integer"},
             {"name": "hire_date", "display_name": "Дата найма", "value_type": "date"},
+            {"name": "hire_time", "display_name": "Время найма", "value_type": "time"},  # <-- добавили время
             {"name": "is_active", "display_name": "Активен", "value_type": "boolean"},
         ]
         for attr in attributes:
@@ -206,16 +208,20 @@ def run_filtering_test():
         print_header("ШАГ 2: НАПОЛНЕНИЕ ТАБЛИЦЫ РАЗНООБРАЗНЫМИ ДАННЫМИ")
 
         test_data = [
-            {"full_name": "Иванов Иван", "department": "Продажи", "salary": 75000, "hire_date": "2023-05-10T10:00:00",
-             "is_active": True},
+            {"full_name": "Иванов Иван", "department": "Продажи", "salary": 75000,
+             "hire_date": "2023-05-10", "hire_time": "10:00:00", "is_active": True},
+
             {"full_name": "Петрова Анна", "department": "Маркетинг", "salary": 90000,
-             "hire_date": "2022-11-20T10:00:00", "is_active": True},
-            {"full_name": "Сидоров Петр", "department": "Продажи", "salary": 85000, "hire_date": "2024-01-15T10:00:00",
-             "is_active": True},
+             "hire_date": "2022-11-20", "hire_time": "10:30:00", "is_active": True},
+
+            {"full_name": "Сидоров Петр", "department": "Продажи", "salary": 85000,
+             "hire_date": "2024-01-15", "hire_time": "09:45:00", "is_active": True},
+
             {"full_name": "Кузнецова Ольга", "department": "Разработка", "salary": 120000,
-             "hire_date": "2021-03-01T10:00:00", "is_active": False},
+             "hire_date": "2021-03-01", "hire_time": "08:15:00", "is_active": False},
+
             {"full_name": "Васильев Иван", "department": "Разработка", "salary": 150000,
-             "hire_date": "2024-02-20T10:00:00", "is_active": True},
+             "hire_date": "2024-02-20", "hire_time": "11:00:00", "is_active": True},
         ]
         for item in test_data:
             requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=item).raise_for_status()

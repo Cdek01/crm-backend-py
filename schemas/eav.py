@@ -11,6 +11,7 @@ class ValueTypeEnum(str, Enum):
     float = "float"
     date = "date"
     boolean = "boolean"
+    time = "time"
 
 
 # --- Схемы для Атрибутов ('колонок') ---

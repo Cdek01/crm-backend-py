@@ -25,11 +25,12 @@ def print_status(ok, message):
 def run_test():
     print("-" * 50)
     print("--- ТЕСТ 1: ПОПЫТКА РЕГИСТРАЦИИ С НЕВЕРНЫМ ТОКЕНОМ ---")
-
+    USER_EMAIL = "user@example.com"
+    USER_PASSWORD = "string"
     payload_fail = {
-        "email": f"fail_user_{UNIQUE_ID}@example.com",
-        "password": "password123",
-        "full_name": "Fail User",
+        "email": USER_EMAIL,
+        "password": USER_PASSWORD,
+        "full_name": "user",
         "registration_token": "this-is-a-wrong-token"
     }
 

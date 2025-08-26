@@ -3,7 +3,7 @@ from sqlalchemy import Table, Column, Integer, String, ForeignKey, UniqueConstra
 from sqlalchemy import inspect # <-- Убедитесь, что этот импорт есть вверху файла
 
 from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
-                        Boolean, Text, ForeignKey, UniqueConstraint)
+                        Boolean, Text, ForeignKey, UniqueConstraint, Time)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
@@ -267,6 +267,8 @@ class AttributeValue(Base):
     value_float = Column(Float, nullable=True)
     value_date = Column(DateTime, nullable=True)
     value_boolean = Column(Boolean, nullable=True)
+    value_time = Column(Time, nullable=True)
+
 
     entity = relationship("Entity", back_populates="values")
     attribute = relationship("Attribute", back_populates="values")

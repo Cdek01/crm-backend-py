@@ -10,7 +10,7 @@ from db import models, session
 from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
 from .alias_service import AliasService
 from sqlalchemy import or_
-from datetime import datetime
+from datetime import datetime, time
 
 
 VALUE_FIELD_MAP = {
@@ -19,6 +19,7 @@ VALUE_FIELD_MAP = {
     "float": "value_float",
     "date": "value_date",
     "boolean": "value_boolean",
+    "time": "value_time",
 }
 
 
@@ -412,30 +413,44 @@ class EAVService:
                 attribute = attributes_map[field_name]
                 value_column = getattr(models.AttributeValue, VALUE_FIELD_MAP[attribute.value_type])
 
-                # Подзапрос для проверки существования нужного значения
                 subquery = self.db.query(models.AttributeValue.id).filter(
                     models.AttributeValue.entity_id == models.Entity.id,
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # Применяем операторы сравнения
-                if op == "eq":
-                    subquery = subquery.filter(value_column == value)
-                elif op == "neq":
-                    subquery = subquery.filter(value_column != value)
-                elif op == "gt":
-                    subquery = subquery.filter(value_column > value)
-                elif op == "gte":
-                    subquery = subquery.filter(value_column >= value)
-                elif op == "lt":
-                    subquery = subquery.filter(value_column < value)
-                elif op == "lte":
-                    subquery = subquery.filter(value_column <= value)
-                elif op == "contains" and attribute.value_type == 'string':
-                    search_value = str(value).lower()
-                    subquery = subquery.filter(func.lower(value_column).contains(search_value))
+                # --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ ДЛЯ КИРИЛЛИЦЫ ---
+                if attribute.value_type == 'string' and isinstance(value, str):
+                    # Для строковых полей используем ILIKE, который должен быть
+                    # регистронезависимым благодаря настройке в db/session.py.
+                    if op == "eq":
+                        # Точное совпадение без учета регистра
+                        subquery = subquery.filter(value_column.ilike(value))
+                    elif op == "contains":
+                        # Поиск подстроки без учета регистра
+                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                    elif op == "neq":
+                        # НЕ равно без учета регистра
+                        # Используем func.lower для надежности
+                        subquery = subquery.filter(func.lower(value_column) != value.lower())
+                    else:
+                        continue
                 else:
-                    continue
+                    # Для не-строковых типов данных (числа, даты) оставляем старую логику
+                    if op == "eq":
+                        subquery = subquery.filter(value_column == value)
+                    elif op == "neq":
+                        subquery = subquery.filter(value_column != value)
+                    elif op == "gt":
+                        subquery = subquery.filter(value_column > value)
+                    elif op == "gte":
+                        subquery = subquery.filter(value_column >= value)
+                    elif op == "lt":
+                        subquery = subquery.filter(value_column < value)
+                    elif op == "lte":
+                        subquery = subquery.filter(value_column <= value)
+                    else:
+                        continue
+                # -----------------------------------------------
 
                 query = query.filter(subquery.exists())
 
@@ -624,6 +639,11 @@ class EAVService:
 
         return self._pivot_data(entity)
 
+
+
+
+
+
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         """Обновить запись с корректным преобразованием типов."""
         from tasks.messaging import send_sms_for_entity_task
@@ -715,6 +735,9 @@ class EAVService:
         try:
             if value_type == 'date' and isinstance(value, str):
                 return datetime.fromisoformat(value)
+            if value_type == 'time' and isinstance(value, str):
+                # Преобразуем строку "HH:MM:SS" в объект time
+                return time.fromisoformat(value)
             if value_type == 'integer' and not isinstance(value, int):
                 return int(value)
             if value_type == 'float' and not isinstance(value, float):
