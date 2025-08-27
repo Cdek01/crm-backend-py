@@ -136,3 +136,8 @@ def set_attribute_order(
         attribute_ids=order_in.attribute_ids,
         current_user=current_user
     )
+
+
+
+
+

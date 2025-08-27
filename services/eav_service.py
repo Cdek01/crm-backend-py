@@ -20,6 +20,7 @@ VALUE_FIELD_MAP = {
     "date": "value_date",
     "boolean": "value_boolean",
     "time": "value_time",
+    "select": "value_integer",  # ID опции будем хранить как integer
 }
 
 

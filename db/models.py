@@ -222,6 +222,12 @@ class Attribute(Base):
     # "delete" (в составе "all") - удаляет все связанные 'AttributeValue', когда удаляется сам 'Attribute'.
     values = relationship("AttributeValue", cascade="all, delete-orphan")
 
+
+    # Если value_type = 'select', это поле будет ссылаться на список опций
+    select_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=True)
+    select_list = relationship("SelectOptionList")
+    # -------------------------
+
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
 
@@ -466,3 +472,28 @@ class AttributeOrder(Base):
     __table_args__ = (
         UniqueConstraint('user_id', 'entity_type_id', 'attribute_id', name='_user_type_attr_uc'),
     )
+
+
+
+
+
+class SelectOptionList(Base):
+    """Контейнер для набора опций выпадающего списка, например, 'Статусы лида'."""
+    __tablename__ = 'select_option_lists'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False) # Название списка
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
+    tenant = relationship("Tenant")
+    options = relationship("SelectOption", back_populates="option_list", cascade="all, delete-orphan")
+    # Гарантируем уникальность имен списков в рамках одного клиента
+    __table_args__ = (UniqueConstraint('name', 'tenant_id', name='_option_list_name_tenant_uc'),)
+    def __str__(self): return self.name
+
+class SelectOption(Base):
+    """Одна опция в выпадающем списке, например, 'В работе'."""
+    __tablename__ = 'select_options'
+    id = Column(Integer, primary_key=True)
+    value = Column(String, nullable=False) # Текст опции
+    option_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=False)
+    option_list = relationship("SelectOptionList", back_populates="options")
+    def __str__(self): return self.value

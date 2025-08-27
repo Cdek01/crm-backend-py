@@ -19,7 +19,7 @@ from sqlalchemy.orm import joinedload # <-- Добавьте импорт
 from fastapi.responses import RedirectResponse, HTMLResponse # <-- Добавьте HTMLResponse
 
 # Роутеры для всех ваших API эндпоинтов
-from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases
+from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases, select_lists
 from starlette.templating import Jinja2Templates # <-- Убедитесь, что этот импорт есть
 
 # Модули для админ-панели
@@ -143,7 +143,7 @@ app.include_router(aliases.router, prefix="/api/aliases", tags=["Aliases"])
 app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
 app.include_router(shared.router, prefix="/api/shares", tags=["Shares"])
-
+app.include_router(select_lists.router, prefix="/api/meta/select-lists", tags=["Meta (Select Lists)"])
 
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---

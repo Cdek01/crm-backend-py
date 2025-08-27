@@ -12,6 +12,7 @@ class ValueTypeEnum(str, Enum):
     date = "date"
     boolean = "boolean"
     time = "time"
+    select = "select"
 
 
 # --- Схемы для Атрибутов ('колонок') ---
