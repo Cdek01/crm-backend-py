@@ -566,6 +566,10 @@ class EAVService:
             {"name": "sms_last_error", "display_name": "Ошибка отправки", "value_type": "string"},
             {"name": "phone_number", "display_name": "Номер телефона", "value_type": "string"},
             {"name": "message_text", "display_name": "Текст сообщения", "value_type": "string"},
+            # --- ДОБАВЬТЕ ЭТИ ДВЕ СТРОКИ ---
+            {"name": "creation_date", "display_name": "Дата создания", "value_type": "date"},
+            {"name": "modification_date", "display_name": "Дата изменения", "value_type": "date"},
+            #
         ]
 
         for attr_data in system_attributes:
@@ -661,6 +665,12 @@ class EAVService:
 
         attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
 
+        # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД ОБНОВЛЕНИЕМ ---
+        # Внедряем текущую дату, если колонка "Дата изменения" существует
+        if 'modification_date' in attributes_map:
+            data['modification_date'] = datetime.utcnow().isoformat()
+        # -------------------------------------------------
+
         # 3. Проверяем триггер SMS и модифицируем входящие данные
         if data.get("send_sms_trigger") is True:
             data["sms_status"] = "pending"
@@ -752,6 +762,11 @@ class EAVService:
         """Создать новую запись с корректным преобразованием типов."""
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
+
+        # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД СОЗДАНИЕМ ЗАПИСИ ---
+        # Внедряем текущую дату, если колонка "Дата создания" существует
+        if 'creation_date' in attributes_map:
+            data['creation_date'] = datetime.utcnow().isoformat()
 
         new_entity = models.Entity(entity_type_id=entity_type.id)
         self.db.add(new_entity)
