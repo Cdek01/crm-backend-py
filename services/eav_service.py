@@ -1,6 +1,5 @@
 #services/eav_service.py
 
-from datetime import datetime
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
@@ -10,7 +9,8 @@ from db import models, session
 from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
 from .alias_service import AliasService
 from sqlalchemy import or_
-from datetime import datetime, time
+from datetime import datetime, date, time, timedelta
+from dateutil.relativedelta import relativedelta
 
 
 VALUE_FIELD_MAP = {
@@ -29,54 +29,38 @@ class EAVService:
         self.db = db
         self.alias_service = alias_service
 
-    # --- Внутренний метод для безопасного получения типа сущности по имени ---
+    def _parse_date_filter_value(self, value: Any) -> date:
+        """
+        Интерпретирует значение из фильтра для дат и возвращает объект date.
+        """
+        today = date.today()
+
+        if isinstance(value, str):
+            if value == 'today': return today
+            if value == 'tomorrow': return today + timedelta(days=1)
+            if value == 'yesterday': return today - timedelta(days=1)
+            if value == 'one_week_ago': return today - timedelta(weeks=1)
+            if value == 'one_week_from_now': return today + timedelta(weeks=1)
+            if value == 'one_month_ago': return today - relativedelta(months=1)
+            if value == 'one_month_from_now': return today + relativedelta(months=1)
+            # Если это строка с точной датой
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail=f"Неверный формат точной даты: {value}")
+
+        if isinstance(value, dict):
+            amount = value.get('amount', 0)
+            # unit пока всегда 'days', но можно расширить
+            if 'ago' in value.get('type', ''):  # type будет 'number_of_days_ago'
+                return today - timedelta(days=amount)
+            if 'from_now' in value.get('type', ''):  # type будет 'number_of_days_from_now'
+                return today + timedelta(days=amount)
+
+        raise HTTPException(status_code=400, detail=f"Неподдерживаемый формат значения для фильтра по дате: {value}")
 
 
 
-    # def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
-    #     """
-    #     Получить список всех кастомных таблиц, доступных пользователю:
-    #     - Его собственные таблицы.
-    #     - Чужие таблицы, на которые у него есть права.
-    #     """
-    #     db_user = self.db.query(models.User).options(
-    #         joinedload(models.User.roles).joinedload(models.Role.permissions)
-    #     ).filter(models.User.id == current_user.id).one()
-    #     user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
-    #
-    #     accessible_table_names = {p.split(':')[2] for p in user_permissions if p.startswith("data:") and len(p.split(':')) == 3}
-    #
-    #     query = self.db.query(models.EntityType).options(
-    #         joinedload(models.EntityType.attributes)
-    #     ).order_by(models.EntityType.id)
-    #
-    #     if not current_user.is_superuser:
-    #         query = query.filter(
-    #             or_(
-    #                 models.EntityType.tenant_id == current_user.tenant_id,
-    #                 models.EntityType.name.in_(accessible_table_names)
-    #             )
-    #         )
-    #
-    #     db_entity_types = query.all()
-    #
-    #     attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
-    #     table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-    #
-    #     response_list = []
-    #     for db_entity_type in db_entity_types:
-    #         response_entity = EntityType.model_validate(db_entity_type)
-    #         if response_entity.name in table_aliases:
-    #             response_entity.display_name = table_aliases[response_entity.name]
-    #
-    #         table_attr_aliases = attr_aliases.get(response_entity.name, {})
-    #         if table_attr_aliases:
-    #             for attribute in response_entity.attributes:
-    #                 if attribute.name in table_attr_aliases:
-    #                     attribute.display_name = table_attr_aliases[attribute.name]
-    #         response_list.append(response_entity)
-    #     return response_list
-    # 👉 вставь этот метод в класс
     def _apply_attribute_order(
         self,
         db: Session,
@@ -419,22 +403,52 @@ class EAVService:
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # --- ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ ДЛЯ КИРИЛЛИЦЫ ---
-                if attribute.value_type == 'string' and isinstance(value, str):
-                    # Для строковых полей используем ILIKE, который должен быть
-                    # регистронезависимым благодаря настройке в db/session.py.
-                    if op == "eq":
-                        # Точное совпадение без учета регистра
-                        subquery = subquery.filter(value_column.ilike(value))
-                    elif op == "contains":
-                        # Поиск подстроки без учета регистра
-                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
-                    elif op == "neq":
-                        # НЕ равно без учета регистра
-                        # Используем func.lower для надежности
-                        subquery = subquery.filter(func.lower(value_column) != value.lower())
+                # --- НОВАЯ РАСШИРЕННАЯ ЛОГИКА ФИЛЬТРАЦИИ ---
+
+                # 1. Обработка "пусто" / "не пусто" для всех типов
+                if op == 'blank':
+                    # Ищем сущности, у которых НЕТ значения для этого атрибута
+                    query = query.filter(~subquery.exists())
+                    continue  # Переходим к следующему фильтру
+                elif op == 'not_blank':
+                    # Ищем сущности, у которых ЕСТЬ значение для этого атрибута
+                    query = query.filter(subquery.exists())
+                    continue  # Переходим к следующему фильтру
+
+                # 2. Обработка полей типа "дата"
+                if attribute.value_type == 'date':
+                    # Для диапазона
+                    if op == 'is_within':
+                        if not isinstance(value, list) or len(value) != 2:
+                            raise HTTPException(status_code=400,
+                                                detail="Для 'is_within' value должен быть списком из 2-х элементов")
+
+                        start_date = self._parse_date_filter_value(value[0])
+                        end_date = self._parse_date_filter_value(value[1])
+                        # Включаем полный день, добавляя время 23:59:59
+                        start_datetime = datetime.combine(start_date, time.min)
+                        end_datetime = datetime.combine(end_date, time.max)
+                        subquery = subquery.filter(value_column.between(start_datetime, end_datetime))
                     else:
-                        continue
+                        # Для всех остальных операторов с датой
+                        target_date = self._parse_date_filter_value(value)
+                        start_of_day = datetime.combine(target_date, time.min)
+                        end_of_day = datetime.combine(target_date, time.max)
+
+                        if op == 'is':
+                            subquery = subquery.filter(value_column.between(start_of_day, end_of_day))
+                        elif op == 'is_not':
+                            subquery = subquery.filter(~value_column.between(start_of_day, end_of_day))
+                        elif op == 'is_after':
+                            subquery = subquery.filter(value_column > end_of_day)
+                        elif op == 'is_before':
+                            subquery = subquery.filter(value_column < start_of_day)
+                        elif op == 'is_on_or_after':
+                            subquery = subquery.filter(value_column >= start_of_day)
+                        elif op == 'is_on_or_before':
+                            subquery = subquery.filter(value_column <= end_of_day)
+                        else:
+                            continue  # Пропускаем неподдерживаемые операторы
                 else:
                     # Для не-строковых типов данных (числа, даты) оставляем старую логику
                     if op == "eq":

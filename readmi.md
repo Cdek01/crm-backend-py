@@ -1,6 +1,8 @@
 pip install -r requirements.txt
 venv\Scripts\activate.bat
 http://89.111.169.47:8005/docs
+venv\Scripts\activate.bat - для Windows;
+source venv/bin/activate - для Linux и MacOS.
 
 Запустить Redis (если еще не запущен):
 Generated bash
