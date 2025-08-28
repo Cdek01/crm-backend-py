@@ -61,6 +61,19 @@ class EAVService:
 
 
 
+    def _parse_time_filter_value(self, value: Any) -> time:
+        """Интерпретирует значение из фильтра для времени и возвращает объект time."""
+        if isinstance(value, str):
+            try:
+                # Ожидаем время в формате "HH:MM:SS" или "HH:MM"
+                return time.fromisoformat(value)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail=f"Неверный формат времени: {value}")
+        raise HTTPException(status_code=400, detail=f"Неподдерживаемый формат значения для фильтра по времени: {value}")
+
+
+
+
     def _apply_attribute_order(
         self,
         db: Session,
@@ -403,38 +416,38 @@ class EAVService:
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # --- НОВАЯ РАСШИРЕННАЯ ЛОГИКА ФИЛЬТРАЦИИ ---
+                # --- НОВАЯ, ПЕРЕСТРОЕННАЯ ЛОГИКА ---
 
-                # 1. Обработка "пусто" / "не пусто" для всех типов
+                # 1. Сначала обрабатываем универсальные операторы
                 if op == 'blank':
-                    # Ищем сущности, у которых НЕТ значения для этого атрибута
                     query = query.filter(~subquery.exists())
-                    continue  # Переходим к следующему фильтру
+                    continue
                 elif op == 'not_blank':
-                    # Ищем сущности, у которых ЕСТЬ значение для этого атрибута
                     query = query.filter(subquery.exists())
-                    continue  # Переходим к следующему фильтру
+                    continue
 
-                # 2. Обработка полей типа "дата"
-                if attribute.value_type == 'date':
-                    # Для диапазона
+                # 2. Теперь обрабатываем по типам
+                if attribute.value_type == 'string' and isinstance(value, str):
+                    if op == "eq":
+                        subquery = subquery.filter(value_column.ilike(value))
+                    elif op == "contains":
+                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                    elif op == "neq":
+                        subquery = subquery.filter(func.lower(value_column) != value.lower())
+                    else:
+                        continue
+
+                elif attribute.value_type == 'date':
                     if op == 'is_within':
-                        if not isinstance(value, list) or len(value) != 2:
-                            raise HTTPException(status_code=400,
-                                                detail="Для 'is_within' value должен быть списком из 2-х элементов")
-
                         start_date = self._parse_date_filter_value(value[0])
                         end_date = self._parse_date_filter_value(value[1])
-                        # Включаем полный день, добавляя время 23:59:59
-                        start_datetime = datetime.combine(start_date, time.min)
-                        end_datetime = datetime.combine(end_date, time.max)
-                        subquery = subquery.filter(value_column.between(start_datetime, end_datetime))
+                        start_dt = datetime.combine(start_date, time.min)
+                        end_dt = datetime.combine(end_date, time.max)
+                        subquery = subquery.filter(value_column.between(start_dt, end_dt))
                     else:
-                        # Для всех остальных операторов с датой
                         target_date = self._parse_date_filter_value(value)
                         start_of_day = datetime.combine(target_date, time.min)
                         end_of_day = datetime.combine(target_date, time.max)
-
                         if op == 'is':
                             subquery = subquery.filter(value_column.between(start_of_day, end_of_day))
                         elif op == 'is_not':
@@ -448,9 +461,32 @@ class EAVService:
                         elif op == 'is_on_or_before':
                             subquery = subquery.filter(value_column <= end_of_day)
                         else:
-                            continue  # Пропускаем неподдерживаемые операторы
-                else:
-                    # Для не-строковых типов данных (числа, даты) оставляем старую логику
+                            continue
+
+                elif attribute.value_type == 'time':
+                    column_as_str = func.strftime('%H:%M:%S', value_column)
+                    if op == 'is_within':
+                        start_time_str = self._parse_time_filter_value(value[0]).strftime('%H:%M:%S')
+                        end_time_str = self._parse_time_filter_value(value[1]).strftime('%H:%M:%S')
+                        subquery = subquery.filter(and_(column_as_str >= start_time_str, column_as_str <= end_time_str))
+                    else:
+                        time_str_value = self._parse_time_filter_value(value).strftime('%H:%M:%S')
+                        if op == 'is':
+                            subquery = subquery.filter(column_as_str == time_str_value)
+                        elif op == 'is_not':
+                            subquery = subquery.filter(column_as_str != time_str_value)
+                        elif op == 'is_after':
+                            subquery = subquery.filter(column_as_str > time_str_value)
+                        elif op == 'is_before':
+                            subquery = subquery.filter(column_as_str < time_str_value)
+                        elif op == 'is_on_or_after':
+                            subquery = subquery.filter(column_as_str >= time_str_value)
+                        elif op == 'is_on_or_before':
+                            subquery = subquery.filter(column_as_str <= time_str_value)
+                        else:
+                            continue
+
+                else:  # Для integer, float, boolean
                     if op == "eq":
                         subquery = subquery.filter(value_column == value)
                     elif op == "neq":
@@ -465,10 +501,8 @@ class EAVService:
                         subquery = subquery.filter(value_column <= value)
                     else:
                         continue
-                # -----------------------------------------------
 
                 query = query.filter(subquery.exists())
-
         # 4. Применяем сортировку
         sort_func = desc if sort_order.lower() == 'desc' else asc
 

@@ -330,7 +330,7 @@ import time
 from datetime import datetime, date, timedelta
 
 # --- НАСТРОЙКИ ---
-BASE_URL = "http://127.0.0.1:8005"
+BASE_URL = "http://89.111.169.47:8005"
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
 
 
@@ -349,120 +349,209 @@ def print_header(title):
     print("=" * 60)
 
 
-def register_and_login():
-    unique_id = int(time.time())
-    email = f"select_tester_{unique_id}@example.com"
-    password = "password123"
-    reg_payload = {"email": email, "password": password, "full_name": "Select Tester",
-                   "registration_token": CORRECT_REGISTRATION_TOKEN}
-    requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
-    auth_payload = {'username': email, 'password': password}
-    token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
-    return {'Authorization': f'Bearer {token}'}
+# def register_and_login():
+#     unique_id = int(time.time())
+#     email = f"select_tester_{unique_id}@example.com"
+#     password = "password123"
+#     reg_payload = {"email": email, "password": password, "full_name": "Select Tester",
+#                    "registration_token": CORRECT_REGISTRATION_TOKEN}
+#     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
+#     auth_payload = {'username': email, 'password': password}
+#     token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
+#     return {'Authorization': f'Bearer {token}'}
 
-def run_advanced_filter_test():
+# def run_advanced_filter_test():
+#     try:
+#         # --- ШАГ 1: ПОДГОТОВКА ---
+#         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
+#         headers = register_and_login()
+#
+#         table_name = f"tasks_filter_{int(time.time())}"
+#         table_config = {"name": table_name, "display_name": "Задачи (фильтры)"}
+#         table_id = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config).json()['id']
+#
+#         attributes = [
+#             {"name": "due_date", "display_name": "Срок сдачи", "value_type": "date"},
+#             {"name": "description", "display_name": "Описание", "value_type": "string"},
+#         ]
+#         for attr in attributes:
+#             requests.post(f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes", headers=headers,
+#                           json=attr).raise_for_status()
+#
+#         # --- ШАГ 2: НАПОЛНЕНИЕ ДАННЫМИ ---
+#         print_header("ШАГ 2: НАПОЛНЕНИЕ ТАБЛИЦЫ РАЗНООБРАЗНЫМИ ДАННЫМИ")
+#
+#         today = date.today()
+#         test_data = [
+#             # 1. Задача со сроком далеко в прошлом (без описания)
+#             {"due_date": (today - timedelta(days=10)).isoformat()},
+#             # 2. Задача со сроком "вчера"
+#             {"due_date": (today - timedelta(days=1)).isoformat(), "description": "Вчерашняя задача"},
+#             # 3. Задача со сроком "сегодня"
+#             {"due_date": today.isoformat(), "description": "Сегодняшняя задача"},
+#             # 4. Задача со сроком "завтра"
+#             {"due_date": (today + timedelta(days=1)).isoformat(), "description": "Завтрашняя задача"},
+#             # 5. Задача со сроком далеко в будущем
+#             {"due_date": (today + timedelta(days=10)).isoformat(), "description": "Задача на будущее"},
+#         ]
+#         for item in test_data:
+#             # Преобразуем date в datetime для отправки
+#             if 'due_date' in item:
+#                 # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+#                 # Используем `datetime.time.min` вместо `time.min`
+#                 item['due_date'] = datetime.combine(date.fromisoformat(item['due_date']), datetime.min.time()).isoformat()
+#                 # ---------------------------
+#             requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=item).raise_for_status()
+#
+#         print_status(True, "5 тестовых записей успешно созданы.")
+#         # --- ШАГ 3: ТЕСТИРОВАНИЕ ФИЛЬТРОВ ---
+#         print_header("ШАГ 3: ТЕСТЫ РАСШИРЕННОЙ ФИЛЬТРАЦИИ")
+#
+#         # Тест 1: blank / not_blank
+#         print("\n -> Тест 1: Поле 'Описание' пустое (ожидается 1)")
+#         filters1 = [{"field": "description", "op": "blank"}]
+#         resp1 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters1)}).json()
+#         print_status(len(resp1) == 1, f"Найдено {len(resp1)} записей.")
+#
+#         print("\n -> Тест 2: Поле 'Описание' не пустое (ожидается 4)")
+#         filters2 = [{"field": "description", "op": "not_blank"}]
+#         resp2 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters2)}).json()
+#         print_status(len(resp2) == 4, f"Найдено {len(resp2)} записей.")
+#
+#         # Тест 3: Относительные даты
+#         print("\n -> Тест 3: Срок сдачи 'является' 'сегодня' (ожидается 1)")
+#         filters3 = [{"field": "due_date", "op": "is", "value": "today"}]
+#         resp3 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters3)}).json()
+#         print_status(len(resp3) == 1, f"Найдено {len(resp3)} записей.")
+#
+#         # Тест 4: "Количество дней"
+#         print("\n -> Тест 4: Срок сдачи 'после' 'через 5 дней' (ожидается 1)")
+#         filters4 = [{"field": "due_date", "op": "is_after", "value": {"type": "number_of_days_from_now", "amount": 5}}]
+#         resp4 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters4)}).json()
+#         print_status(len(resp4) == 1, f"Найдено {len(resp4)} записей.")
+#
+#         # Тест 5: Точная дата
+#         print("\n -> Тест 5: Срок сдачи 'в или до' точной даты 'завтра' (ожидается 4)")
+#         tomorrow_iso = (today + timedelta(days=1)).isoformat()
+#         filters5 = [{"field": "due_date", "op": "is_on_or_before", "value": tomorrow_iso}]
+#         resp5 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters5)}).json()
+#         print_status(len(resp5) == 4, f"Найдено {len(resp5)} записей.")
+#
+#         # Тест 6: Диапазон 'is_within'
+#         print("\n -> Тест 6: Срок сдачи 'в пределах' от 'вчера' до 'завтра' (ожидается 3)")
+#         filters6 = [{"field": "due_date", "op": "is_within", "value": ["yesterday", "tomorrow"]}]
+#         resp6 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+#                              params={"filters": json.dumps(filters6)}).json()
+#         print_status(len(resp6) == 3, f"Найдено {len(resp6)} записей.")
+#
+#         print("\n" + "=" * 60)
+#         print("🎉🎉🎉 ТЕСТ РАСШИРЕННОЙ ФИЛЬТРАЦИИ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+#
+#     except requests.exceptions.HTTPError as e:
+#         print(f"Ошибка при выполнении запроса: {e}")
+#     except Exception as e:
+#         print(f"Ошибка при выполнении запроса: {e}")
+#
+#
+# if __name__ == "__main__":
+#     run_advanced_filter_test()
+
+import requests
+import json
+import time
+
+# --- НАСТРОЙКИ ---
+# BASE_URL = "http://127.0.0.1:8000"
+CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
+
+
+# -----------------
+
+# --- Вспомогательные функции ---
+# ... (вставьте сюда `print_status`, `print_header`, `register_and_login`)
+
+def run_boolean_filter_test():
     try:
         # --- ШАГ 1: ПОДГОТОВКА ---
         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
         headers = register_and_login()
 
-        table_name = f"tasks_filter_{int(time.time())}"
-        table_config = {"name": table_name, "display_name": "Задачи (фильтры)"}
+        table_name = f"projects_bool_{int(time.time())}"
+        table_config = {"name": table_name, "display_name": "Проекты (bool тест)"}
         table_id = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config).json()['id']
 
         attributes = [
-            {"name": "due_date", "display_name": "Срок сдачи", "value_type": "date"},
-            {"name": "description", "display_name": "Описание", "value_type": "string"},
+            {"name": "project_name", "display_name": "Название проекта", "value_type": "string"},
+            {"name": "is_completed", "display_name": "Сдан", "value_type": "boolean"},
         ]
         for attr in attributes:
             requests.post(f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes", headers=headers,
                           json=attr).raise_for_status()
 
         # --- ШАГ 2: НАПОЛНЕНИЕ ДАННЫМИ ---
-        print_header("ШАГ 2: НАПОЛНЕНИЕ ТАБЛИЦЫ РАЗНООБРАЗНЫМИ ДАННЫМИ")
+        print_header("ШАГ 2: НАПОЛНЕНИЕ ТАБЛИЦЫ ДАННЫМИ")
 
-        today = date.today()
         test_data = [
-            # 1. Задача со сроком далеко в прошлом (без описания)
-            {"due_date": (today - timedelta(days=10)).isoformat()},
-            # 2. Задача со сроком "вчера"
-            {"due_date": (today - timedelta(days=1)).isoformat(), "description": "Вчерашняя задача"},
-            # 3. Задача со сроком "сегодня"
-            {"due_date": today.isoformat(), "description": "Сегодняшняя задача"},
-            # 4. Задача со сроком "завтра"
-            {"due_date": (today + timedelta(days=1)).isoformat(), "description": "Завтрашняя задача"},
-            # 5. Задача со сроком далеко в будущем
-            {"due_date": (today + timedelta(days=10)).isoformat(), "description": "Задача на будущее"},
+            {"project_name": "Проект Альфа", "is_completed": True},
+            {"project_name": "Проект Бета", "is_completed": False},
+            {"project_name": "Проект Гамма", "is_completed": True},
+            {"project_name": "Проект Дельта", "is_completed": False},
         ]
         for item in test_data:
-            # Преобразуем date в datetime для отправки
-            if 'due_date' in item:
-                # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-                # Используем `datetime.time.min` вместо `time.min`
-                item['due_date'] = datetime.combine(date.fromisoformat(item['due_date']), datetime.min.time()).isoformat()
-                # ---------------------------
             requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=item).raise_for_status()
 
-        print_status(True, "5 тестовых записей успешно созданы.")
+        print_status(True, "4 тестовых записи успешно созданы.")
+
         # --- ШАГ 3: ТЕСТИРОВАНИЕ ФИЛЬТРОВ ---
-        print_header("ШАГ 3: ТЕСТЫ РАСШИРЕННОЙ ФИЛЬТРАЦИИ")
+        print_header("ШАГ 3: ТЕСТЫ ФИЛЬТРАЦИИ ПО BOOLEAN")
 
-        # Тест 1: blank / not_blank
-        print("\n -> Тест 1: Поле 'Описание' пустое (ожидается 1)")
-        filters1 = [{"field": "description", "op": "blank"}]
-        resp1 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters1)}).json()
-        print_status(len(resp1) == 1, f"Найдено {len(resp1)} записей.")
+        # Тест 1: Поиск по значению True
+        print("\n -> Тест 1: Найти все сданные проекты (is_completed = true, ожидается 2)")
+        filters1 = [{"field": "is_completed", "value": True}]  # op: "eq" по умолчанию
+        params1 = {"filters": json.dumps(filters1)}
+        resp1 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers, params=params1).json()
+        print_status(len(resp1) == 2, f"Найдено {len(resp1)} записей.")
 
-        print("\n -> Тест 2: Поле 'Описание' не пустое (ожидается 4)")
-        filters2 = [{"field": "description", "op": "not_blank"}]
-        resp2 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters2)}).json()
-        print_status(len(resp2) == 4, f"Найдено {len(resp2)} записей.")
+        # Тест 2: Поиск по значению False
+        print("\n -> Тест 2: Найти все несданные проекты (is_completed = false, ожидается 2)")
+        filters2 = [{"field": "is_completed", "value": False}]
+        params2 = {"filters": json.dumps(filters2)}
+        resp2 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers, params=params2).json()
+        print_status(len(resp2) == 2, f"Найдено {len(resp2)} записей.")
 
-        # Тест 3: Относительные даты
-        print("\n -> Тест 3: Срок сдачи 'является' 'сегодня' (ожидается 1)")
-        filters3 = [{"field": "due_date", "op": "is", "value": "today"}]
-        resp3 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters3)}).json()
-        print_status(len(resp3) == 1, f"Найдено {len(resp3)} записей.")
-
-        # Тест 4: "Количество дней"
-        print("\n -> Тест 4: Срок сдачи 'после' 'через 5 дней' (ожидается 1)")
-        filters4 = [{"field": "due_date", "op": "is_after", "value": {"type": "number_of_days_from_now", "amount": 5}}]
-        resp4 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters4)}).json()
-        print_status(len(resp4) == 1, f"Найдено {len(resp4)} записей.")
-
-        # Тест 5: Точная дата
-        print("\n -> Тест 5: Срок сдачи 'в или до' точной даты 'завтра' (ожидается 4)")
-        tomorrow_iso = (today + timedelta(days=1)).isoformat()
-        filters5 = [{"field": "due_date", "op": "is_on_or_before", "value": tomorrow_iso}]
-        resp5 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters5)}).json()
-        print_status(len(resp5) == 4, f"Найдено {len(resp5)} записей.")
-
-        # Тест 6: Диапазон 'is_within'
-        print("\n -> Тест 6: Срок сдачи 'в пределах' от 'вчера' до 'завтра' (ожидается 3)")
-        filters6 = [{"field": "due_date", "op": "is_within", "value": ["yesterday", "tomorrow"]}]
-        resp6 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                             params={"filters": json.dumps(filters6)}).json()
-        print_status(len(resp6) == 3, f"Найдено {len(resp6)} записей.")
+        # Тест 3: Проверка "не пусто"
+        print("\n -> Тест 3: Найти все проекты, где поле 'Сдан' заполнено (ожидается 4)")
+        filters3 = [{"field": "is_completed", "op": "not_blank"}]
+        params3 = {"filters": json.dumps(filters3)}
+        resp3 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers, params=params3).json()
+        print_status(len(resp3) == 4, f"Найдено {len(resp3)} записей.")
 
         print("\n" + "=" * 60)
-        print("🎉🎉🎉 ТЕСТ РАСШИРЕННОЙ ФИЛЬТРАЦИИ ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+        print("🎉🎉🎉 ТЕСТ ФИЛЬТРАЦИИ ПО BOOLEAN ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
 
     except requests.exceptions.HTTPError as e:
-        print(f"Ошибка при выполнении запроса: {e}")
+        print(f"\n❌ ОШИБКА HTTP: {e.response.status_code} - {e.response.text}")
     except Exception as e:
-        print(f"Ошибка при выполнении запроса: {e}")
+        print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
+
+
+# Вставьте сюда вашу рабочую функцию register_and_login
+def register_and_login():
+    unique_id = int(time.time())
+    email = f"bool_tester_{unique_id}@example.com"
+    password = "password123"
+    reg_payload = {"email": email, "password": password, "full_name": "Boolean Tester",
+                   "registration_token": CORRECT_REGISTRATION_TOKEN}
+    requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
+    auth_payload = {'username': email, 'password': password}
+    token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
+    return {'Authorization': f'Bearer {token}'}
 
 
 if __name__ == "__main__":
-    run_advanced_filter_test()
-
-
-
-
-
-
+    run_boolean_filter_test()
