@@ -83,3 +83,8 @@ class EntityType(EntityTypeBase):
 class AttributeOrderSetRequest(BaseModel):
     # Список ID атрибутов в новом, правильном порядке
     attribute_ids: List[int]
+
+
+class EntityOrderSetRequest(BaseModel):
+    # Список ID строк (сущностей) в новом, правильном порядке
+    entity_ids: List[int]

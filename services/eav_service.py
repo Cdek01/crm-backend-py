@@ -382,7 +382,7 @@ class EAVService:
             current_user: models.User,
             tenant_id: Optional[int] = None,
             filters: List[Dict[str, Any]] = None,
-            sort_by: str = 'created_at',
+            sort_by: str = 'position',
             sort_order: str = 'desc',
             skip: int = 0,
             limit: int = 100
@@ -513,7 +513,10 @@ class EAVService:
         # 4. Применяем сортировку
         sort_func = desc if sort_order.lower() == 'desc' else asc
 
-        if sort_by == 'created_at':
+        if sort_by == 'position':
+            # Сортировка по position всегда по возрастанию (от меньшего к большему)
+            query = query.order_by(asc(models.Entity.position))
+        elif sort_by == 'created_at':
             query = query.order_by(sort_func(models.Entity.created_at))
         elif sort_by in attributes_map:
             sort_attribute = attributes_map[sort_by]
@@ -842,7 +845,14 @@ class EAVService:
         if 'creation_date' in attributes_map:
             data['creation_date'] = datetime.utcnow().isoformat()
 
-        new_entity = models.Entity(entity_type_id=entity_type.id)
+        # 1. Находим минимальную (верхнюю) позицию в этой таблице
+        min_pos_result = self.db.query(func.min(models.Entity.position)).filter(
+            models.Entity.entity_type_id == entity_type.id
+        ).scalar()
+
+        new_position = (min_pos_result - 1) if min_pos_result is not None else 0
+
+        new_entity = models.Entity(entity_type_id=entity_type.id, position=new_position)
         self.db.add(new_entity)
         self.db.flush()
 
@@ -977,7 +987,7 @@ class EAVService:
             entity_type_name: str,
             data: Dict[str, Any],
             current_user: models.User
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Создает новую сущность, а затем возвращает полный список всех сущностей
         для этого типа, отсортированный по умолчанию (новые вверху).
@@ -1070,3 +1080,26 @@ class EAVService:
 
         self.db.commit()
         return {"status": "ok", "ordered_ids": attribute_ids}
+
+    def set_entity_order(
+            self,
+            entity_type_name: str,
+            entity_ids: List[int],
+            current_user: models.User
+    ):
+        """Сохраняет новый порядок строк для таблицы."""
+        # Проверяем доступ к таблице
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+
+        # Используем "bulk update", чтобы обновить все записи одним запросом.
+        # Это очень эффективно.
+        update_mappings = [
+            {"id": entity_id, "position": position}
+            for position, entity_id in enumerate(entity_ids)
+        ]
+
+        if update_mappings:
+            self.db.bulk_update_mappings(models.Entity, update_mappings)
+            self.db.commit()
+
+        return {"status": "ok", "ordered_ids": entity_ids}

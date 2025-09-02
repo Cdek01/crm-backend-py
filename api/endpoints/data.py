@@ -6,6 +6,8 @@ from db import models
 from services.eav_service import EAVService
 from api.deps import get_current_user
 from schemas.data import BulkDeleteRequest
+from schemas.eav import EntityOrderSetRequest
+
 
 router = APIRouter()
 
@@ -31,8 +33,7 @@ def delete_multiple_entities(
 
 
 
-@router.post("/{entity_type_name}", response_model=List[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
-# ---------------------------------
+@router.post("/{entity_type_name}", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 def create_entity(
         entity_type_name: str,
         data: Dict[str, Any] = Body(...),
@@ -43,7 +44,7 @@ def create_entity(
     Создать новую запись и вернуть ПОЛНЫЙ, отсортированный список всех записей,
     где новая запись будет в начале.
     """
-    return service.create_entity_and_get_list(entity_type_name, data, current_user)
+    return service.create_entity(entity_type_name, data, current_user)
 
 
 
@@ -106,7 +107,8 @@ def get_all_entities(
             description="ID клиента (тенанта). Доступно только для суперадминистраторов."
         ),
         filters: Optional[str] = None,
-        sort_by: Optional[str] = 'created_at',
+        sort_by: Optional[str] = 'position',
+
         sort_order: str = 'desc',
 
         # --- ДОБАВЬТЕ ЭТИ ДВА ПАРАМЕТРА ---
@@ -152,4 +154,21 @@ def get_all_entities(
         skip=skip,
         limit=limit
         # -----------------------------------------
+    )
+
+
+@router.post("/{entity_type_name}/order", status_code=status.HTTP_200_OK)
+def set_entity_order(
+    entity_type_name: str,
+    order_in: EntityOrderSetRequest,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Установить и сохранить новый порядок отображения строк для таблицы.
+    """
+    return service.set_entity_order(
+        entity_type_name=entity_type_name,
+        entity_ids=order_in.entity_ids,
+        current_user=current_user
     )
