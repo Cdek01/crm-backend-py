@@ -13,6 +13,9 @@ class ValueTypeEnum(str, Enum):
     boolean = "boolean"
     time = "time"
     select = "select"
+    email = "email"
+    phone = "phone"
+    url = "url"
 
 
 # --- Схемы для Атрибутов ('колонок') ---
