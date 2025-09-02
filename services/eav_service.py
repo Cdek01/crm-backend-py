@@ -11,6 +11,8 @@ from .alias_service import AliasService
 from sqlalchemy import or_
 from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
+from email_validator import validate_email, EmailNotValidError # <-- Добавьте импорт
+import validators # <-- Добавьте импорт
 
 
 VALUE_FIELD_MAP = {
@@ -20,7 +22,10 @@ VALUE_FIELD_MAP = {
     "date": "value_date",
     "boolean": "value_boolean",
     "time": "value_time",
-    "select": "value_integer",  # ID опции будем хранить как integer
+    "select": "value_integer",
+    "email": "value_string",
+    "phone": "value_string",
+    "url": "value_string",
 }
 
 
@@ -801,6 +806,22 @@ class EAVService:
                 return int(value)
             if value_type == 'float' and not isinstance(value, float):
                 return float(value)
+            # --- НОВАЯ ЛОГИКА ВАЛИДАЦИИ ---
+            if value_type == 'email':
+                # Проверяем, что это валидный email. Если нет, email_validator выбросит исключение.
+                validate_email(value)
+                return value  # Возвращаем исходную строку, если она валидна
+
+            if value_type == 'phone':
+                # Здесь может быть более сложная валидация, но пока просто оставляем как есть.
+                # Можно использовать, например, библиотеку phonenumbers.
+                return value
+
+            if value_type == 'url':
+                # Проверяем, что это валидный URL. Если нет, validators.url вернет False.
+                if not validators.url(value):
+                    raise ValueError("Некорректный URL")
+                return value
         except (ValueError, TypeError):
             # Если конвертация не удалась, считаем значение невалидным (None)
             return None
