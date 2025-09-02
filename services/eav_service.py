@@ -432,11 +432,13 @@ class EAVService:
                     continue
 
                 # 2. Теперь обрабатываем по типам
-                if attribute.value_type == 'string' and isinstance(value, str):
+                if attribute.value_type in ['string', 'email', 'phone', 'url'] and isinstance(value, str):
                     if op == "eq":
-                        subquery = subquery.filter(value_column.ilike(value))
+                        # Для SQLite ilike регистронезависим только для ASCII.
+                        # func.lower() - самый надежный способ.
+                        subquery = subquery.filter(func.lower(value_column) == value.lower())
                     elif op == "contains":
-                        subquery = subquery.filter(value_column.ilike(f"%{value}%"))
+                        subquery = subquery.filter(func.lower(value_column).contains(value.lower()))
                     elif op == "neq":
                         subquery = subquery.filter(func.lower(value_column) != value.lower())
                     else:
