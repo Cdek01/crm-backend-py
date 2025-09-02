@@ -205,8 +205,8 @@ import json
 import time
 
 # --- НАСТРОЙКИ ---
-# BASE_URL = "http://127.0.0.1:8005"
-BASE_URL = "http://89.111.169.47:8005"   # "http://127.0.0.1:8005"
+BASE_URL = "http://127.0.0.1:8005"
+# BASE_URL = "http://89.111.169.47:8005"   # "http://127.0.0.1:8005"
 
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
 
@@ -270,20 +270,31 @@ def run_new_types_test():
         print_status(True, f"{len(correct_data)} корректных записей успешно созданы.")
 
         # 2.2 Проверяем валидацию (негативные тесты)
-        print("\n -> Проверка валидации (ожидаем, что некорректные данные не сохранятся)...")
+        print("\n -> Проверка валидации (ожидаем, что сервер вернет ошибку 400)...")
+
         # Некорректный email
         invalid_email_payload = {"contact_name": "Невалидный Email", "email": "это-не-email"}
-        requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-                      json=invalid_email_payload).raise_for_status()
+        invalid_email_resp = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers,
+                                           json=invalid_email_payload)
+        print_status(
+            invalid_email_resp.status_code == 400,
+            "Сервер корректно вернул ошибку 400 для невалидного email."
+        )
+
         # Некорректный URL
         invalid_url_payload = {"contact_name": "Невалидный URL", "website": "просто текст"}
-        requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=invalid_url_payload).raise_for_status()
+        invalid_url_resp = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=invalid_url_payload)
+        print_status(
+            invalid_url_resp.status_code == 400,
+            "Сервер корректно вернул ошибку 400 для невалидного URL."
+        )
 
+        # Проверяем, что в базе по-прежнему только 3 записи
         all_records = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers).json()
-
-        # В базе должно быть только 3 записи, так как две невалидные не должны были сохраниться
-        print_status(len(all_records) == 3, f"В базе осталось {len(all_records)} записи, валидация работает.")
-
+        print_status(
+            len(all_records) == 3,
+            f"В базе по-прежнему {len(all_records)} записи, невалидные данные не были сохранены."
+        )
         # --- ШАГ 3: ТЕСТИРОВАНИЕ ФИЛЬТРОВ ---
         print_header("ШАГ 3: ТЕСТЫ ФИЛЬТРАЦИИ ПО НОВЫМ ТИПАМ")
 

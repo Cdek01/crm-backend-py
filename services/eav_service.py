@@ -811,7 +811,7 @@ class EAVService:
             # --- НОВАЯ ЛОГИКА ВАЛИДАЦИИ ---
             if value_type == 'email':
                 # Проверяем, что это валидный email. Если нет, email_validator выбросит исключение.
-                validate_email(value)
+                validate_email(value, check_deliverability=False)  # check_deliverability=False для скорости
                 return value  # Возвращаем исходную строку, если она валидна
 
             if value_type == 'phone':
@@ -825,8 +825,10 @@ class EAVService:
                     raise ValueError("Некорректный URL")
                 return value
         except (ValueError, TypeError):
-            # Если конвертация не удалась, считаем значение невалидным (None)
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Некорректное значение для поля типа '{value_type}': {value}"
+            )
 
         return value
 
