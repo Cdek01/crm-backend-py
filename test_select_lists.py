@@ -233,182 +233,102 @@ def register_and_login():
     token = requests.post(f"{BASE_URL}/api/auth/token", data=auth_payload).json()['access_token']
     return {'Authorization': f'Bearer {token}'}
 
-# def run_new_types_test():
-#     try:
-#         # --- ШАГ 1: ПОДГОТОВКА ---
-#         print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
-#         headers = register_and_login()
-#
-#         table_name = f"contacts_{int(time.time())}"
-#         table_config = {"name": table_name, "display_name": "Контакты (новые типы)"}
-#         table_id = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config).json()['id']
-#
-#         attributes = [
-#             {"name": "contact_name", "display_name": "Имя", "value_type": "string"},
-#             {"name": "email", "display_name": "Email", "value_type": "email"},
-#             {"name": "phone", "display_name": "Телефон", "value_type": "phone"},
-#             {"name": "website", "display_name": "Сайт", "value_type": "url"},
-#         ]
-#         for attr in attributes:
-#             requests.post(f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes", headers=headers,
-#                           json=attr).raise_for_status()
-#
-#         # --- ШАГ 2: НАПОЛНЕНИЕ ДАННЫМИ И ПРОВЕРКА ВАЛИДАЦИИ ---
-#         print_header("ШАГ 2: НАПОЛНЕНИЕ ДАННЫМИ И ПРОВЕРКА ВАЛИДАЦИИ")
-#
-#         # 2.1 Создаем корректные данные
-#         correct_data = [
-#             {"contact_name": "Иван (Google)", "email": "ivan.p@google.com", "phone": "+7 (495) 123-45-67",
-#              "website": "https://google.com"},
-#             {"contact_name": "Анна (Yandex)", "email": "anna.v@yandex.ru", "phone": "+7 (495) 765-43-21",
-#              "website": "https://yandex.ru"},
-#             {"contact_name": "Петр (Org)", "email": "petr.s@example.org", "phone": "+7 (812) 555-55-55",
-#              "website": "https://example.org"},
-#         ]
-#         for item in correct_data:
-#             requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=item).raise_for_status()
-#         print_status(True, f"{len(correct_data)} корректных записей успешно созданы.")
-#
-#         # 2.2 Проверяем валидацию (негативные тесты)
-#         print("\n -> Проверка валидации (ожидаем, что сервер вернет ошибку 400)...")
-#
-#         # Некорректный email
-#         invalid_email_payload = {"contact_name": "Невалидный Email", "email": "это-не-email"}
-#         invalid_email_resp = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-#                                            json=invalid_email_payload)
-#         print_status(
-#             invalid_email_resp.status_code == 400,
-#             "Сервер корректно вернул ошибку 400 для невалидного email."
-#         )
-#
-#         # Некорректный URL
-#         invalid_url_payload = {"contact_name": "Невалидный URL", "website": "просто текст"}
-#         invalid_url_resp = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=invalid_url_payload)
-#         print_status(
-#             invalid_url_resp.status_code == 400,
-#             "Сервер корректно вернул ошибку 400 для невалидного URL."
-#         )
-#
-#         # Проверяем, что в базе по-прежнему только 3 записи
-#         all_records = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers).json()
-#         print_status(
-#             len(all_records) == 3,
-#             f"В базе по-прежнему {len(all_records)} записи, невалидные данные не были сохранены."
-#         )
-#         # --- ШАГ 3: ТЕСТИРОВАНИЕ ФИЛЬТРОВ ---
-#         print_header("ШАГ 3: ТЕСТЫ ФИЛЬТРАЦИИ ПО НОВЫМ ТИПАМ")
-#
-#         # Тест 1: Точное совпадение email (регистронезависимое)
-#         print("\n -> Тест 1: Найти контакт по email 'ANNA.V@YANDEX.RU' (ожидается 1)")
-#         filters1 = [{"field": "email", "op": "eq", "value": "ANNA.V@YANDEX.RU"}]
-#         resp1 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-#                              params={"filters": json.dumps(filters1)}).json()
-#         print_status(len(resp1) == 1 and resp1[0]['contact_name'] == "Анна (Yandex)", f"Найдено {len(resp1)} записей.")
-#
-#         # Тест 2: Поиск по части телефона
-#         print("\n -> Тест 2: Найти все московские номера (содержат '(495)', ожидается 2)")
-#         filters2 = [{"field": "phone", "op": "contains", "value": "(495)"}]
-#         resp2 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-#                              params={"filters": json.dumps(filters2)}).json()
-#         print_status(len(resp2) == 2, f"Найдено {len(resp2)} записей.")
-#
-#         # Тест 3: Поиск по части URL
-#         print("\n -> Тест 3: Найти все сайты в зоне .org (ожидается 1)")
-#         filters3 = [{"field": "website", "op": "contains", "value": ".org"}]
-#         resp3 = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers,
-#                              params={"filters": json.dumps(filters3)}).json()
-#         print_status(len(resp3) == 1 and resp3[0]['contact_name'] == "Петр (Org)", f"Найдено {len(resp3)} записей.")
-#
-#         print("\n" + "=" * 60)
-#         print("🎉🎉🎉 ТЕСТ НОВЫХ ТИПОВ ДАННЫХ (EMAIL, PHONE, URL) ПРОЙДЕН! 🎉🎉🎉")
-#
-#     except requests.exceptions.HTTPError as e:
-#         print(f"\n❌ ОШИБКА HTTP: {e.response.status_code} - {e.response.text}")
-#     except Exception as e:
-#         print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
-#
-#
-# # ... (вставьте сюда `register_and_login`, `print_status`, `print_header`)
-#
-# if __name__ == "__main__":
-#     run_new_types_test()
+
+def get_current_state(headers, table_name):
+    """Получает текущий список записей и возвращает его."""
+    response = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers)
+    response.raise_for_status()
+    return response.json()
 
 
-def run_row_ordering_test():
+def move_task(headers, table_name, current_state, task_to_move_id, after_task_id, before_task_id):
+    """Эмулирует перетаскивание одной задачи."""
+    after_pos = None
+    if after_task_id:
+        after_pos = next(item['position'] for item in current_state if item['id'] == after_task_id)
+
+    before_pos = None
+    if before_task_id:
+        before_pos = next(item['position'] for item in current_state if item['id'] == before_task_id)
+
+    payload = {
+        "entity_id": task_to_move_id,
+        "after_position": after_pos,
+        "before_position": before_pos
+    }
+
+    url = f"{BASE_URL}/api/data/{table_name}/position"
+    response = requests.post(url, headers=headers, json=payload)
+    response.raise_for_status()
+    print(f" -> Перемещение ID {task_to_move_id} завершено. Новая позиция: {response.json().get('new_position')}")
+
+
+def verify_order(state, expected_ids, test_name):
+    """Проверяет, что порядок ID в `state` соответствует `expected_ids`."""
+    actual_ids = [item['id'] for item in state]
+    print(f" -> Ожидаемый порядок: {expected_ids}")
+    print(f" -> Фактический порядок: {actual_ids}")
+    print_status(actual_ids == expected_ids, test_name)
+
+
+# --- ОСНОВНОЙ ТЕСТ ---
+def run_extended_ordering_test():
     try:
         # --- ШАГ 1: ПОДГОТОВКА ---
-        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ ТАБЛИЦЫ")
+        print_header("ПОДГОТОВКА: АВТОРИЗАЦИЯ И СОЗДАНИЕ 6 ЗАПИСЕЙ")
         headers = register_and_login()
 
-        table_name = f"tasks_order_{int(time.time())}"
-        table_config = {"name": table_name, "display_name": "Задачи (сортировка строк)"}
+        table_name = f"tasks_ext_order_{int(time.time())}"
+        table_config = {"name": table_name, "display_name": "Задачи (расширенная сортировка)"}
         table_id = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers, json=table_config).json()['id']
         requests.post(f"{BASE_URL}/api/meta/entity-types/{table_id}/attributes", headers=headers,
                       json={"name": "title", "display_name": "Название", "value_type": "string"}).raise_for_status()
 
-        # --- ШАГ 2: НАПОЛНЕНИЕ ДАННЫМИ ---
-        print_header("ШАГ 2: СОЗДАНИЕ 3 ТЕСТОВЫХ ЗАПИСЕЙ")
+        # Создаем 6 задач и запоминаем их ID
+        tasks = {}
+        for i in range(1, 7):
+            title = f"Задача {i}"
+            task_id = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json={"title": title}).json()[
+                'id']
+            tasks[title] = task_id
+            time.sleep(0.01)  # Гарантируем разные position
 
-        task_a_payload = {"title": "Задача А"}
-        task_b_payload = {"title": "Задача Б"}
-        task_c_payload = {"title": "Задача В"}
+        print(f" -> Созданы задачи: {tasks}")
 
-        # --- ИСПРАВЛЕНИЕ: Теперь ответ - это СЛОВАРЬ ---
-        resp_a = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=task_a_payload).json()
-        id_a = resp_a['id']
+        # --- ШАГ 2: ПРОВЕРКА ИСХОДНОГО ПОРЯДКА ---
+        print_header("ШАГ 2: ПРОВЕРКА ИСХОДНОГО ПОРЯДКА (1, 2, 3, 4, 5, 6)")
+        state1 = get_current_state(headers, table_name)
+        expected_order1 = [tasks['Задача 1'], tasks['Задача 2'], tasks['Задача 3'], tasks['Задача 4'],
+                           tasks['Задача 5'], tasks['Задача 6']]
+        verify_order(state1, expected_order1, "Исходный порядок соответствует порядку создания.")
 
-        resp_b = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=task_b_payload).json()
-        id_b = resp_b['id']
+        # --- ШАГ 3: ПЕРЕМЕЩЕНИЕ ПОСЛЕДНЕГО В НАЧАЛО ---
+        print_header("ШАГ 3: ПЕРЕМЕЩЕНИЕ 'Задачи 6' В НАЧАЛО")
+        move_task(headers, table_name, state1, tasks['Задача 6'], after_task_id=None, before_task_id=tasks['Задача 1'])
+        state2 = get_current_state(headers, table_name)
+        expected_order2 = [tasks['Задача 6'], tasks['Задача 1'], tasks['Задача 2'], tasks['Задача 3'],
+                           tasks['Задача 4'], tasks['Задача 5']]
+        verify_order(state2, expected_order2, "Порядок '6, 1, 2, 3, 4, 5' установлен корректно.")
 
-        resp_c = requests.post(f"{BASE_URL}/api/data/{table_name}", headers=headers, json=task_c_payload).json()
-        id_c = resp_c['id']
-        # ---------------------------------------------
+        # --- ШАГ 4: ПЕРЕМЕЩЕНИЕ ПЕРВОГО В КОНЕЦ ---
+        print_header("ШАГ 4: ПЕРЕМЕЩЕНИЕ 'Задачи 6' (ТЕПЕРЬ ПЕРВОЙ) В КОНЕЦ")
+        move_task(headers, table_name, state2, tasks['Задача 6'], after_task_id=tasks['Задача 5'], before_task_id=None)
+        state3 = get_current_state(headers, table_name)
+        expected_order3 = [tasks['Задача 1'], tasks['Задача 2'], tasks['Задача 3'], tasks['Задача 4'],
+                           tasks['Задача 5'], tasks['Задача 6']]
+        verify_order(state3, expected_order3, "Порядок вернулся к исходному '1, 2, 3, 4, 5, 6'.")
 
-        print(f" -> Созданы задачи: А (ID={id_a}), Б (ID={id_b}), В (ID={id_c})")
-
-        # --- ШАГ 3: ПРОВЕРКА ИСХОДНОГО ПОРЯДКА ---
-        print_header("ШАГ 3: ПРОВЕРКА ИСХОДНОГО ПОРЯДКА (ПО УМОЛЧАНИЮ)")
-
-        initial_list = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers).json()
-        initial_order_ids = [item['id'] for item in initial_list]
-
-        print(f" -> Получен исходный порядок ID: {initial_order_ids}")
-        # Новые записи добавляются в начало, поэтому последняя созданная будет первой
-        expected_initial_order = [id_c, id_b, id_a]
-        print_status(
-            initial_order_ids == expected_initial_order,
-            "Исходный порядок соответствует порядку создания (новые вверху)."
-        )
-
-        # --- ШАГ 4: СОХРАНЕНИЕ НОВОГО ПОРЯДКА ---
-        print_header("ШАГ 4: СОХРАНЕНИЕ НОВОГО ПОРЯДКА (Б, В, А)")
-
-        # Перемешиваем: Задача Б, Задача В, Задача А
-        new_order_ids = [id_b, id_c, id_a]
-
-        order_payload = {"entity_ids": new_order_ids}
-        order_url = f"{BASE_URL}/api/data/{table_name}/order"
-
-        print(f" -> Отправляем POST на {order_url} с новым порядком ID: {new_order_ids}")
-        order_response = requests.post(order_url, headers=headers, json=order_payload)
-        order_response.raise_for_status()
-
-        print_status(order_response.status_code == 200, "Запрос на сохранение порядка прошел успешно.")
-
-        # --- ШАГ 5: ФИНАЛЬНАЯ ПРОВЕРКА ---
-        print_header("ШАГ 5: ПРОВЕРКА, ЧТО НОВЫЙ ПОРЯДОК ПРИМЕНИЛСЯ")
-
-        final_list = requests.get(f"{BASE_URL}/api/data/{table_name}", headers=headers).json()
-        final_order_ids = [item['id'] for item in final_list]
-
-        print(f" -> Получен новый порядок ID: {final_order_ids}")
-        print_status(
-            final_order_ids == new_order_ids,
-            "Финальный порядок строк соответствует сохраненному."
-        )
+        # --- ШАГ 5: СЛОЖНОЕ ПЕРЕМЕЩЕНИЕ В СЕРЕДИНУ ---
+        print_header("ШАГ 5: ПЕРЕМЕЩЕНИЕ 'Задачи 4' МЕЖДУ 'Задачей 1' И 'Задачей 2'")
+        move_task(headers, table_name, state3, tasks['Задача 4'], after_task_id=tasks['Задача 1'],
+                  before_task_id=tasks['Задача 2'])
+        state4 = get_current_state(headers, table_name)
+        expected_order4 = [tasks['Задача 1'], tasks['Задача 4'], tasks['Задача 2'], tasks['Задача 3'],
+                           tasks['Задача 5'], tasks['Задача 6']]
+        verify_order(state4, expected_order4, "Порядок '1, 4, 2, 3, 5, 6' установлен корректно.")
 
         print("\n" + "=" * 60)
-        print("🎉🎉🎉 ТЕСТ СОХРАНЕНИЯ ПОРЯДКА СТРОК ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
+        print("🎉🎉🎉 РАСШИРЕННЫЙ ТЕСТ СОРТИРОВКИ СТРОК ПРОЙДЕН УСПЕШНО! 🎉🎉🎉")
 
     except requests.exceptions.HTTPError as e:
         print(f"\n❌ ОШИБКА HTTP: {e.response.status_code} - {e.response.text}")
@@ -416,7 +336,5 @@ def run_row_ordering_test():
         print(f"\n❌ НЕПРЕДВИДЕННАЯ ОШИБКА: {e}")
 
 
-# ... (вставьте сюда вашу рабочую функцию `register_and_login`, `print_status`, `print_header`)
-
 if __name__ == "__main__":
-    run_row_ordering_test()
+    run_extended_ordering_test()

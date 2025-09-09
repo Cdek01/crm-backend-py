@@ -237,7 +237,7 @@ class Entity(Base):
     id = Column(Integer, primary_key=True, index=True)
     entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=False)
 
-    position = Column(Integer, default=0, nullable=False, index=True)
+    position = Column(Float, default=0.0, nullable=False, index=True)
 
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

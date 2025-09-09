@@ -13,6 +13,7 @@ from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError # <-- Добавьте импорт
 import validators # <-- Добавьте импорт
+import time
 
 
 VALUE_FIELD_MAP = {
@@ -364,8 +365,12 @@ class EAVService:
     # --- МЕТОДЫ ДЛЯ ДАННЫХ (Строки в таблицах) ---
 
     def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
-        result = {"id": entity.id, "created_at": entity.created_at, "updated_at": entity.updated_at}
-        # --- ИСПРАВЛЕНИЕ: Добавляем проверку, что атрибуты существуют ---
+        result = {
+            "id": entity.id,
+            "created_at": entity.created_at,
+            "updated_at": entity.updated_at,
+            "position": entity.position # <-- ДОБАВЬТЕ ЭТО ПОЛЕ
+        }        # --- ИСПРАВЛЕНИЕ: Добавляем проверку, что атрибуты существуют ---
         if entity.values and entity.values[0].attribute:
             result['tenant_id'] = entity.values[0].attribute.entity_type.tenant_id
         # -------------------------------------------------------------
@@ -514,7 +519,7 @@ class EAVService:
         sort_func = desc if sort_order.lower() == 'desc' else asc
 
         if sort_by == 'position':
-            # Сортировка по position всегда по возрастанию (от меньшего к большему)
+            # Сортировка по position всегда по возрастанию
             query = query.order_by(asc(models.Entity.position))
         elif sort_by == 'created_at':
             query = query.order_by(sort_func(models.Entity.created_at))
@@ -850,7 +855,7 @@ class EAVService:
             models.Entity.entity_type_id == entity_type.id
         ).scalar()
 
-        new_position = (min_pos_result - 1) if min_pos_result is not None else 0
+        new_position = time.time()
 
         new_entity = models.Entity(entity_type_id=entity_type.id, position=new_position)
         self.db.add(new_entity)
@@ -1103,3 +1108,43 @@ class EAVService:
             self.db.commit()
 
         return {"status": "ok", "ordered_ids": entity_ids}
+
+    def update_entity_position(
+            self,
+            entity_type_name: str,
+            entity_id: int,
+            after_pos: Optional[float],
+            before_pos: Optional[float],
+            current_user: models.User
+    ):
+        """Обновляет позицию одной строки на основе ее новых соседей."""
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+
+        # Находим запись, которую переместили
+        entity_to_move = self.db.query(models.Entity).filter(
+            models.Entity.id == entity_id,
+            models.Entity.entity_type_id == entity_type.id
+        ).first()
+
+        if not entity_to_move:
+            raise HTTPException(status_code=404, detail="Перемещаемая запись не найдена")
+
+        new_position = 0.0
+
+        if after_pos is not None and before_pos is not None:
+            # Случай 1: Вставили между двумя строками
+            new_position = (after_pos + before_pos) / 2.0
+        elif after_pos is not None:
+            # Случай 2: Вставили после последней строки
+            new_position = after_pos + 1.0
+        elif before_pos is not None:
+            # Случай 3: Вставили перед первой строкой
+            new_position = before_pos / 2.0
+        else:
+            # Случай 4: Вставили в пустую таблицу (маловероятно)
+            new_position = time.time()
+
+        entity_to_move.position = new_position
+        self.db.commit()
+
+        return {"id": entity_id, "new_position": new_position}

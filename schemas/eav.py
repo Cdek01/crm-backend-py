@@ -33,12 +33,7 @@ class AttributeCreate(BaseModel):
     value_type: ValueTypeEnum # <-- Тип данных обязателен!
 
 
-# class Attribute(AttributeBase):
-#     id: int
-#     entity_type_id: int
-#
-#     class Config:
-#         from_attributes = True
+
 class Attribute(AttributeBase):
     id: int
     entity_type_id: int
@@ -88,3 +83,12 @@ class AttributeOrderSetRequest(BaseModel):
 class EntityOrderSetRequest(BaseModel):
     # Список ID строк (сущностей) в новом, правильном порядке
     entity_ids: List[int]
+
+
+
+class EntityOrderUpdateSmartRequest(BaseModel):
+    entity_id: int # ID строки, которую переместили
+    # Позиция строки, ПОСЛЕ которой нужно вставить (может быть None, если вставили в начало)
+    after_position: Optional[float] = None
+    # Позиция строки, ПЕРЕД которой нужно вставить (может быть None, если вставили в конец)
+    before_position: Optional[float] = None

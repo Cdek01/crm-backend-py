@@ -7,6 +7,7 @@ from services.eav_service import EAVService
 from api.deps import get_current_user
 from schemas.data import BulkDeleteRequest
 from schemas.eav import EntityOrderSetRequest
+from schemas.eav import EntityOrderUpdateSmartRequest
 
 
 router = APIRouter()
@@ -45,18 +46,6 @@ def create_entity(
     где новая запись будет в начале.
     """
     return service.create_entity(entity_type_name, data, current_user)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -170,5 +159,26 @@ def set_entity_order(
     return service.set_entity_order(
         entity_type_name=entity_type_name,
         entity_ids=order_in.entity_ids,
+        current_user=current_user
+    )
+
+
+
+
+@router.post("/{entity_type_name}/position", status_code=status.HTTP_200_OK)
+def update_entity_position(
+    entity_type_name: str,
+    update_in: EntityOrderUpdateSmartRequest,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Обновить позицию одной строки.
+    """
+    return service.update_entity_position(
+        entity_type_name=entity_type_name,
+        entity_id=update_in.entity_id,
+        after_pos=update_in.after_position,
+        before_pos=update_in.before_position,
         current_user=current_user
     )
