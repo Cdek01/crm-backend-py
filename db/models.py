@@ -236,6 +236,10 @@ class Entity(Base):
     __tablename__ = 'entities'
     id = Column(Integer, primary_key=True, index=True)
     entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=False)
+
+    position = Column(Float, default=0.0, nullable=False, index=True)
+
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
