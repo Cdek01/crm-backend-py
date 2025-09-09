@@ -13,6 +13,7 @@ from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError # <-- Добавьте импорт
 import validators # <-- Добавьте импорт
+import time
 
 
 VALUE_FIELD_MAP = {
@@ -364,8 +365,12 @@ class EAVService:
     # --- МЕТОДЫ ДЛЯ ДАННЫХ (Строки в таблицах) ---
 
     def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
-        result = {"id": entity.id, "created_at": entity.created_at, "updated_at": entity.updated_at}
-        # --- ИСПРАВЛЕНИЕ: Добавляем проверку, что атрибуты существуют ---
+        result = {
+            "id": entity.id,
+            "created_at": entity.created_at,
+            "updated_at": entity.updated_at,
+            "position": entity.position # <-- ДОБАВЬТЕ ЭТО ПОЛЕ
+        }        # --- ИСПРАВЛЕНИЕ: Добавляем проверку, что атрибуты существуют ---
         if entity.values and entity.values[0].attribute:
             result['tenant_id'] = entity.values[0].attribute.entity_type.tenant_id
         # -------------------------------------------------------------
@@ -382,7 +387,7 @@ class EAVService:
             current_user: models.User,
             tenant_id: Optional[int] = None,
             filters: List[Dict[str, Any]] = None,
-            sort_by: str = 'created_at',
+            sort_by: str = 'position',
             sort_order: str = 'desc',
             skip: int = 0,
             limit: int = 100
@@ -513,7 +518,10 @@ class EAVService:
         # 4. Применяем сортировку
         sort_func = desc if sort_order.lower() == 'desc' else asc
 
-        if sort_by == 'created_at':
+        if sort_by == 'position':
+            # Сортировка по position всегда по возрастанию
+            query = query.order_by(asc(models.Entity.position))
+        elif sort_by == 'created_at':
             query = query.order_by(sort_func(models.Entity.created_at))
         elif sort_by in attributes_map:
             sort_attribute = attributes_map[sort_by]
@@ -842,7 +850,14 @@ class EAVService:
         if 'creation_date' in attributes_map:
             data['creation_date'] = datetime.utcnow().isoformat()
 
-        new_entity = models.Entity(entity_type_id=entity_type.id)
+        # 1. Находим минимальную (верхнюю) позицию в этой таблице
+        min_pos_result = self.db.query(func.min(models.Entity.position)).filter(
+            models.Entity.entity_type_id == entity_type.id
+        ).scalar()
+
+        new_position = time.time()
+
+        new_entity = models.Entity(entity_type_id=entity_type.id, position=new_position)
         self.db.add(new_entity)
         self.db.flush()
 
@@ -977,7 +992,7 @@ class EAVService:
             entity_type_name: str,
             data: Dict[str, Any],
             current_user: models.User
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Создает новую сущность, а затем возвращает полный список всех сущностей
         для этого типа, отсортированный по умолчанию (новые вверху).
@@ -1070,3 +1085,66 @@ class EAVService:
 
         self.db.commit()
         return {"status": "ok", "ordered_ids": attribute_ids}
+
+    def set_entity_order(
+            self,
+            entity_type_name: str,
+            entity_ids: List[int],
+            current_user: models.User
+    ):
+        """Сохраняет новый порядок строк для таблицы."""
+        # Проверяем доступ к таблице
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+
+        # Используем "bulk update", чтобы обновить все записи одним запросом.
+        # Это очень эффективно.
+        update_mappings = [
+            {"id": entity_id, "position": position}
+            for position, entity_id in enumerate(entity_ids)
+        ]
+
+        if update_mappings:
+            self.db.bulk_update_mappings(models.Entity, update_mappings)
+            self.db.commit()
+
+        return {"status": "ok", "ordered_ids": entity_ids}
+
+    def update_entity_position(
+            self,
+            entity_type_name: str,
+            entity_id: int,
+            after_pos: Optional[float],
+            before_pos: Optional[float],
+            current_user: models.User
+    ):
+        """Обновляет позицию одной строки на основе ее новых соседей."""
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
+
+        # Находим запись, которую переместили
+        entity_to_move = self.db.query(models.Entity).filter(
+            models.Entity.id == entity_id,
+            models.Entity.entity_type_id == entity_type.id
+        ).first()
+
+        if not entity_to_move:
+            raise HTTPException(status_code=404, detail="Перемещаемая запись не найдена")
+
+        new_position = 0.0
+
+        if after_pos is not None and before_pos is not None:
+            # Случай 1: Вставили между двумя строками
+            new_position = (after_pos + before_pos) / 2.0
+        elif after_pos is not None:
+            # Случай 2: Вставили после последней строки
+            new_position = after_pos + 1.0
+        elif before_pos is not None:
+            # Случай 3: Вставили перед первой строкой
+            new_position = before_pos / 2.0
+        else:
+            # Случай 4: Вставили в пустую таблицу (маловероятно)
+            new_position = time.time()
+
+        entity_to_move.position = new_position
+        self.db.commit()
+
+        return {"id": entity_id, "new_position": new_position}
