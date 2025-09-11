@@ -1,7 +1,7 @@
 # schemas/lead.py
 from pydantic import BaseModel
-from typing import Optional
 from datetime import date, datetime
+from typing import Optional, Any # Добавьте Any
 
 # --- Базовая схема с ОБЯЗАТЕЛЬНЫМИ полями для СОЗДАНИЯ ---
 class LeadBase(BaseModel):
@@ -15,6 +15,8 @@ class LeadBase(BaseModel):
     rejection_reason: Optional[str] = None
     # notes: Optional[str] = None
     last_contact_date: Optional[date] = None
+    _source: Optional[Any] = None # <-- Добавьте это поле
+
 
 # --- Схема для СОЗДАНИЯ ---
 class LeadCreate(LeadBase):
@@ -33,6 +35,8 @@ class LeadUpdate(BaseModel):
     rejection_reason: Optional[str] = None
     # notes: Optional[str] = None
     last_contact_date: Optional[date] = None
+    _source: Optional[Any] = None # <-- И сюда
+
 
 
 # --- Схема для ОТОБРАЖЕНИЯ ---

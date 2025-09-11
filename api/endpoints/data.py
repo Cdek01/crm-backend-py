@@ -18,6 +18,9 @@ router = APIRouter()
 def delete_multiple_entities(
     entity_type_name: str,
     delete_request: BulkDeleteRequest = Body(...),
+    # --- ДОБАВЛЯЕМ QUERY-ПАРАМЕТР ---
+    _source: Optional[str] = None,
+    # -------------------------------
     service: EAVService = Depends(),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -28,7 +31,8 @@ def delete_multiple_entities(
     deleted_count = service.delete_multiple_entities(
         entity_type_name=entity_type_name,
         ids=delete_request.ids,
-        current_user=current_user
+        current_user=current_user,
+        source=_source  # <-- Передаем `_source` в сервис
     )
     return {"deleted_count": deleted_count}
 
@@ -77,12 +81,13 @@ def update_entity(
 def delete_entity(
         entity_type_name: str,
         entity_id: int,
+        # --- ДОБАВЛЯЕМ QUERY-ПАРАМЕТР ---
+        _source: Optional[str] = None,
         service: EAVService = Depends(),
         current_user: models.User = Depends(get_current_user)
 ):
     """Удалить запись."""
-    return service.delete_entity(entity_id, current_user)
-
+    return service.delete_entity(entity_id, current_user, source=_source)
 
 # --- ЕДИНСТВЕННОЕ И ПРАВИЛЬНОЕ ОПРЕДЕЛЕНИЕ ЭНДПОИНТА ДЛЯ ПОЛУЧЕНИЯ СПИСКА ---
 @router.get("/{entity_type_name}", response_model=List[Dict[str, Any]])

@@ -14,6 +14,7 @@ from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError # <-- Добавьте импорт
 import validators # <-- Добавьте импорт
 import time
+from . import external_api_client # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 
 VALUE_FIELD_MAP = {
@@ -716,6 +717,11 @@ class EAVService:
         """Обновить запись с корректным преобразованием типов."""
         from tasks.messaging import send_sms_for_entity_task
 
+        # --- ПРОВЕРКА ФЛАГА ---
+        is_external_update = data.pop("_source", None) is not None
+        # ---------------------
+
+
         # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
         self.get_entity_by_id(entity_id, current_user)
 
@@ -785,6 +791,18 @@ class EAVService:
         # 6. Сохраняем все изменения
         self.db.commit()
 
+        if not is_external_update:
+            # --- ЗАМЕНИТЕ СТАРЫЙ `print` НА ЭТОТ ВЫЗОВ ---
+            # Получаем entity_type_name из объекта entity
+            entity_type_name = entity.entity_type.name
+            external_api_client.send_update_to_colleague(
+                event_type="update",
+                table_name=entity_type_name,
+                entity_id=entity_id,
+                data=data  # Передаем только измененные данные
+            )
+
+
         # 7. Возвращаем ПОЛНЫЙ и ОБНОВЛЕННЫЙ объект
         return self.get_entity_by_id(entity_id, current_user)
 
@@ -841,6 +859,15 @@ class EAVService:
         return value
 
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+
+        # --- ПРОВЕРКА ФЛАГА ---
+        # Извлекаем флаг из данных. `pop` удаляет его, чтобы он не записался в атрибуты.
+        is_external_update = data.pop("_source", None) is not None
+        # ---------------------
+
+
+
+
         """Создать новую запись с корректным преобразованием типов."""
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
@@ -850,12 +877,17 @@ class EAVService:
         if 'creation_date' in attributes_map:
             data['creation_date'] = datetime.utcnow().isoformat()
 
-        # 1. Находим минимальную (верхнюю) позицию в этой таблице
+        # --- ИЗМЕНЕННАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ ПОЗИЦИИ ---
+        # 1. Находим минимальную (самую верхнюю) позицию в этой таблице.
         min_pos_result = self.db.query(func.min(models.Entity.position)).filter(
             models.Entity.entity_type_id == entity_type.id
         ).scalar()
 
-        new_position = time.time()
+        # 2. Вычисляем новую позицию.
+        # Если в таблице уже есть записи, новая будет на одну позицию "выше" (меньше).
+        # Если таблица пуста, позиция будет 0.
+        new_position = (min_pos_result - 1.0) if min_pos_result is not None else 0.0
+        # -----------------------------------------------
 
         new_entity = models.Entity(entity_type_id=entity_type.id, position=new_position)
         self.db.add(new_entity)
@@ -879,6 +911,20 @@ class EAVService:
             self.db.add(attr_value)
 
         self.db.commit()
+
+        # --- ЛОГИКА ОТПРАВКИ УВЕДОМЛЕНИЯ ---
+        if not is_external_update:
+            # --- ЗАМЕНИТЕ СТАРЫЙ `print` НА ЭТОТ ВЫЗОВ ---
+            external_api_client.send_update_to_colleague(
+                event_type="create",
+                table_name=entity_type_name,
+                entity_id=new_entity.id,
+                data=data  # Передаем полные данные новой записи
+            )
+        # -----------------------------------
+
+
+
         return self.get_entity_by_id(new_entity.id, current_user)
 
 
@@ -890,14 +936,34 @@ class EAVService:
 
 
 
-    def delete_entity(self, entity_id: int, current_user: models.User):
+    def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
+        is_external_update = source is not None
+
         """Удалить запись."""
         # --- ИСПРАВЛЕНИЕ: Сначала получаем сущность с проверкой прав ---
         db_entity = self.get_entity_by_id(entity_id, current_user)
+
+        # Получаем имя таблицы до того, как удалим запись
+        entity_type = self._get_entity_type_by_name(db_entity['entity_type']['name'], current_user)
+        entity_type_name = entity_type.name
+
+
         # SQLAlchemy объект нужно получить снова для удаления
         entity_to_delete = self.db.query(models.Entity).get(db_entity['id'])
         self.db.delete(entity_to_delete)
         self.db.commit()
+
+        # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ---
+        if not is_external_update:
+            external_api_client.send_update_to_colleague(
+                event_type="delete",  # <-- Тип события 'delete'
+                table_name=entity_type_name,  # <-- Передаем имя таблицы
+                entity_id=entity_id,  # <-- ID удаленной записи
+                data={"id": entity_id}  # <-- В `data` можно передать ID для информации
+            )
+
+
+
         return None
 
 
@@ -1010,23 +1076,20 @@ class EAVService:
 
         return full_sorted_list
 
-
-
-
-
-
-
-
     def delete_multiple_entities(
             self,
             entity_type_name: str,
             ids: List[int],
-            current_user: models.User
+            current_user: models.User,
+            source: Optional[str] = None
     ) -> int:
         """
         Удаляет несколько записей (сущностей) по списку их ID.
         Возвращает количество удаленных записей.
         """
+
+        """Удаляет несколько записей."""
+        is_external_update = source is not None
         # 1. Сначала получаем метаданные таблицы, чтобы убедиться, что она
         # существует и принадлежит текущему пользователю (проверка прав).
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
@@ -1050,7 +1113,17 @@ class EAVService:
         # 4. Коммитим транзакцию.
         self.db.commit()
 
+        if not is_external_update and num_deleted > 0:
+            external_api_client.send_update_to_colleague(
+                event_type="bulk_delete",  # <-- Тип события 'bulk_delete'
+                table_name=entity_type_name,  # <-- Имя таблицы у нас уже есть
+                entity_id=None,  # <-- ID одной записи не актуален
+                data={"ids": ids}  # <-- В `data` передаем список удаленных ID
+            )
         return num_deleted
+
+
+
 
     def set_attribute_order(
             self,
