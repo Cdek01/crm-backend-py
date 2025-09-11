@@ -97,7 +97,7 @@ def get_all_entities(
         ),
         filters: Optional[str] = None,
         sort_by: Optional[str] = Query('position', ...),  # Устанавливаем 'position' по умолчанию
-        sort_order: str = Query('desc', ...),
+        sort_order: Optional[str] = Query('desc', ...),
 
         # sort_order: str = 'desc',
 
