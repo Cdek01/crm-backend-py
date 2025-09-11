@@ -96,9 +96,10 @@ def get_all_entities(
             description="ID клиента (тенанта). Доступно только для суперадминистраторов."
         ),
         filters: Optional[str] = None,
-        sort_by: Optional[str] = 'position',
+        sort_by: Optional[str] = Query('position', ...),  # Устанавливаем 'position' по умолчанию
+        sort_order: str = Query('desc', ...),
 
-        sort_order: str = 'desc',
+        # sort_order: str = 'desc',
 
         # --- ДОБАВЬТЕ ЭТИ ДВА ПАРАМЕТРА ---
         skip: int = Query(0, ge=0, description="Сколько записей пропустить (смещение)"),

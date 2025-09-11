@@ -72,7 +72,7 @@ def require_permission(permission_name: str):
     return permission_checker
 
 
-# --- ДОБАВЬТЕ ЭТУ ФУНКЦИЮ ---
+
 def get_current_admin_user(request: Request, db: Session = Depends(session.get_db)):
     """
     Проверяет, аутентифицирован ли пользователь в сессии админки.
