@@ -26,7 +26,7 @@ Bash
 python -m venv venv
 
 # Активация (Windows)
-
+venv\Scripts\activate.bat
 
 # Активация (Linux/MacOS)
 source venv/bin/activate

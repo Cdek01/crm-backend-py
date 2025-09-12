@@ -5,7 +5,7 @@ from datetime import datetime
 # --- НАСТРОЙКИ (Отредактируйте эту секцию) ---
 
 # URL, который предоставил ваш коллега
-COLLEAGUE_API_URL = "http://21dc92ef-18f4-4b4b-9d23-df643dbf13eb.tunnel4.com/change_table"
+COLLEAGUE_API_URL = "http://01c43351-8759-468e-ab2f-d02dfc79ebd2.tunnel4.com/change_table"
 
 # --- Данные, которые мы будем отправлять (имитация) ---
 # Структура этих данных должна соответствовать тому, что ожидает ваш коллега.
