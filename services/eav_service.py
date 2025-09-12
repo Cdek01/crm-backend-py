@@ -829,6 +829,8 @@ class EAVService:
                 return datetime.fromisoformat(value)
             if value_type == 'time' and isinstance(value, str):
                 # Преобразуем строку "HH:MM:SS" в объект time
+                from datetime import time
+
                 return time.fromisoformat(value)
             if value_type == 'integer' and not isinstance(value, int):
                 return int(value)
