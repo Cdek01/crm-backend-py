@@ -922,9 +922,6 @@ class EAVService:
                 data=data  # Передаем полные данные новой записи
             )
         # -----------------------------------
-
-
-
         return self.get_entity_by_id(new_entity.id, current_user)
 
 
@@ -933,38 +930,79 @@ class EAVService:
 
 
 
-
-
-
     def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
+        """Удалить запись."""
         is_external_update = source is not None
 
-        """Удалить запись."""
-        # --- ИСПРАВЛЕНИЕ: Сначала получаем сущность с проверкой прав ---
-        db_entity = self.get_entity_by_id(entity_id, current_user)
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # 1. Сначала загружаем SQLAlchemy объект Entity вместе с его EntityType
+        entity_to_delete = self.db.query(models.Entity).options(
+            joinedload(models.Entity.entity_type)
+        ).get(entity_id)
 
-        # Получаем имя таблицы до того, как удалим запись
-        entity_type = self._get_entity_type_by_name(db_entity['entity_type']['name'], current_user)
-        entity_type_name = entity_type.name
+        # 2. Проверяем, существует ли запись
+        if not entity_to_delete:
+            raise HTTPException(status_code=404, detail="Сущность не найдена")
 
+        # 3. Проверяем права доступа
+        if not current_user.is_superuser:
+            # Проверяем, принадлежит ли запись тенанту пользователя,
+            # ИЛИ есть ли у него права на эту "общую" таблицу
+            is_own_entity = (entity_to_delete.entity_type.tenant_id == current_user.tenant_id)
+            if not is_own_entity:
+                user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
+                table_name = entity_to_delete.entity_type.name
+                has_access = any(p == f"data:delete:{table_name}" for p in user_permissions)
 
-        # SQLAlchemy объект нужно получить снова для удаления
-        entity_to_delete = self.db.query(models.Entity).get(db_entity['id'])
+                if not has_access:
+                    raise HTTPException(status_code=404,
+                                        detail="Сущность не найдена или недостаточно прав для удаления")
+
+        # 4. Если все проверки пройдены, удаляем
+        entity_type_name = entity_to_delete.entity_type.name  # Получаем имя для уведомления
         self.db.delete(entity_to_delete)
         self.db.commit()
+        # ---------------------------
 
-        # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ---
         if not is_external_update:
             external_api_client.send_update_to_colleague(
-                event_type="delete",  # <-- Тип события 'delete'
-                table_name=entity_type_name,  # <-- Передаем имя таблицы
-                entity_id=entity_id,  # <-- ID удаленной записи
-                data={"id": entity_id}  # <-- В `data` можно передать ID для информации
+                event_type="delete",
+                table_name=entity_type_name,
+                entity_id=entity_id,
+                data={"id": entity_id}
             )
 
-
-
         return None
+
+    # def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
+    #     is_external_update = source is not None
+    #
+    #     """Удалить запись."""
+    #     # --- ИСПРАВЛЕНИЕ: Сначала получаем сущность с проверкой прав ---
+    #     db_entity = self.get_entity_by_id(entity_id, current_user)
+    #
+    #     # Получаем имя таблицы до того, как удалим запись
+    #     entity_type = self._get_entity_type_by_name(db_entity['entity_type']['name'], current_user)
+    #     entity_type_name = entity_type.name
+    #
+    #
+    #     # SQLAlchemy объект нужно получить снова для удаления
+    #     entity_to_delete = self.db.query(models.Entity).get(db_entity['id'])
+    #     self.db.delete(entity_to_delete)
+    #     self.db.commit()
+    #
+    #     # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ---
+    #     if not is_external_update:
+    #         external_api_client.send_update_to_colleague(
+    #             event_type="delete",  # <-- Тип события 'delete'
+    #             table_name=entity_type_name,  # <-- Передаем имя таблицы
+    #             entity_id=entity_id,  # <-- ID удаленной записи
+    #             data={"id": entity_id}  # <-- В `data` можно передать ID для информации
+    #         )
+    #
+    #
+    #
+    #     return None
 
 
 

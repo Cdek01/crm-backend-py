@@ -73,6 +73,7 @@ def verify_order(state, expected_ids, test_name):
 
 # --- ОСНОВНОЙ ТЕСТ ---
 @patch('services.external_api_client.send_update_to_colleague')
+# @patch('services.eav_service.external_api_client.send_update_to_colleague')
 def run_full_ordering_test(mock_send_update):
     try:
         # --- ШАГ 1: ПОДГОТОВКА ---
@@ -160,9 +161,6 @@ def run_full_ordering_test(mock_send_update):
         print()
 
 
-# ... (обработка ошибок)
-
-# ... (вставьте сюда все вспомогательные функции, включая register_and_login)
 
 if __name__ == "__main__":
     run_full_ordering_test()
