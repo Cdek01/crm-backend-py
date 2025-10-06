@@ -44,7 +44,7 @@ docker run -d -p 6379:6379 redis
 PostgreSQL (если используется):
 code
 Bash
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=your_password --name my-postgres postgres
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=your_strong_password --name my-postgres postgres
 1.6. Запуск приложения:
 Веб-сервер FastAPI (в одном терминале):
 code
@@ -87,6 +87,8 @@ code
 Bash
 # Подключиться от имени пользователя crm_user к базе crm_db
 sudo -u postgres psql -d crm_db -U crm_user
+винда "C:\Program Files\PostgreSQL\16\bin\psql.exe" -h localhost -d crm_db -U crm_user
+
 Система запросит пароль для crm_user.
 Основные команды psql
 Команда	Описание
@@ -95,3 +97,22 @@ sudo -u postgres psql -d crm_db -U crm_user
 SELECT * FROM tenants;	Показать все записи из таблицы tenants
 SELECT id, email FROM users;	Показать конкретные колонки из users
 \q	Выйти из psql
+
+
+
+# Для миграции бд
+
+source venv_crm/bin/activate
+
+"C:\Program Files\PostgreSQL\16\bin\psql.exe" -h localhost -d crm_db -U crm_user
+
+alembic stamp head
+
+alembic revision --autogenerate -m "Add multiselect support"
+```    *   `revision`: Команда для создания новой ревизии (файла миграции).
+*   `--autogenerate`: Говорит Alembic автоматически определить изменения.
+*   `-m "..."`: Комментарий, описывающий, что делает эта миграция.
+
+alembic upgrade head
+
+sudo systemctl restart crm_api.service

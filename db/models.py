@@ -1,12 +1,39 @@
 # db/models.py
 from sqlalchemy import Table, Column, Integer, String, ForeignKey, UniqueConstraint
-from sqlalchemy import inspect # <-- Убедитесь, что этот импорт есть вверху файла
-
+from sqlalchemy import inspect
 from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
                         Boolean, Text, ForeignKey, UniqueConstraint, Time)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
+
+
+
+
+# Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
+role_permissions_table = Table('role_permissions', Base.metadata,
+                               Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True),
+                               Column('permission_id', Integer, ForeignKey('permissions.id', ondelete="CASCADE"),
+                                      primary_key=True)
+                               )
+
+# Таблица-связка для отношения "Многие-ко-Многим" между пользователями и ролями
+user_roles_table = Table('user_roles', Base.metadata,
+                         Column('user_id', Integer, ForeignKey('users.id', ondelete="CASCADE"), primary_key=True),
+                         Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True)
+                         )
+
+# Таблица-связка для хранения выбранных опций для ОДНОГО значения
+# типа "множественный выбор".
+# Связывает AttributeValue (конкретную ячейку) с несколькими SelectOption (вариантами выбора).
+attribute_value_multiselect_options = Table(
+    'attribute_value_multiselect_options', Base.metadata,
+    Column('attribute_value_id', Integer, ForeignKey('attribute_values.id', ondelete="CASCADE"), primary_key=True),
+    Column('select_option_id', Integer, ForeignKey('select_options.id', ondelete="CASCADE"), primary_key=True)
+)
+# ------------------------------------
+
+
 
 class Tenant(Base):
     __tablename__ = 'tenants'
@@ -228,8 +255,14 @@ class Attribute(Base):
     select_list = relationship("SelectOptionList")
     # -------------------------
 
+    # Хранит текст формулы, например, "{price} * {quantity}"
+    formula_text = Column(Text, nullable=True)
+
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
+
+
+
 
 class Entity(Base):
     """Представляет одну 'строку' в пользовательской таблице. Например, конкретный проект."""
@@ -282,6 +315,14 @@ class AttributeValue(Base):
 
     entity = relationship("Entity", back_populates="values")
     attribute = relationship("Attribute", back_populates="values")
+
+    # Это "виртуальное" поле. Оно говорит SQLAlchemy, что для получения
+    # значений типа multiselect нужно посмотреть в таблицу `attribute_value_multiselect_options`
+    # и найти там все связанные `SelectOption`.
+    multiselect_values = relationship(
+        "SelectOption",
+        secondary=attribute_value_multiselect_options
+    )
 
     def __str__(self):
         # Эта функция вернет первое непустое значение из полей
@@ -359,19 +400,6 @@ class TableAlias(Base):
     )
 
 
-# Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
-role_permissions_table = Table('role_permissions', Base.metadata,
-                               Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True),
-                               Column('permission_id', Integer, ForeignKey('permissions.id', ondelete="CASCADE"),
-                                      primary_key=True)
-                               )
-
-# Таблица-связка для отношения "Многие-ко-Многим" между пользователями и ролями
-user_roles_table = Table('user_roles', Base.metadata,
-                         Column('user_id', Integer, ForeignKey('users.id', ondelete="CASCADE"), primary_key=True),
-                         Column('role_id', Integer, ForeignKey('roles.id', ondelete="CASCADE"), primary_key=True)
-                         )
-
 
 class Permission(Base):
     """Модель атомарного разрешения (например, 'leads:view')"""
@@ -426,25 +454,6 @@ class User(Base):
         return self.email
 
 
-# class SharedEntityType(Base):
-#     """
-#     Представляет 'ссылку' на EntityType для пользователя из другого тенанта.
-#     """
-#     __tablename__ = 'shared_entity_types'
-#
-#     id = Column(Integer, primary_key=True)
-#
-#     entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="CASCADE"), nullable=False)
-#     user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-#
-#     # --- ДОБАВЬТЕ ЭТИ ДВЕ СВЯЗИ ---
-#     user = relationship("User", back_populates="shared_entity_types")
-#     entity_type = relationship("EntityType")
-#     # ----------------------------
-#
-#     __table_args__ = (
-#         UniqueConstraint('entity_type_id', 'user_id', name='_entity_type_user_uc'),
-#     )
 
 
 class AttributeOrder(Base):

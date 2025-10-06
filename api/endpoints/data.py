@@ -38,7 +38,7 @@ def delete_multiple_entities(
 
 
 
-@router.post("/{entity_type_name}", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
+@router.post("/{entity_type_name}", response_model=List[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
 def create_entity(
         entity_type_name: str,
         data: Dict[str, Any] = Body(...),
@@ -49,7 +49,8 @@ def create_entity(
     Создать новую запись и вернуть ПОЛНЫЙ, отсортированный список всех записей,
     где новая запись будет в начале.
     """
-    return service.create_entity(entity_type_name, data, current_user)
+    # return service.create_entity(entity_type_name, data, current_user)
+    return service.create_entity_and_get_list(entity_type_name, data, current_user)
 
 
 

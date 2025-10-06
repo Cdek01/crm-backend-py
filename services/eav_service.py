@@ -1,5 +1,4 @@
 #services/eav_service.py
-
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
@@ -11,10 +10,13 @@ from .alias_service import AliasService
 from sqlalchemy import or_
 from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
-from email_validator import validate_email, EmailNotValidError # <-- Добавьте импорт
-import validators # <-- Добавьте импорт
+from email_validator import validate_email, EmailNotValidError
+import validators
 import time
-from . import external_api_client # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+from . import external_api_client
+import re
+
+
 
 
 VALUE_FIELD_MAP = {
@@ -28,6 +30,8 @@ VALUE_FIELD_MAP = {
     "email": "value_string",
     "phone": "value_string",
     "url": "value_string",
+    "percent": "value_float",
+    "currency": "value_float",
 }
 
 
@@ -365,6 +369,7 @@ class EAVService:
         return None
     # --- МЕТОДЫ ДЛЯ ДАННЫХ (Строки в таблицах) ---
 
+
     def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
         result = {
             "id": entity.id,
@@ -378,9 +383,36 @@ class EAVService:
         for value_obj in entity.values:
             attr_name = value_obj.attribute.name
             value_type = value_obj.attribute.value_type
-            db_field = VALUE_FIELD_MAP[value_type]
-            result[attr_name] = getattr(value_obj, db_field)
+            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+            if value_type == 'multiselect':
+                db_field = VALUE_FIELD_MAP[value_type]
+
+                # Если тип multiselect, собираем ID и значения выбранных опций.
+                # Мы используем joinedload, чтобы эти данные уже были загружены.
+                result[attr_name] = [
+                    {"id": opt.id, "value": opt.value}
+                    for opt in value_obj.multiselect_values
+                ]
+            elif value_type in VALUE_FIELD_MAP:
+                # Старая логика для всех остальных типов
+                db_field = VALUE_FIELD_MAP[value_type]
+                result[attr_name] = getattr(value_obj, db_field)
+
+        # Шаг 2: Теперь проходим по всем колонкам таблицы и вычисляем формулы
+        for attribute in entity.entity_type.attributes:
+            if attribute.value_type == 'formula' and attribute.formula_text:
+                # Вызываем наш "движок"
+                # `result` здесь - это уже "плоский" словарь с данными строки
+                formula_value = self._calculate_formula(attribute.formula_text, result)
+
+                # Записываем результат (или None) в итоговый JSON
+                result[attribute.name] = formula_value
+
+
+
         return result
+
+
 
     def get_all_entities_for_type(
             self,
@@ -753,36 +785,49 @@ class EAVService:
                 continue
 
             attribute = attributes_map[key]
-            # Используем нашу вспомогательную функцию для очистки и конвертации
-            processed_value = self._process_value(value, attribute.value_type)
-            value_field_name = VALUE_FIELD_MAP[attribute.value_type]
 
-            # Ищем, существует ли уже значение для этого атрибута
-            existing_value = self.db.query(models.AttributeValue).filter_by(
-                entity_id=entity_id, attribute_id=attribute.id
-            ).first()
+            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+            if attribute.value_type == 'multiselect':
+                # Загружаем существующий AttributeValue-контейнер вместе с его содержимым
+                existing_value_container = self.db.query(models.AttributeValue).options(
+                    joinedload(models.AttributeValue.multiselect_values)
+                ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
 
-            if existing_value:
-                if processed_value is None:
-                    # Если новое значение пустое, удаляем старое
-                    self.db.delete(existing_value)
-                else:
-                    # Иначе обновляем.
-                    # Сначала обнуляем все value_* поля на случай смены типа
-                    for field in VALUE_FIELD_MAP.values():
-                        setattr(existing_value, field, None)
-                    # Затем устанавливаем новое значение в правильное поле
-                    setattr(existing_value, value_field_name, processed_value)
+                # Если пользователь передал пустой список или не список, очищаем значения
+                if not isinstance(value, list) or not value:
+                    if existing_value_container:
+                        existing_value_container.multiselect_values.clear()
+                    continue
 
-            elif processed_value is not None:
-                # Если значения не было, а новое не пустое, создаем его
-                new_value_data = {
-                    "entity_id": entity_id,
-                    "attribute_id": attribute.id,
-                    value_field_name: processed_value
-                }
-                new_value = models.AttributeValue(**new_value_data)
-                self.db.add(new_value)
+                # Если контейнера еще нет, создаем его
+                if not existing_value_container:
+                    existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+                    self.db.add(existing_value_container)
+
+                # Находим и присваиваем новые опции (SQLAlchemy сам разберется, что добавить/удалить)
+                options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+                existing_value_container.multiselect_values = options
+
+            elif attribute.value_type in VALUE_FIELD_MAP:
+                # Старая логика для всех остальных типов
+                processed_value = self._process_value(value, attribute.value_type)
+                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+                existing_value = self.db.query(models.AttributeValue).filter_by(
+                    entity_id=entity_id, attribute_id=attribute.id
+                ).first()
+
+                if existing_value:
+                    if processed_value is None:
+                        self.db.delete(existing_value)
+                    else:
+                        for field in VALUE_FIELD_MAP.values():
+                            setattr(existing_value, field, None)
+                        setattr(existing_value, value_field_name, processed_value)
+                elif processed_value is not None:
+                    new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+                                                      **{value_field_name: processed_value})
+                    self.db.add(new_value)
+            # ---------------------------
 
         # 5. Обновляем `updated_at` у самой сущности
         entity.updated_at = datetime.utcnow()
@@ -830,7 +875,6 @@ class EAVService:
             if value_type == 'time' and isinstance(value, str):
                 # Преобразуем строку "HH:MM:SS" в объект time
                 from datetime import time
-
                 return time.fromisoformat(value)
             if value_type == 'integer' and not isinstance(value, int):
                 return int(value)
@@ -866,10 +910,6 @@ class EAVService:
         # Извлекаем флаг из данных. `pop` удаляет его, чтобы он не записался в атрибуты.
         is_external_update = data.pop("_source", None) is not None
         # ---------------------
-
-
-
-
         """Создать новую запись с корректным преобразованием типов."""
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
@@ -900,17 +940,31 @@ class EAVService:
                 continue
 
             attribute = attributes_map[key]
-            processed_value = self._process_value(value, attribute.value_type)
 
-            if processed_value is None:
-                continue
+            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+            if attribute.value_type == 'multiselect':
+                # Создаем "пустой" AttributeValue, который будет контейнером
+                attr_value = models.AttributeValue(entity_id=new_entity.id, attribute_id=attribute.id)
+                if isinstance(value, list) and value:
+                    # Находим объекты SelectOption по списку ID
+                    options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+                    attr_value.multiselect_values.extend(options)
+                self.db.add(attr_value)
 
-            value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-            attr_value = models.AttributeValue(
-                entity_id=new_entity.id, attribute_id=attribute.id
-            )
-            setattr(attr_value, value_field_name, processed_value)
-            self.db.add(attr_value)
+            elif attribute.value_type in VALUE_FIELD_MAP:
+                # Старая логика для всех остальных типов
+                processed_value = self._process_value(value, attribute.value_type)
+                if processed_value is None:
+                    continue
+
+                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+                attr_value = models.AttributeValue(
+                    entity_id=new_entity.id,
+                    attribute_id=attribute.id
+                )
+                setattr(attr_value, value_field_name, processed_value)
+                self.db.add(attr_value)
+            # ---------------------------
 
         self.db.commit()
 
@@ -975,37 +1029,6 @@ class EAVService:
             )
 
         return None
-
-    # def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
-    #     is_external_update = source is not None
-    #
-    #     """Удалить запись."""
-    #     # --- ИСПРАВЛЕНИЕ: Сначала получаем сущность с проверкой прав ---
-    #     db_entity = self.get_entity_by_id(entity_id, current_user)
-    #
-    #     # Получаем имя таблицы до того, как удалим запись
-    #     entity_type = self._get_entity_type_by_name(db_entity['entity_type']['name'], current_user)
-    #     entity_type_name = entity_type.name
-    #
-    #
-    #     # SQLAlchemy объект нужно получить снова для удаления
-    #     entity_to_delete = self.db.query(models.Entity).get(db_entity['id'])
-    #     self.db.delete(entity_to_delete)
-    #     self.db.commit()
-    #
-    #     # --- ИСПРАВЛЕННЫЙ ВЫЗОВ ---
-    #     if not is_external_update:
-    #         external_api_client.send_update_to_colleague(
-    #             event_type="delete",  # <-- Тип события 'delete'
-    #             table_name=entity_type_name,  # <-- Передаем имя таблицы
-    #             entity_id=entity_id,  # <-- ID удаленной записи
-    #             data={"id": entity_id}  # <-- В `data` можно передать ID для информации
-    #         )
-    #
-    #
-    #
-    #     return None
-
 
 
 
@@ -1088,33 +1111,29 @@ class EAVService:
         return db_entity_type
 
 
-
-
-
-
-    # --- ДОБАВЬТЕ ЭТОТ НОВЫЙ МЕТОД ---
     def create_entity_and_get_list(
             self,
             entity_type_name: str,
             data: Dict[str, Any],
             current_user: models.User
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
-        Создает новую сущность, а затем возвращает полный список всех сущностей
-        для этого типа, отсортированный по умолчанию (новые вверху).
+        Создает сущность (включая отправку уведомления), а затем
+        возвращает полный отсортированный список.
         """
-        # 1. Сначала просто создаем новую запись, используя уже существующий метод
+        # 1. Просто создаем новую запись. Метод `create_entity` уже умеет
+        # отправлять уведомления, поэтому здесь это делать не нужно.
         self.create_entity(entity_type_name, data, current_user)
 
-        # 2. Теперь вызываем метод для получения полного списка
-        # Он уже умеет сортировать по умолчанию (created_at desc)
+        # 2. Теперь, после коммита, запрашиваем полный список
         full_sorted_list = self.get_all_entities_for_type(
             entity_type_name=entity_type_name,
             current_user=current_user
-            # Мы не передаем другие параметры, чтобы использовались значения по умолчанию
         )
 
         return full_sorted_list
+
+
 
     def delete_multiple_entities(
             self,
@@ -1261,3 +1280,43 @@ class EAVService:
         self.db.commit()
 
         return {"id": entity_id, "new_position": new_position}
+
+
+
+
+    def _calculate_formula(self, formula_text: str, row_data: Dict[str, Any]) -> Optional[float]:
+        """
+        Безопасно вычисляет значение формулы для одной строки данных.
+        Поддерживает только числа и базовые операторы: +, -, *, /.
+        """
+        try:
+            # 1. Находим все {переменные} в тексте формулы
+            variables = re.findall(r'\{([a-zA-Z0-9_]+)\}', formula_text)
+
+            expression = formula_text
+
+            # 2. Подставляем реальные значения из строки
+            for var in variables:
+                value = row_data.get(var)
+                # Если в строке нет такого значения или оно не число, вычисление невозможно
+                if not isinstance(value, (int, float)):
+                    return None
+                expression = expression.replace(f'{{{var}}}', str(value))
+
+            # 3. Безопасное вычисление: проверяем, что в выражении нет ничего лишнего
+            # Этот whitelist - наша главная защита от `eval()`
+            allowed_chars = "0123456789.+-*/() "
+            if not all(char in allowed_chars for char in expression):
+                # Если есть что-то кроме цифр и операторов - не вычисляем
+                return None
+
+            # 4. Вычисляем
+            # Используем eval(), но только после строгой проверки на разрешенные символы
+            result = eval(expression)
+            return float(result)
+
+        except (TypeError, ZeroDivisionError, Exception):
+            # В случае любой ошибки (деление на ноль, синтаксическая ошибка)
+            # просто возвращаем None
+            return None
+    # ------------------------------------

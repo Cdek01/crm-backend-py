@@ -16,6 +16,11 @@ class ValueTypeEnum(str, Enum):
     email = "email"
     phone = "phone"
     url = "url"
+    percent = "percent"
+    currency = "currency"
+    multiselect = "multiselect"
+    formula = "formula"
+
 
 
 # --- Схемы для Атрибутов ('колонок') ---
@@ -30,7 +35,9 @@ class AttributeBase(BaseModel):
 class AttributeCreate(BaseModel):
     name: str
     display_name: str
-    value_type: ValueTypeEnum # <-- Тип данных обязателен!
+    value_type: ValueTypeEnum
+    select_list_id: Optional[int] = None
+    formula_text: Optional[str] = None
 
 
 
