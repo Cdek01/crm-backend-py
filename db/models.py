@@ -258,6 +258,9 @@ class Attribute(Base):
     # Хранит текст формулы, например, "{price} * {quantity}"
     formula_text = Column(Text, nullable=True)
 
+    # Хранит символ валюты, если value_type = 'currency'
+    currency_symbol = Column(String(5), nullable=True)
+
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
 

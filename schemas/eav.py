@@ -38,12 +38,13 @@ class AttributeCreate(BaseModel):
     value_type: ValueTypeEnum
     select_list_id: Optional[int] = None
     formula_text: Optional[str] = None
-
+    currency_symbol: Optional[str] = None
 
 
 class Attribute(AttributeBase):
     id: int
     entity_type_id: int
+    currency_symbol: Optional[str] = None
 
     # --- ИЗМЕНИТЕ/ДОБАВЬТЕ ЭТОТ БЛОК ---
     model_config = ConfigDict(from_attributes=True)
