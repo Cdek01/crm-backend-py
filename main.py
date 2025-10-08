@@ -57,6 +57,7 @@ origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:8080",
+    "https://srm-ruddy.vercel.app",
 ]
 app.add_middleware(
     CORSMiddleware,
