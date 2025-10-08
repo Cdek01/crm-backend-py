@@ -3,7 +3,9 @@ import json
 import time
 
 # --- НАСТРОЙКИ ---
-BASE_URL = "http://127.0.0.1:8000"
+# BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://89.111.169.47:8005"
+
 CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
 
 
@@ -19,8 +21,8 @@ def print_header(title):
 
 def register_and_login():
     unique_id = int(time.time())
-    email = f"AntonShlips95@example.com"
-    password = "AntonShlips95(1985)"
+    email = f"AntonShlips96@example.com"
+    password = "AntonShlips96(1985)"
     reg_payload = {"email": email, "password": password, "full_name": "Select Tester",
                    "registration_token": CORRECT_REGISTRATION_TOKEN}
     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()

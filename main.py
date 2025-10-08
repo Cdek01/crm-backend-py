@@ -110,8 +110,7 @@ admin = Admin(
     app=app,
     engine=session.engine,
     authentication_backend=authentication_backend,
-    templates_dir=TEMPLATES_DIR,
-    csp_nonce_directives={}
+    templates_dir=TEMPLATES_DIR
 )
 
 # Регистрируем все представления моделей, которые хотим видеть в админке
