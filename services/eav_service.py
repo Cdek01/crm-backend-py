@@ -808,65 +808,40 @@ class EAVService:
         if not entity_type:
             raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-        # 2. Проверяем на дубликат имени атрибута
-        existing_attr = self.db.query(models.Attribute).filter(
-            models.Attribute.entity_type_id == entity_type_id,
-            models.Attribute.name == attribute_in.name
-        ).first()
-        if existing_attr:
-            raise HTTPException(status_code=400, detail=f"Атрибут с именем '{attribute_in.name}' уже существует")
+        # 2. Подготавливаем словарь с данными
+        attr_data = attribute_in.model_dump(exclude={"list_items"})
+        attr_data['entity_type_id'] = entity_type_id
 
-
-        # 3. Подготавливаем словарь с данными для нового атрибута
-        attr_data = {
-            "name": attribute_in.name,
-            "display_name": attribute_in.display_name,
-            "value_type": attribute_in.value_type,
-            "entity_type_id": entity_type_id,
-            "select_list_id": None,
-            "formula_text": None,
-            "currency_symbol": None,
-            "target_entity_type_id": None,
-            "source_attribute_id": None,
-            "target_attribute_id": None,
-            "display_attribute_id": None,
-        }
-
-        # 4. Если это 'select' и переданы элементы, создаем список
+        # 3. Если это 'select' и переданы элементы, создаем список
         if attribute_in.value_type == 'select' and attribute_in.list_items:
             new_list = models.SelectOptionList(
                 name=f"Список для '{attribute_in.display_name}'",
                 tenant_id=current_user.tenant_id
             )
-            self.db.flush()
-            attr_data['select_list_id'] = new_list.id
+            # СНАЧАЛА добавляем в сессию
+            self.db.add(new_list)
 
             for item_value in attribute_in.list_items:
                 if item_value:
                     new_option = models.SelectOption(value=item_value, option_list=new_list)
                     self.db.add(new_option)
 
-            # Получаем ID нового списка до коммита
+            # ТЕПЕРЬ делаем flush, чтобы получить ID
             self.db.flush()
 
             # ЯВНО добавляем ID списка в наши данные
             attr_data['select_list_id'] = new_list.id
 
-        # 5. Создаем сам атрибут (колонку) из подготовленного словаря
-        # Создаем объект SQLAlchemy, но не используем его для возврата
+        # 4. Создаем сам атрибут из подготовленного словаря
         db_attribute = models.Attribute(**attr_data)
         self.db.add(db_attribute)
 
-        # Коммитим транзакцию
+        # 5. Коммитим ВСЕ одной транзакцией
         self.db.commit()
+        self.db.refresh(db_attribute)
 
-        # После коммита у `db_attribute` будет `id`
-        # Добавляем его в наш словарь
-        attr_data['id'] = db_attribute.id
-
-        # Возвращаем НАШ СЛОВАРЬ, а не объект SQLAlchemy после `refresh`
-        return attr_data
-        # -----------------------------------
+        # 6. Возвращаем объект SQLAlchemy
+        return db_attribute
 
 
 
