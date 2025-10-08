@@ -43,38 +43,38 @@ def create_individual(
 
 # ... остальной код без изменений
 
-@router.get("/", response_model=List[Individual])
-def get_all_individuals(
-    # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
-    full_name: Optional[str] = None,
-    inn: Optional[str] = None,
-    phone_number: Optional[str] = None,
-    email: Optional[str] = None,
-    # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
-    sort_by: Optional[str] = 'created_at',
-    sort_order: str = 'desc',
-    # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
-    skip: int = 0,
-    limit: int = 100,
-    # --- ЗАВИСИМОСТИ ---
-    service: IndividualService = Depends(),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Получить список всех физических лиц с фильтрацией и сортировкой.
-    """
-    # ИСПРАВЛЕНИЕ: Передаем ВСЕ параметры в сервис
-    return service.get_all(
-        current_user=current_user,
-        skip=skip,
-        limit=limit,
-        full_name=full_name,
-        inn=inn,
-        phone_number=phone_number,
-        email=email,
-        sort_by=sort_by,
-        sort_order=sort_order
-    )
+# @router.get("/", response_model=List[Individual])
+# def get_all_individuals(
+#     # --- ПАРАМЕТРЫ ФИЛЬТРАЦИИ ---
+#     full_name: Optional[str] = None,
+#     inn: Optional[str] = None,
+#     phone_number: Optional[str] = None,
+#     email: Optional[str] = None,
+#     # --- ПАРАМЕТРЫ СОРТИРОВКИ ---
+#     sort_by: Optional[str] = 'created_at',
+#     sort_order: str = 'desc',
+#     # --- ПАРАМЕТРЫ ПАГИНАЦИИ ---
+#     skip: int = 0,
+#     limit: int = 100,
+#     # --- ЗАВИСИМОСТИ ---
+#     service: IndividualService = Depends(),
+#     current_user: User = Depends(get_current_user)
+# ):
+#     """
+#     Получить список всех физических лиц с фильтрацией и сортировкой.
+#     """
+#     # ИСПРАВЛЕНИЕ: Передаем ВСЕ параметры в сервис
+#     return service.get_all(
+#         current_user=current_user,
+#         skip=skip,
+#         limit=limit,
+#         full_name=full_name,
+#         inn=inn,
+#         phone_number=phone_number,
+#         email=email,
+#         sort_by=sort_by,
+#         sort_order=sort_order
+#     )
 
 
 @router.get("/{individual_id}", response_model=Individual)
