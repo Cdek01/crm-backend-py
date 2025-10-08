@@ -40,9 +40,11 @@ class TenantAdmin(ModelView, model=models.Tenant):
 
 
 class UserCreateForm(Form):
-    email = StringField('Email', validators=[DataRequired()])
-    full_name = StringField('Full Name')
-    password = PasswordField('Password', validators=[DataRequired()])
+    email = StringField("Email", validators=[DataRequired()])
+    full_name = StringField("Full Name")
+    password = PasswordField("Пароль", validators=[DataRequired()])
+    is_superuser = BooleanField("Is Superuser")
+    tenant = QuerySelectField("Клиент (Тенант)", allow_blank=False, validators=[DataRequired()])
 
 
 # 1. Определяем кастомный класс формы
@@ -61,25 +63,54 @@ class UserAdmin(ModelView, model=models.User):
     name_plural = "Пользователи"
     icon = "fa-solid fa-user"
 
-    column_list = [
-        models.User.id,
-        models.User.email,
-        models.User.full_name,
-        "tenant",
-        models.User.is_superuser,
-    ]
+    # --- Определяем только отображение в списке ---
+    column_list = [models.User.id, models.User.email, "tenant", models.User.is_superuser]
     column_formatters = {"tenant": tenant_formatter}
-    column_searchable_list = [models.User.email, models.User.full_name]
 
-    # УБИРАЕМ `roles` ИЗ ФОРМЫ.
-    # Теперь эта форма будет работать только с полями самого пользователя.
-    form_columns = [
-        models.User.email,
-        models.User.full_name,
-        models.User.tenant,
-        models.User.is_superuser,
-    ]
+    # --- Отключаем стандартные формы ---
+    can_create = True
+    can_edit = True  # Оставляем возможность редактировать, но через кастомный метод
 
+    # --- Используем кастомные страницы для создания и редактирования ---
+
+    @expose("/user/create", methods=["GET", "POST"])
+    async def create_user_page(self, request: Request):
+        db = session.SessionLocal()
+        try:
+            if request.method == "GET":
+                tenants = db.query(models.Tenant).order_by(models.Tenant.name).all()
+                return await self.templates.render(
+                    "user_form.html",
+                    {"request": request, "tenants": tenants, "user": None, "view": self}
+                )
+
+            form_data = await request.form()
+            email = form_data.get("email")
+            password = form_data.get("password")
+            tenant_id = form_data.get("tenant_id")
+
+            if not password:
+                # Вернуть на форму с ошибкой (упрощенно)
+                return RedirectResponse(request.url, status_code=302)
+
+            hashed_password = security.get_password_hash(password)
+            new_user = models.User(
+                email=email,
+                full_name=form_data.get("full_name"),
+                hashed_password=hashed_password,
+                is_superuser=form_data.get("is_superuser") == "on",
+                tenant_id=int(tenant_id) if tenant_id else None
+            )
+            db.add(new_user)
+            db.commit()
+
+            return RedirectResponse(request.url_for("admin:user-list"), status_code=302)
+        finally:
+            db.close()
+
+    # Переопределяем URL для кнопки "Create"
+    def create_url(self, request: Request) -> str:
+        return "/admin/user/create"
 
 
 
