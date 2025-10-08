@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status
 from typing import List
 
 from db import models
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeOrderSetRequest
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeOrderSetRequest, AttributeUpdate
 from services.eav_service import EAVService
 from api.deps import get_current_user
 
@@ -137,6 +137,17 @@ def set_attribute_order(
         current_user=current_user
     )
 
+
+
+@router.put("/entity-types/{entity_type_id}/attributes/{attribute_id}", response_model=Attribute)
+def update_attribute(
+    entity_type_id: int,
+    attribute_id: int,
+    attribute_in: AttributeUpdate,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    return service.update_attribute(attribute_id, attribute_in, current_user)
 
 
 

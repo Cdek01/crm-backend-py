@@ -213,7 +213,9 @@ class EntityType(Base):
         "Attribute",
         back_populates="entity_type",
         cascade="all, delete-orphan",
-        order_by="Attribute.id"  # <-- ВОТ ЭТО ИЗМЕНЕНИЕ
+        order_by="Attribute.id", # <-- ВОТ ЭТО ИЗМЕНЕНИЕ
+        foreign_keys="[Attribute.entity_type_id]"  # <-- ДОБАВЬТЕ ЭТОТ ПАРАМЕТР
+
     )
     entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
     tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
@@ -240,7 +242,8 @@ class Attribute(Base):
     # Тип значения: 'string', 'integer', 'float', 'date', 'boolean'. Важно для валидации.
     value_type = Column(String, nullable=False)
 
-    entity_type = relationship("EntityType", back_populates="attributes")
+    entity_type = relationship("EntityType", back_populates="attributes",
+        foreign_keys=[entity_type_id])
     # --- ДОБАВЬТЕ ЭТОТ БЛОК ---
     # Это отношение говорит SQLAlchemy, что у одного Атрибута может быть много Значений.
     # cascade="all, delete-orphan" - самая важная часть.
@@ -261,6 +264,17 @@ class Attribute(Base):
     # Хранит символ валюты, если value_type = 'currency'
     currency_symbol = Column(String(5), nullable=True)
 
+    # --- ПОЛЯ ДЛЯ СВЯЗЕЙ ---
+    target_entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=True)
+    source_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
+    target_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
+    display_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
+
+    # Определяем связи для удобного доступа. `remote_side=[id]` нужен для self-referencing FK.
+    target_entity_type = relationship("EntityType", foreign_keys=[target_entity_type_id])
+    source_attribute = relationship("Attribute", foreign_keys=[source_attribute_id], remote_side=[id])
+    target_attribute = relationship("Attribute", foreign_keys=[target_attribute_id], remote_side=[id])
+    display_attribute = relationship("Attribute", foreign_keys=[display_attribute_id], remote_side=[id])
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
 

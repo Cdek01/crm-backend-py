@@ -20,6 +20,7 @@ class ValueTypeEnum(str, Enum):
     currency = "currency"
     multiselect = "multiselect"
     formula = "formula"
+    relation = "relation"
 
 
 
@@ -39,15 +40,31 @@ class AttributeCreate(BaseModel):
     select_list_id: Optional[int] = None
     formula_text: Optional[str] = None
     currency_symbol: Optional[str] = None
+    # --- ДОБАВЬТЕ ЭТИ ПОЛЯ ---
+    target_entity_type_id: Optional[int] = None
+    source_attribute_id: Optional[int] = None
+    target_attribute_id: Optional[int] = None
+    display_attribute_id: Optional[int] = None
+    # ---------------------------
+    list_items: Optional[List[str]] = None
 
 
 class Attribute(AttributeBase):
     id: int
     entity_type_id: int
-    currency_symbol: Optional[str] = None
 
-    # --- ИЗМЕНИТЕ/ДОБАВЬТЕ ЭТОТ БЛОК ---
+    # --- УБЕДИТЕСЬ, ЧТО ЭТИ ПОЛЯ ЗДЕСЬ ЕСТЬ ---
+    select_list_id: Optional[int] = None
+    formula_text: Optional[str] = None
+    currency_symbol: Optional[str] = None
+    target_entity_type_id: Optional[int] = None
+    source_attribute_id: Optional[int] = None
+    target_attribute_id: Optional[int] = None
+    display_attribute_id: Optional[int] = None
+    # ----------------------------------------
+
     model_config = ConfigDict(from_attributes=True)
+
 
     @field_validator('value_type', mode='before')
     @classmethod
@@ -60,6 +77,15 @@ class Attribute(AttributeBase):
         if isinstance(v, str):
             return ValueTypeEnum(v)
         return v
+
+
+class AttributeUpdate(BaseModel):
+    display_name: Optional[str] = None
+    target_entity_type_id: Optional[int] = None
+    source_attribute_id: Optional[int] = None
+    target_attribute_id: Optional[int] = None
+    display_attribute_id: Optional[int] = None
+
 
 # --- Схемы для Типов Сущностей ('таблиц') ---
 class EntityTypeBase(BaseModel):

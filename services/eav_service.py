@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, asc, desc, func
 from sqlalchemy.orm import aliased
 from db import models, session
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeUpdate
 from .alias_service import AliasService
 from sqlalchemy import or_
 from datetime import datetime, date, time, timedelta
@@ -32,6 +32,8 @@ VALUE_FIELD_MAP = {
     "url": "value_string",
     "percent": "value_float",
     "currency": "value_float",
+    "relation": "value_string",  # Ключ связи (например, ИНН) будем хранить как строку
+
 }
 
 
@@ -434,10 +436,25 @@ class EAVService:
         if not current_user.is_superuser:
             tenant_id = None
 
-        entity_type = self._get_entity_type_by_name(entity_type_name, current_user, tenant_id)
+        # entity_type = self._get_entity_type_by_name(entity_type_name, current_user, tenant_id)
+        # attributes_map = {attr.name: attr for attr in entity_type.attributes}
+        # 2. Находим метаданные таблицы.
+        # Здесь мы получаем базовый `entity_type`.
+        base_entity_type = self._get_entity_type_by_name(entity_type_name, current_user, tenant_id)
+
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Добавляем вложенные joinedload ---
+        # 3. Теперь, зная ID, мы делаем второй запрос, чтобы "жадно" загрузить
+        # все необходимые вложенные связи для обработки `relation`.
+        entity_type = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.source_attribute),
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.target_attribute),
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.display_attribute)
+        ).filter(models.EntityType.id == base_entity_type.id).one()
+        # ----------------------------------------------------
+
         attributes_map = {attr.name: attr for attr in entity_type.attributes}
 
-        # 2. Начинаем строить основной запрос к "строкам" (Entities)
+        # 4. Строим основной запрос к данным (Entities)
         query = self.db.query(models.Entity).filter(
             models.Entity.entity_type_id == entity_type.id
         )
@@ -602,9 +619,96 @@ class EAVService:
         entities_map = {entity.id: entity for entity in full_entities}
         sorted_entities = [entities_map[id] for id in entity_ids_on_page if id in entities_map]
 
-        return [self._pivot_data(e) for e in sorted_entities]
+        # return [self._pivot_data(e) for e in sorted_entities]
 
 
+
+
+        # --- НОВАЯ ЛОГИКА "LOOK UP" ПЕРЕД ВОЗВРАТОМ ДАННЫХ ---
+        # 9. Преобразуем EAV в "плоский" список словарей
+        pivoted_results = [self._pivot_data(e) for e in sorted_entities]
+
+        # 10. Находим все связанные колонки в этой таблице
+        relation_attributes = [attr for attr in entity_type.attributes if attr.value_type == 'relation']
+
+        # 11. Если есть связанные колонки, выполняем "JOIN в Python"
+        if relation_attributes and pivoted_results:
+            print("\n--- [ОТЛАДКА] НАЧАЛО ОБРАБОТКИ СВЯЗЕЙ ---")
+            for rel_attr in relation_attributes:
+                print(f"\n[ОТЛАДКА] Обработка связанной колонки: '{rel_attr.name}'")
+
+                if not all([rel_attr.source_attribute, rel_attr.target_attribute, rel_attr.display_attribute]):
+                    print("[ОТЛАДКА] -> Пропускаем, связь настроена не полностью.")
+                    continue
+
+                source_attr_name = rel_attr.source_attribute.name
+                target_entity_type_id = rel_attr.target_entity_type_id
+                target_key_attr_id = rel_attr.target_attribute.id
+                display_attr_id = rel_attr.display_attribute.id
+
+                print(f"[ОТЛАДКА] -> Исходная колонка: '{source_attr_name}'")
+
+                source_keys = {row.get(source_attr_name) for row in pivoted_results if row.get(source_attr_name)}
+                print(f"[ОТЛАДКА] -> Найденные ключи для поиска: {source_keys}")
+                if not source_keys:
+                    print("[ОТЛАДКА] -> Ключи не найдены, пропускаем.")
+                    continue
+
+                target_entities_query = self.db.query(models.AttributeValue.entity_id).join(models.Entity).filter(
+                    models.Entity.entity_type_id == target_entity_type_id,
+                    models.AttributeValue.attribute_id == target_key_attr_id,
+                    models.AttributeValue.value_string.in_(source_keys)
+                )
+                target_entity_ids = {eid for eid, in target_entities_query}
+                print(f"[ОТЛАДКА] -> ID целевых записей, найденные по ключам: {target_entity_ids}")
+                if not target_entity_ids:
+                    print("[ОТЛАДКА] -> Соответствия в целевой таблице не найдены, пропускаем.")
+                    continue
+
+                key_values = self.db.query(models.AttributeValue.entity_id, models.AttributeValue.value_string).filter(
+                    models.AttributeValue.entity_id.in_(target_entity_ids),
+                    models.AttributeValue.attribute_id == target_key_attr_id
+                ).all()
+
+                display_values = self.db.query(models.AttributeValue.entity_id,
+                                               models.AttributeValue.value_string).filter(
+                    models.AttributeValue.entity_id.in_(target_entity_ids),
+                    models.AttributeValue.attribute_id == display_attr_id
+                ).all()
+
+                keys_by_entity_id = dict(key_values)
+                displays_by_entity_id = dict(display_values)
+
+                lookup_map = {
+                    keys_by_entity_id[eid]: displays_by_entity_id[eid]
+                    for eid in target_entity_ids if eid in keys_by_entity_id and eid in displays_by_entity_id
+                }
+                print(f"[ОТЛАДКА] -> Собранный словарь (lookup map): {lookup_map}")
+
+                for row in pivoted_results:
+                    source_key = row.get(source_attr_name)
+                    if source_key in lookup_map:
+                        row[rel_attr.name] = lookup_map[source_key]
+                        print(
+                            f"[ОТЛАДКА] -> Для строки ID={row['id']} установлено значение: '{lookup_map[source_key]}'")
+
+            print("--- [ОТЛАДКА] КОНЕЦ ОБРАБОТКИ СВЯЗЕЙ ---\n")
+
+        return pivoted_results
+
+    def update_attribute(
+            self, attribute_id: int, attr_in: AttributeUpdate, current_user: models.User
+    ) -> models.Attribute:
+        db_attr = self.db.query(models.Attribute).get(attribute_id)
+        if not db_attr or db_attr.entity_type.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail="Атрибут не найден")
+
+        update_data = attr_in.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_attr, key, value)
+
+        self.db.commit()
+        return db_attr
 
 
     def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
@@ -683,7 +787,10 @@ class EAVService:
 
         return db_entity_type
 
-    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+
+
+
+
     def create_attribute_for_type(
             self,
             entity_type_id: int,
@@ -691,33 +798,75 @@ class EAVService:
             current_user: models.User
     ) -> models.Attribute:
         """
-        Создает новый атрибут ('колонку') для указанного типа сущности.
+        Создает новый атрибут ('колонку').
         """
-        # 1. Проверяем, существует ли тип сущности и имеет ли пользователь к нему доступ.
-        # Метод get_entity_type_by_id уже содержит все нужные проверки.
-        entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
+        # 1. Проверяем доступ к родительской таблице
+        entity_type = self.db.query(models.EntityType).filter(
+            models.EntityType.id == entity_type_id,
+            models.EntityType.tenant_id == current_user.tenant_id
+        ).first()
+        if not entity_type:
+            raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-        # 2. Проверяем, не существует ли уже атрибут с таким системным именем в этой таблице.
+        # 2. Проверяем на дубликат имени атрибута
         existing_attr = self.db.query(models.Attribute).filter(
             models.Attribute.entity_type_id == entity_type_id,
             models.Attribute.name == attribute_in.name
         ).first()
         if existing_attr:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Атрибут с системным именем '{attribute_in.name}' уже существует для этого типа сущности"
+            raise HTTPException(status_code=400, detail=f"Атрибут с именем '{attribute_in.name}' уже существует")
+
+
+        # 3. Подготавливаем словарь с данными для нового атрибута
+        attr_data = {
+            "name": attribute_in.name,
+            "display_name": attribute_in.display_name,
+            "value_type": attribute_in.value_type,
+            "entity_type_id": entity_type_id,
+            "select_list_id": None,
+            "formula_text": None,
+            "currency_symbol": None,
+            "target_entity_type_id": None,
+            "source_attribute_id": None,
+            "target_attribute_id": None,
+            "display_attribute_id": None,
+        }
+
+        # 4. Если это 'select' и переданы элементы, создаем список
+        if attribute_in.value_type == 'select' and attribute_in.list_items:
+            new_list = models.SelectOptionList(
+                name=f"Список для '{attribute_in.display_name}'",
+                tenant_id=current_user.tenant_id
             )
+            self.db.flush()
+            attr_data['select_list_id'] = new_list.id
 
-        # 3. Создаем новый атрибут.
-        db_attribute = models.Attribute(
-            **attribute_in.model_dump(),
-            entity_type_id=entity_type_id
-        )
+            for item_value in attribute_in.list_items:
+                if item_value:
+                    new_option = models.SelectOption(value=item_value, option_list=new_list)
+                    self.db.add(new_option)
+
+            # Получаем ID нового списка до коммита
+            self.db.flush()
+
+            # ЯВНО добавляем ID списка в наши данные
+            attr_data['select_list_id'] = new_list.id
+
+        # 5. Создаем сам атрибут (колонку) из подготовленного словаря
+        # Создаем объект SQLAlchemy, но не используем его для возврата
+        db_attribute = models.Attribute(**attr_data)
         self.db.add(db_attribute)
-        self.db.commit()
-        self.db.refresh(db_attribute)
 
-        return db_attribute
+        # Коммитим транзакцию
+        self.db.commit()
+
+        # После коммита у `db_attribute` будет `id`
+        # Добавляем его в наш словарь
+        attr_data['id'] = db_attribute.id
+
+        # Возвращаем НАШ СЛОВАРЬ, а не объект SQLAlchemy после `refresh`
+        return attr_data
+        # -----------------------------------
 
 
 
