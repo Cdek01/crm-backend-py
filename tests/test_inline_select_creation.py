@@ -21,8 +21,8 @@ def print_header(title):
 
 def register_and_login():
     unique_id = int(time.time())
-    email = f"AntonShlips96@example.com"
-    password = "AntonShlips96(1985)"
+    email = f"AntonShlips97@example.com"
+    password = "AntonShlips97(1985)"
     reg_payload = {"email": email, "password": password, "full_name": "Select Tester",
                    "registration_token": CORRECT_REGISTRATION_TOKEN}
     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()
@@ -45,7 +45,7 @@ def run_inline_select_test():
         # --- ШАГ 2: СОЗДАНИЕ КОЛОНКИ-СПИСКА ОДНИМ ЗАПРОСОМ ---
         print_header("ШАГ 2: СОЗДАНИЕ КОЛОНКИ С ОПЦИЯМИ")
 
-        options_to_create = ["To Do", "In Progress", "Done"]
+        options_to_create = [1, 2, 3]
         attribute_payload = {
             "name": "task_status",
             "display_name": "Статус",

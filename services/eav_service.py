@@ -816,8 +816,9 @@ class EAVService:
 
         # 3. Если это 'select' и переданы элементы, создаем список
         if attribute_in.value_type == 'select' and attribute_in.list_items:
+            unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
             new_list = models.SelectOptionList(
-                name=f"Список для '{attribute_in.display_name}'",
+                name=unique_name,
                 tenant_id=current_user.tenant_id
             )
             # СНАЧАЛА добавляем в сессию
