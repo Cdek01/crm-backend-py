@@ -26,13 +26,14 @@ VALUE_FIELD_MAP = {
     "date": "value_date",
     "boolean": "value_boolean",
     "time": "value_time",
-    "select": "value_integer",
+    "select": "value_string",
     "email": "value_string",
     "phone": "value_string",
     "url": "value_string",
     "percent": "value_float",
     "currency": "value_float",
     "relation": "value_string",  # Ключ связи (например, ИНН) будем хранить как строку
+    "multiselect": "value_string",  # Multi-select тоже будет хранить строки (например, "Тег1,Тег2")
 
 }
 
@@ -938,7 +939,7 @@ class EAVService:
 
             elif attribute.value_type in VALUE_FIELD_MAP:
                 # Старая логика для всех остальных типов
-                processed_value = self._process_value(value, attribute.value_type)
+                processed_value = self._process_value(value, attribute)
                 value_field_name = VALUE_FIELD_MAP[attribute.value_type]
                 existing_value = self.db.query(models.AttributeValue).filter_by(
                     entity_id=entity_id, attribute_id=attribute.id
@@ -985,12 +986,13 @@ class EAVService:
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
 
-    def _process_value(self, value, value_type):
+    def _process_value(self, value, attribute: models.Attribute):
         """Вспомогательная функция для обработки и конвертации значений."""
         # 1. Сразу отсекаем None
-        if value is None:
-            return None
+        value_type = attribute.value_type # Получаем тип из атрибута
 
+        if value is None or (isinstance(value, str) and value.strip() == ''):
+            return None
         # 2. Пустые строки для всех типов считаем как None
         if isinstance(value, str) and value.strip() == '':
             return None
@@ -1023,6 +1025,35 @@ class EAVService:
                 if not validators.url(value):
                     raise ValueError("Некорректный URL")
                 return value
+
+
+            # --- НОВАЯ ЛОГИКА ДЛЯ SELECT ---
+            if value_type == 'select':
+                if not attribute.select_list_id:
+                    raise HTTPException(status_code=500,
+                                        detail=f"Для колонки '{attribute.name}' не настроен справочник (select_list_id)")
+
+                # Загружаем все допустимые опции для этого списка
+                valid_options = self.db.query(models.SelectOption.value).filter(
+                    models.SelectOption.option_list_id == attribute.select_list_id
+                ).all()
+                # Превращаем список кортежей [('Новая',), ('В работе',)] в простой set {'Новая', 'В работе'}
+                valid_options_set = {opt[0] for opt in valid_options}
+
+                # Проверяем, есть ли пришедшее значение в списке разрешенных
+                if value not in valid_options_set:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Недопустимое значение '{value}' для поля '{attribute.name}'. Разрешенные значения: {list(valid_options_set)}"
+                    )
+
+                # Если все в порядке, возвращаем саму строку
+                return value
+
+
+
+
+
         except (ValueError, TypeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1030,6 +1061,11 @@ class EAVService:
             )
 
         return value
+
+
+
+
+
 
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task
@@ -1069,6 +1105,7 @@ class EAVService:
 
             attribute = attributes_map[key]
 
+
             # --- ИЗМЕНЕННАЯ ЛОГИКА ---
             if attribute.value_type == 'multiselect':
                 # Создаем "пустой" AttributeValue, который будет контейнером
@@ -1081,7 +1118,7 @@ class EAVService:
 
             elif attribute.value_type in VALUE_FIELD_MAP:
                 # Старая логика для всех остальных типов
-                processed_value = self._process_value(value, attribute.value_type)
+                processed_value = self._process_value(value, attribute)  # Передаем весь `attribute`
                 if processed_value is None:
                     continue
 
