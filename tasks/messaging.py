@@ -1,12 +1,12 @@
 # tasks/messaging.py
 import logging
 from celery_worker import celery_app
-from api.wappi import api as send_wappi_text_message
 from db import models
 from db.session import SessionLocal
-from services.eav_service import EAVService
 from api import wappi
 from typing import Dict, Any
+from sqlalchemy.orm import Session
+
 
 # Настраиваем логгер
 logger = logging.getLogger(__name__)

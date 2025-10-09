@@ -15,7 +15,7 @@ import validators
 import time
 from . import external_api_client
 import re
-from tasks.messaging import send_webhook_task
+# from tasks.messaging import send_webhook_task
 
 
 
@@ -874,7 +874,8 @@ class EAVService:
 
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         """Обновить запись с корректным преобразованием типов."""
-        from tasks.messaging import send_sms_for_entity_task
+        from tasks.messaging import send_webhook_task, send_sms_for_entity_task
+
 
         # --- ПРОВЕРКА ФЛАГА ---
         is_external_update = data.pop("_source", None) is not None
@@ -1031,6 +1032,7 @@ class EAVService:
         return value
 
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+        from tasks.messaging import send_webhook_task
 
         # --- ПРОВЕРКА ФЛАГА ---
         # Извлекаем флаг из данных. `pop` удаляет его, чтобы он не записался в атрибуты.
