@@ -15,7 +15,7 @@ import validators
 import time
 from . import external_api_client
 import re
-
+from tasks.messaging import send_webhook_task
 
 
 
@@ -964,14 +964,13 @@ class EAVService:
         self.db.commit()
 
         if not is_external_update:
-            # --- ЗАМЕНИТЕ СТАРЫЙ `print` НА ЭТОТ ВЫЗОВ ---
-            # Получаем entity_type_name из объекта entity
             entity_type_name = entity.entity_type.name
-            external_api_client.send_update_to_colleague(
+            # --- ИЗМЕНЕНИЕ: Заменяем прямой вызов на .delay() ---
+            send_webhook_task.delay(
                 event_type="update",
                 table_name=entity_type_name,
                 entity_id=entity_id,
-                data=data  # Передаем только измененные данные
+                data=data
             )
 
 
@@ -1097,12 +1096,12 @@ class EAVService:
 
         # --- ЛОГИКА ОТПРАВКИ УВЕДОМЛЕНИЯ ---
         if not is_external_update:
-            # --- ЗАМЕНИТЕ СТАРЫЙ `print` НА ЭТОТ ВЫЗОВ ---
-            external_api_client.send_update_to_colleague(
+            # --- ИЗМЕНЕНИЕ: Заменяем прямой вызов на .delay() ---
+            send_webhook_task.delay(
                 event_type="create",
                 table_name=entity_type_name,
                 entity_id=new_entity.id,
-                data=data  # Передаем полные данные новой записи
+                data=data
             )
         # -----------------------------------
         return self.get_entity_by_id(new_entity.id, current_user)

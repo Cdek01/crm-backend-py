@@ -21,8 +21,8 @@ def print_header(title):
 
 def register_and_login():
     unique_id = int(time.time())
-    email = f"AntonShlips97@example.com"
-    password = "AntonShlips97(1985)"
+    email = f"AntonShlips99@example.com"
+    password = "AntonShlips99(1985)"
     reg_payload = {"email": email, "password": password, "full_name": "Select Tester",
                    "registration_token": CORRECT_REGISTRATION_TOKEN}
     requests.post(f"{BASE_URL}/api/auth/register", json=reg_payload).raise_for_status()

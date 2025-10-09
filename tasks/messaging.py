@@ -6,7 +6,7 @@ from db import models
 from db.session import SessionLocal
 from services.eav_service import EAVService
 from api import wappi
-
+from typing import Dict, Any
 
 # Настраиваем логгер
 logger = logging.getLogger(__name__)
@@ -69,3 +69,25 @@ def send_sms_for_entity_task(entity_id: int, user_id: int):  # <-- Добавл�
 
     finally:
         db.close()
+
+
+
+
+@celery_app.task
+def send_webhook_task(event_type: str, table_name: str, entity_id: Any, data: Dict[str, Any]):
+    """
+    Фоновая задача для отправки уведомления (вебхука) во внешнее API.
+    """
+    # Импортируем клиент здесь, чтобы избежать циклических импортов
+    from services import external_api_client
+
+    print(f"Запущена задача send_webhook_task для события '{event_type}' в таблице '{table_name}'")
+
+    # Вся логика отправки теперь находится здесь, в фоновом режиме.
+    # Основное приложение не будет ждать ее выполнения.
+    external_api_client.send_update_to_colleague(
+        event_type=event_type,
+        table_name=table_name,
+        entity_id=entity_id,
+        data=data
+    )
