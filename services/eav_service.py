@@ -122,6 +122,8 @@ class EAVService:
         db_user = self.db.query(models.User).options(
             joinedload(models.User.roles).joinedload(models.Role.permissions)
         ).filter(models.User.id == current_user.id).one()
+
+        # Этот код теперь работает с уже загруженными данными в памяти, без новых запросов к БД.
         user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
 
         accessible_table_names = {p.split(':')[2] for p in user_permissions if

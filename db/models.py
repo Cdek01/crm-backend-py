@@ -317,17 +317,17 @@ class AttributeValue(Base):
     __tablename__ = 'attribute_values'
     id = Column(Integer, primary_key=True)
     # Эти два поля почти всегда используются вместе в JOIN'ах
-    entity_id = Column(Integer, ForeignKey('entities.id'), nullable=False)
-    attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False)
+    entity_id = Column(Integer, ForeignKey('entities.id'), nullable=False, index=True)
+    attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False, index=True)
 
     # Храним значения разных типов в разных полях
     # Индексируем каждое поле со значением
-    value_string = Column(Text, nullable=True)
-    value_integer = Column(Integer, nullable=True)
-    value_float = Column(Float, nullable=True)
-    value_date = Column(DateTime, nullable=True)
-    value_boolean = Column(Boolean, nullable=True)
-    value_time = Column(Time, nullable=True)
+    value_string = Column(Text, nullable=True, index=True)
+    value_integer = Column(Integer, nullable=True, index=True)
+    value_float = Column(Float, nullable=True, index=True)
+    value_date = Column(DateTime, nullable=True, index=True)
+    value_boolean = Column(Boolean, nullable=True, index=True)
+    value_time = Column(Time, nullable=True, index=True)
 
 
     entity = relationship("Entity", back_populates="values")
