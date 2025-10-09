@@ -70,12 +70,16 @@ class Attribute(AttributeBase):
     @classmethod
     def validate_value_type(cls, v):
         """
-        Этот валидатор будет принимать строку из базы данных (например, "string")
-        и преобразовывать ее в член Enum (ValueTypeEnum.string) перед
-        созданием Pydantic-модели.
+        Принимает строку из БД (например, "string") и преобразует
+        ее в член Enum (ValueTypeEnum.string) перед валидацией.
         """
         if isinstance(v, str):
-            return ValueTypeEnum(v)
+            try:
+                return ValueTypeEnum(v)
+            except ValueError:
+                # Если пришел неизвестный тип, оставляем как есть,
+                # чтобы Pydantic сам выдал ошибку.
+                return v
         return v
 
 
