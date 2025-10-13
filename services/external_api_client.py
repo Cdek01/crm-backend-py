@@ -33,7 +33,7 @@ def send_update_to_colleague(event_type: str, table_name: str, entity_id: Any, d
         logging.info(f"Отправка уведомления на {settings.EXTERNAL_API_URL} с данными: {payload}")
 
         # Устанавливаем таймаут (например, 5 секунд), чтобы не ждать вечно
-        response = requests.post(settings.EXTERNAL_API_URL, json=payload, timeout=5)
+        response = requests.post(settings.EXTERNAL_API_URL, json=payload, timeout=30)
 
         # Проверяем, что API коллеги ответило успехом (статус 2xx).
         # Если статус 4xx или 5xx, будет выброшено исключение HTTPError.
