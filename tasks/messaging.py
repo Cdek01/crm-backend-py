@@ -74,14 +74,14 @@ def send_sms_for_entity_task(entity_id: int, user_id: int):  # <-- Добавл�
 
 
 @celery_app.task
-def send_webhook_task(event_type: str, table_name: str, entity_id: Any, data: Dict[str, Any]):
+def send_webhook_task(event_type: str, table_name: str, entity_id: Any, data: Dict[str, Any], tenant_id: int):
     """
     Фоновая задача для отправки уведомления (вебхука) во внешнее API.
     """
     # Импортируем клиент здесь, чтобы избежать циклических импортов
     from services import external_api_client
 
-    print(f"Запущена задача send_webhook_task для события '{event_type}' в таблице '{table_name}'")
+    logger.info(f"Запущена задача send_webhook_task для tenant_id={tenant_id}, событие='{event_type}', таблица='{table_name}'")
 
     # Вся логика отправки теперь находится здесь, в фоновом режиме.
     # Основное приложение не будет ждать ее выполнения.
