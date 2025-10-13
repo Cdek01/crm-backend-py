@@ -21,6 +21,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse # <-- Добавь�
 # Роутеры для всех ваших API эндпоинтов
 from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases, select_lists
 from starlette.templating import Jinja2Templates # <-- Убедитесь, что этот импорт есть
+from core.logging_config import setup_logging # <-- Добавьте импорт
 
 # Модули для админ-панели
 from sqladmin import Admin
@@ -33,7 +34,7 @@ from admin import (
 )
 from api.endpoints import roles, shared # <-- добавьте roles
 
-
+setup_logging()
 
 # --------------------------------------------------------------------------
 # --- ШАГ 3: ИНИЦИАЛИЗАЦИЯ БД И ПРИЛОЖЕНИЯ ---
