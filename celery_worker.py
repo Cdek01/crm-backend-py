@@ -8,7 +8,7 @@ import sys
 # Добавляем корневую директорию проекта в PYTHONPATH.
 # Это позволяет Celery воркеру находить модули вашего приложения (services, api, и т.д.)
 # независимо от того, откуда он был запущен.
-PROJECT_ROOT = "/root/projects/crm-backend/crm-backend-py"
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
