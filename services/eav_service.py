@@ -17,7 +17,8 @@ from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
 
-
+import logging # <-- ШАГ 1: Добавьте этот импорт
+logger = logging.getLogger(__name__)
 
 VALUE_FIELD_MAP = {
     "string": "value_string",
@@ -876,12 +877,18 @@ class EAVService:
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         """Обновить запись с корректным преобразованием типов."""
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
+        # --- ДОБАВЬТЕ ЛОГИРОВАНИЕ ---
+        logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
+        logger.debug(f"Входящие данные (data): {data}")  # debug для менее важной информации
+
+
+
 
 
         # --- ПРОВЕРКА ФЛАГА ---
         is_external_update = data.pop("_source", None) is not None
         # ---------------------
-
+        logger.info(f"is_external_update: {is_external_update}")
 
         # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
         self.get_entity_by_id(entity_id, current_user)
@@ -964,19 +971,22 @@ class EAVService:
 
         # 6. Сохраняем все изменения
         self.db.commit()
-
+        logger.info(f"Данные для entity_id={entity_id} закоммичены.")
+        # Логика отправки уведомления
         if not is_external_update:
+            logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
             entity_type_name = entity.entity_type.name
-            # --- ИЗМЕНЕНИЕ: Заменяем прямой вызов на .delay() ---
             send_webhook_task.delay(
                 event_type="update",
                 table_name=entity_type_name,
                 entity_id=entity_id,
-                data=data
+                data=data,
+                tenant_id=current_user.tenant_id
             )
+        else:
+            logger.info("Условие 'not is_external_update' НЕ пройдено. Уведомление webhook не отправляется.")
 
-
-        # 7. Возвращаем ПОЛНЫЙ и ОБНОВЛЕННЫЙ объект
+        logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
 
