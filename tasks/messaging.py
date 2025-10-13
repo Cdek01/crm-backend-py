@@ -79,7 +79,7 @@ def send_webhook_task(event_type: str, table_name: str, entity_id: Any, data: Di
     Фоновая задача для отправки уведомления (вебхука) во внешнее API.
     """
     # Импортируем клиент здесь, чтобы избежать циклических импортов
-    from services import external_api_client
+    from crm_backend_py.services import external_api_client
 
     logger.info(f"Запущена задача send_webhook_task для tenant_id={tenant_id}, событие='{event_type}', таблица='{table_name}'")
 
