@@ -1,7 +1,17 @@
 # celery_worker.py
 from celery import Celery
 from core.config import settings
+import os
+import sys
 
+# --- ДОБАВЬТЕ ЭТОТ БЛОК ---
+# Добавляем корневую директорию проекта в PYTHONPATH.
+# Это позволяет Celery воркеру находить модули вашего приложения (services, api, и т.д.)
+# независимо от того, откуда он был запущен.
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+    
 # Имя основного модуля теперь 'celery_worker', как и имя файла.
 celery_app = Celery(
     'celery_worker',
