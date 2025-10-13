@@ -1145,12 +1145,14 @@ class EAVService:
 
         # --- ЛОГИКА ОТПРАВКИ УВЕДОМЛЕНИЯ ---
         if not is_external_update:
-            # --- ИЗМЕНЕНИЕ: Заменяем прямой вызов на .delay() ---
+            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+            # Добавляем `tenant_id=current_user.tenant_id`
             send_webhook_task.delay(
                 event_type="create",
                 table_name=entity_type_name,
                 entity_id=new_entity.id,
-                data=data
+                data=data,
+                tenant_id=current_user.tenant_id
             )
         # -----------------------------------
         return self.get_entity_by_id(new_entity.id, current_user)
