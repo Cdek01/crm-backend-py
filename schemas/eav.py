@@ -85,6 +85,7 @@ class Attribute(AttributeBase):
 
 class AttributeUpdate(BaseModel):
     display_name: Optional[str] = None
+    formula_text: Optional[str] = None
     target_entity_type_id: Optional[int] = None
     source_attribute_id: Optional[int] = None
     target_attribute_id: Optional[int] = None
