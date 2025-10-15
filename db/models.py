@@ -317,7 +317,7 @@ class AttributeValue(Base):
     __tablename__ = 'attribute_values'
     id = Column(Integer, primary_key=True)
     # Эти два поля почти всегда используются вместе в JOIN'ах
-    entity_id = Column(Integer, ForeignKey('entities.id'), nullable=False, index=True)
+    entity_id = Column(Integer, ForeignKey('entities.id', ondelete="CASCADE"), nullable=False, index=True)
     attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False, index=True)
 
     # Храним значения разных типов в разных полях
