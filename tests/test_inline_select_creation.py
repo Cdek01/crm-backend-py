@@ -345,31 +345,18 @@
 #     result = update_crm_data(payload=payload, entity_type_name="kontragenty", api_token=API_TOKEN)
 #     print("Результат:", result)
 #
+
+
+
+# КАСКАДНОЕ УДАЛЕНИЕ ЗАПИСЕЙ С ТАБЛИЦЫ
+
 API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkYW5pa2JlbGF2aW4yMDA2QGdtYWlsLmNvbSIsImV4cCI6MjA3NTcwNTExNH0.JXxPMrye8Vigv684SmBMF6uqt6fxd9WHajwM3j8Jj8c"
 import requests
 import json
 
 # --- НАСТРОЙКИ ---
 API_BASE_URL = "http://89.111.169.47:8005"  # Замените на URL вашего API
-TABLE_NAME = "test"                     # Системное имя таблицы
-# EMAIL = "admin@example.com"             # Email пользователя для аутентификации
-# PASSWORD = "your_password"              # Пароль пользователя
-
-# -----------------
-
-# def get_auth_token(email, password):
-#     """Получает токен аутентификации."""
-#     try:
-#         response = requests.post(
-#             f"{API_BASE_URL}/api/auth/token",
-#             data={"username": email, "password": password}
-#         )
-#         response.raise_for_status()
-#         return response.json()["access_token"]
-#     except requests.exceptions.RequestException as e:
-#         print(f"Ошибка аутентификации: {e}")
-#         print(f"Ответ сервера: {e.response.text if e.response else 'Нет ответа'}")
-#         return None
+TABLE_NAME = "kontragenty"                     # Системное имя таблицы
 
 
 auth_token = API_TOKEN
@@ -412,10 +399,8 @@ def clear_table(token, table_name):
     except requests.exceptions.RequestException as e:
         print(f"Ошибка при удалении записей: {e}")
         print(f"Ответ сервера: {e.response.text}")
-
-
 if __name__ == "__main__":
-    # auth_token = get_auth_token(EMAIL, PASSWORD)
+
     if auth_token:
         clear_table(auth_token, TABLE_NAME)
 

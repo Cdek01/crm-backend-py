@@ -244,7 +244,7 @@ class Attribute(Base):
 
     entity_type = relationship("EntityType", back_populates="attributes",
         foreign_keys=[entity_type_id])
-    # --- ДОБАВЬТЕ ЭТОТ БЛОК ---
+
     # Это отношение говорит SQLAlchemy, что у одного Атрибута может быть много Значений.
     # cascade="all, delete-orphan" - самая важная часть.
     # "all" - применяет все операции (save-update, merge, etc.) к связанным объектам.

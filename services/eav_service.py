@@ -228,7 +228,21 @@ class EAVService:
             raise HTTPException(status_code=404,
                                 detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
 
+        # --- ИЗМЕНЕНИЕ: ЖАДНАЯ ЗАГРУЗКА ДАННЫХ О СВЯЗЯХ ---
+        # После того как мы нашли ID и проверили права, делаем полный запрос
+        # с загрузкой всех необходимых данных для построения связей.
+        full_entity_type = self.db.query(models.EntityType).options(
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.source_attribute),
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.target_attribute),
+            joinedload(models.EntityType.attributes).joinedload(models.Attribute.display_attribute)
+        ).filter(models.EntityType.id == result.id).one()
+
         return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(result.id)
+
+
+
+
+
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         """
@@ -622,11 +636,6 @@ class EAVService:
         entities_map = {entity.id: entity for entity in full_entities}
         sorted_entities = [entities_map[id] for id in entity_ids_on_page if id in entities_map]
 
-        # return [self._pivot_data(e) for e in sorted_entities]
-
-
-
-
         # --- НОВАЯ ЛОГИКА "LOOK UP" ПЕРЕД ВОЗВРАТОМ ДАННЫХ ---
         # 9. Преобразуем EAV в "плоский" список словарей
         pivoted_results = [self._pivot_data(e) for e in sorted_entities]
@@ -698,6 +707,10 @@ class EAVService:
             print("--- [ОТЛАДКА] КОНЕЦ ОБРАБОТКИ СВЯЗЕЙ ---\n")
 
         return pivoted_results
+
+
+
+
 
     def update_attribute(
             self, attribute_id: int, attr_in: AttributeUpdate, current_user: models.User
