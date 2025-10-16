@@ -495,6 +495,12 @@ class EAVService:
 
                 # --- НОВАЯ, ПЕРЕСТРОЕННАЯ ЛОГИКА ---
 
+
+
+
+
+
+
                 # 1. Сначала обрабатываем универсальные операторы
                 if op == 'blank':
                     query = query.filter(~subquery.exists())
