@@ -108,7 +108,7 @@ def get_all_entities(
         sort_order: str = Query(default='asc', description="Порядок сортировки: asc или desc"),
         # --- ДОБАВЬТЕ ЭТИ ДВА ПАРАМЕТРА ---
         skip: int = Query(0, ge=0, description="Сколько записей пропустить (смещение)"),
-        limit: int = Query(100, ge=1, le=1000, description="Максимальное количество записей для возврата"),
+        limit: int = Query(100, ge=1, le=10000000, description="Максимальное количество записей для возврата"),
         # ---------------------------------
 
         service: EAVService = Depends(),
