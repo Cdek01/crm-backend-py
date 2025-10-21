@@ -50,6 +50,7 @@ class AttributeCreate(BaseModel):
     back_relation_name: Optional[str] = None  # Системное имя для обратной колонки (например, "project")
     back_relation_display_name: Optional[str] = None  # Отображаемое имя ("Проект")
     # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    back_relation_display_attribute_id: Optional[int] = None
 
     # Эти поля остаются
     select_list_id: Optional[int] = None

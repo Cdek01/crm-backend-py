@@ -831,21 +831,16 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
-            if not all([attribute_in.target_entity_type_id, attribute_in.back_relation_name,
-                        attribute_in.back_relation_display_name, attribute_in.display_attribute_id]):
+            # Валидация: теперь требуем display_attribute_id для ОБЕИХ связей
+            if not all([
+                attribute_in.target_entity_type_id,
+                attribute_in.display_attribute_id,  # Для прямой связи
+                attribute_in.back_relation_name,
+                attribute_in.back_relation_display_name,
+                attribute_in.back_relation_display_attribute_id  # Для обратной связи
+            ]):
                 raise HTTPException(status_code=400,
-                                    detail="Для создания обратной связи необходимо указать target_entity_type_id, display_attribute_id, back_relation_name и back_relation_display_name.")
-
-            # Получаем информацию об отображаемом поле в обратной связи
-            # (например, "Название проекта" в таблице "Проекты")
-            # Нам нужен его ID, чтобы настроить обратную связь.
-            main_display_attr_id = None
-            main_display_attr = self.db.query(models.Attribute).filter(
-                models.Attribute.entity_type_id == source_entity_type.id,
-                models.Attribute.name.in_(['name', 'title', 'display_name', 'company_name'])  # Ищем по типовым именам
-            ).first()
-            if main_display_attr:
-                main_display_attr_id = main_display_attr.id
+                                    detail="Для создания двусторонней связи не хватает обязательных полей.")
 
             # Создаем ОСНОВНОЙ атрибут (например, "Задачи в проекте")
             main_attr = models.Attribute(
@@ -857,14 +852,14 @@ class EAVService:
                 display_attribute_id=attribute_in.display_attribute_id
             )
 
-            # Создаем ОБРАТНЫЙ атрибут (например, "Родительский проект")
+            # Создаем ОБРАТНЫЙ атрибут (например, "Родительский проект"), используя явные данные из запроса
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
                 value_type="relation",
                 entity_type_id=attribute_in.target_entity_type_id,
                 target_entity_type_id=source_entity_type.id,
-                display_attribute_id=main_display_attr_id  # <-- Настраиваем отображение для обратной связи
+                display_attribute_id=attribute_in.back_relation_display_attribute_id  # <-- Используем новое поле
             )
 
             self.db.add(main_attr)

@@ -76,13 +76,25 @@ def run_full_cycle_test():
 
         # --- ШАГ 2: СОЗДАНИЕ ДВУСТОРОННЕЙ СВЯЗИ ---
         print_header("Шаг 2: Создание двусторонней связи одним запросом")
+
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
         payload = {
             "name": "tasks_in_project", "display_name": "Задачи в проекте", "value_type": "relation",
+
+            # Настройки прямой связи (Проект -> Задача)
             "target_entity_type_id": ids['tasks_table']['id'],
-            "display_attribute_id": ids['task_title_attr']['id'],
+            "display_attribute_id": ids['task_title_attr']['id'],  # Показываем "Название задачи"
+
             "create_back_relation": True,
-            "back_relation_name": "parent_project", "back_relation_display_name": "Родительский проект"
+
+            # Настройки обратной связи (Задача -> Проект)
+            "back_relation_name": "parent_project",
+            "back_relation_display_name": "Родительский проект",
+            # Явно указываем, что в обратной связи нужно показывать "Название проекта"
+            "back_relation_display_attribute_id": ids['project_name_attr']['id']
         }
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
         resp = requests.post(f"{BASE_URL}/api/meta/entity-types/{ids['projects_table']['id']}/attributes",
                              headers=headers, json=payload)
         resp.raise_for_status()
