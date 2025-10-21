@@ -993,9 +993,7 @@ class EAVService:
         Получить одну запись по ID с проверкой прав и "умной" подстановкой
         связанных данных.
         """
-        # --- ШАГ 1: Загружаем сущность со всеми необходимыми метаданными ---
-        # Мы "жадно" загружаем entity_type, его атрибуты и метаданные
-        # этих атрибутов, чтобы вся информация была доступна сразу.
+        # ШАГ 1: Загружаем сущность со всеми необходимыми метаданными
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
@@ -1007,13 +1005,12 @@ class EAVService:
 
         # Проверка прав доступа
         if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
-            # Здесь можно добавить более сложную проверку на "расшаренные" таблицы, если нужно
             raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-        # --- ШАГ 2: Преобразуем EAV в "плоский" словарь ---
+        # ШАГ 2: Преобразуем EAV в "плоский" словарь
         pivoted_result = self._pivot_data(entity)
 
-        # --- ШАГ 3: Применяем ту же логику "Lookup", что и в get_all_entities_for_type ---
+        # ШАГ 3: Применяем логику "Lookup"
         relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
 
         if relation_attributes:
@@ -1022,15 +1019,11 @@ class EAVService:
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
-
-                # Получаем ID связанной записи из нашего результата
                 source_id = pivoted_result.get(rel_attr.name)
 
-                # Пропускаем, если ID не установлен или это не число
                 if not isinstance(source_id, int):
                     continue
 
-                # Находим отображаемое значение для этого ОДНОГО ID
                 display_value_result = self.db.query(
                     models.AttributeValue.value_string,
                     models.AttributeValue.value_integer,
@@ -1038,11 +1031,10 @@ class EAVService:
                 ).filter(
                     models.AttributeValue.entity_id == source_id,
                     models.AttributeValue.attribute_id == display_attr_id
-                ).first()  # .first(), так как ищем только одно значение
+                ).first()
 
                 if display_value_result:
                     val_str, val_int, val_float = display_value_result
-                    # Заменяем ID на найденное значение
                     pivoted_result[rel_attr.name] = str(val_str or val_int or val_float or '')
 
         return pivoted_result
