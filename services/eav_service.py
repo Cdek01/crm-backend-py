@@ -846,7 +846,12 @@ class EAVService:
 
 
         # 2. Подготавливаем словарь с данными
-        attr_data = attribute_in.model_dump(exclude={"list_items"})
+        # attr_data = attribute_in.model_dump(exclude={"list_items"})
+
+        attr_data = attribute_in.model_dump()  # <--- ПРОБЛЕМА ЗДЕСЬ
+
+
+
         attr_data['entity_type_id'] = entity_type_id
         # 3. Проверяем, нужно ли создавать обратную связь
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
@@ -861,11 +866,9 @@ class EAVService:
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
-                value_type="relation", # Обратная связь - это тоже relation
+                value_type="relation",
                 entity_type_id=attribute_in.target_entity_type_id,
-                # Связываем его с исходной таблицей
                 target_entity_type_id=source_entity_type.id,
-                # Указываем, какое поле будет отображаться там (обычно это name или title)
                 display_attribute_id=attribute_in.display_attribute_id
             )
             # ВАЖНО: Мы пока не знаем ID основного атрибута, поэтому не можем его сюда записать.
@@ -873,7 +876,14 @@ class EAVService:
 
             # 3.3. Создаем ОСНОВНОЙ атрибут (в исходной таблице)
             # Мы сразу связываем его с целевой таблицей
-            main_attr = models.Attribute(**attr_data)
+            main_attr = models.Attribute(
+                name=attribute_in.name,
+                display_name=attribute_in.display_name,
+                value_type=attribute_in.value_type,
+                entity_type_id=entity_type_id,
+                target_entity_type_id=attribute_in.target_entity_type_id,
+                display_attribute_id=attribute_in.display_attribute_id
+            )
 
             # 3.4. Добавляем оба атрибута в сессию и делаем flush, чтобы получить их ID
             self.db.add(main_attr)
