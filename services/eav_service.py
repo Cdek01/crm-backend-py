@@ -988,12 +988,18 @@ class EAVService:
     #             raise HTTPException(status_code=404, detail="Сущность не найдена")
     #
     #     return self._pivot_data(entity)
+    # Замените ВЕСЬ метод get_entity_by_id на этот
+
     def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
         """
         Получить одну запись по ID с проверкой прав и "умной" подстановкой
         связанных данных.
         """
-        # ШАГ 1: Загружаем сущность со всеми необходимыми метаданными
+        # --- НАША КОНТРОЛЬНАЯ ТОЧКА ---
+        logger.info(f"--- [DEBUG] Executing NEW get_entity_by_id for entity_id: {entity_id} ---")
+        # --------------------------------
+
+        # --- ШАГ 1: Загружаем сущность со всеми необходимыми метаданными ---
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
@@ -1007,10 +1013,10 @@ class EAVService:
         if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-        # ШАГ 2: Преобразуем EAV в "плоский" словарь
+        # --- ШАГ 2: Преобразуем EAV в "плоский" словарь ---
         pivoted_result = self._pivot_data(entity)
 
-        # ШАГ 3: Применяем логику "Lookup"
+        # --- ШАГ 3: Применяем ту же логику "Lookup" ---
         relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
 
         if relation_attributes:
