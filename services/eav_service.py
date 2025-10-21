@@ -809,10 +809,6 @@ class EAVService:
 
         return db_entity_type
 
-
-
-
-
     def create_attribute_for_type(
             self,
             entity_type_id: int,
@@ -821,48 +817,28 @@ class EAVService:
     ) -> models.Attribute:
         """
         Создает новый атрибут ('колонку').
+        Обрабатывает три сценария:
+        1. Создание двусторонней связи (relation с флагом create_back_relation).
+        2. Создание колонки типа 'select' с одновременным созданием списка.
+        3. Создание любой другой обычной колонки.
         """
-
-        # 1. Проверяем доступ к родительской таблице (этот код уже должен быть исправлен)
+        # --- ШАГ 1: Унифицированная проверка доступа к родительской таблице ---
         source_entity_type = self.get_entity_type_by_id(
             entity_type_id=entity_type_id,
             current_user=current_user
         )
 
-
-        # 1. Проверяем доступ к родительской таблице
-        # entity_type = self.db.query(models.EntityType).filter(
-        #     models.EntityType.id == entity_type_id,
-        #     models.EntityType.tenant_id == current_user.tenant_id
-        # ).first()
-        # if not entity_type:
-        #     raise HTTPException(status_code=404, detail="Тип сущности не найден")
-        entity_type = self.get_entity_type_by_id(
-            entity_type_id=entity_type_id,
-            current_user=current_user
-        )
-        if not entity_type:
-            raise HTTPException(status_code=404, detail="Тип сущности не найден")
-
-
-        # 2. Подготавливаем словарь с данными
-        # attr_data = attribute_in.model_dump(exclude={"list_items"})
-
-        attr_data = attribute_in.model_dump()  # <--- ПРОБЛЕМА ЗДЕСЬ
-
-
-
-        attr_data['entity_type_id'] = entity_type_id
-        # 3. Проверяем, нужно ли создавать обратную связь
+        # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
-            # 3.1. Валидация: убеждаемся, что все необходимые данные переданы
-            if not all([attribute_in.target_entity_type_id, attribute_in.back_relation_name, attribute_in.back_relation_display_name]):
+            # Валидация: убеждаемся, что все необходимые данные переданы
+            if not all([attribute_in.target_entity_type_id, attribute_in.back_relation_name,
+                        attribute_in.back_relation_display_name]):
                 raise HTTPException(
                     status_code=400,
                     detail="Для создания обратной связи необходимо указать target_entity_type_id, back_relation_name и back_relation_display_name."
                 )
 
-            # 3.2. Создаем ОБРАТНЫЙ атрибут (в целевой таблице)
+            # Создаем ОБРАТНЫЙ атрибут в целевой таблице
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
@@ -871,11 +847,8 @@ class EAVService:
                 target_entity_type_id=source_entity_type.id,
                 display_attribute_id=attribute_in.display_attribute_id
             )
-            # ВАЖНО: Мы пока не знаем ID основного атрибута, поэтому не можем его сюда записать.
-            # Мы сделаем это после коммита.
 
-            # 3.3. Создаем ОСНОВНОЙ атрибут (в исходной таблице)
-            # Мы сразу связываем его с целевой таблицей
+            # Создаем ОСНОВНОЙ атрибут. Используем только те поля, которые есть в модели SQLAlchemy.
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
@@ -885,53 +858,108 @@ class EAVService:
                 display_attribute_id=attribute_in.display_attribute_id
             )
 
-            # 3.4. Добавляем оба атрибута в сессию и делаем flush, чтобы получить их ID
+            # Добавляем оба атрибута в сессию и коммитим
             self.db.add(main_attr)
             self.db.add(back_relation_attr)
-            self.db.flush()
-
-            # 3.5. Теперь, зная ID, мы можем "связать" их друг с другом.
-            # Мы не используем source/target_attribute_id, а реализуем через display_attribute_id,
-            # что является более простой версией связи.
-            # Для более сложных связей потребуются доп. поля.
-            # Пока что основной функционал будет работать через display_attribute_id,
-            # который мы уже настроили.
-
-            # 3.6. Коммитим всю транзакцию
             self.db.commit()
+
             self.db.refresh(main_attr)
             return main_attr
-        # # 3. Если это 'select' и переданы элементы, создаем список
-        # if attribute_in.value_type == 'select' and attribute_in.list_items:
-        #     unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
-        #     new_list = models.SelectOptionList(
-        #         name=unique_name,
-        #         tenant_id=current_user.tenant_id
-        #     )
-        #     # СНАЧАЛА добавляем в сессию
-        #     self.db.add(new_list)
-        #
-        #     for item_value in attribute_in.list_items:
-        #         if item_value:
-        #             new_option = models.SelectOption(value=item_value, option_list=new_list)
-        #             self.db.add(new_option)
-        #
-        #     # ТЕПЕРЬ делаем flush, чтобы получить ID
-        #     self.db.flush()
-        #
-        #     # ЯВНО добавляем ID списка в наши данные
-        #     attr_data['select_list_id'] = new_list.id
 
-        # 4. Создаем сам атрибут из подготовленного словаря
-        db_attribute = models.Attribute(**attr_data)
-        self.db.add(db_attribute)
+        # --- СЦЕНАРИИ 2 и 3: Создание обычной колонки (включая select) ---
+        else:
+            # Готовим "чистый" словарь данных, исключая все виртуальные/управляющие поля
+            attr_data = attribute_in.model_dump(
+                exclude={"list_items", "create_back_relation", "back_relation_name", "back_relation_display_name"}
+            )
+            attr_data['entity_type_id'] = entity_type_id
 
-        # 5. Коммитим ВСЕ одной транзакцией
-        self.db.commit()
-        self.db.refresh(db_attribute)
+            # СЦЕНАРИЙ 2: Если это 'select' и переданы элементы, создаем список
+            if attribute_in.value_type == 'select' and attribute_in.list_items:
+                unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+                new_list = models.SelectOptionList(
+                    name=unique_name,
+                    tenant_id=current_user.tenant_id
+                )
+                self.db.add(new_list)
 
-        # 6. Возвращаем объект SQLAlchemy
-        return db_attribute
+                for item_value in attribute_in.list_items:
+                    if item_value:
+                        new_option = models.SelectOption(value=item_value, option_list=new_list)
+                        self.db.add(new_option)
+
+                # Делаем flush, чтобы получить ID списка ПЕРЕД созданием атрибута
+                self.db.flush()
+                attr_data['select_list_id'] = new_list.id
+
+            # Создаем сам атрибут из подготовленного "чистого" словаря
+            db_attribute = models.Attribute(**attr_data)
+            self.db.add(db_attribute)
+
+            # Коммитим все одной транзакцией
+            self.db.commit()
+            self.db.refresh(db_attribute)
+
+            return db_attribute
+    # def create_attribute_for_type(
+    #         self,
+    #         entity_type_id: int,
+    #         attribute_in: AttributeCreate,
+    #         current_user: models.User
+    # ) -> models.Attribute:
+    #     """
+    #     Создает новый атрибут ('колонку').
+    #     """
+    #     # 1. Проверяем доступ к родительской таблице
+    #     # entity_type = self.db.query(models.EntityType).filter(
+    #     #     models.EntityType.id == entity_type_id,
+    #     #     models.EntityType.tenant_id == current_user.tenant_id
+    #     # ).first()
+    #     # if not entity_type:
+    #     #     raise HTTPException(status_code=404, detail="Тип сущности не найден")
+    #     entity_type = self.get_entity_type_by_id(
+    #         entity_type_id=entity_type_id,
+    #         current_user=current_user
+    #     )
+    #     if not entity_type:
+    #         raise HTTPException(status_code=404, detail="Тип сущности не найден")
+    #
+    #
+    #     # 2. Подготавливаем словарь с данными
+    #     attr_data = attribute_in.model_dump(exclude={"list_items"})
+    #     attr_data['entity_type_id'] = entity_type_id
+    #
+    #     # 3. Если это 'select' и переданы элементы, создаем список
+    #     if attribute_in.value_type == 'select' and attribute_in.list_items:
+    #         unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+    #         new_list = models.SelectOptionList(
+    #             name=unique_name,
+    #             tenant_id=current_user.tenant_id
+    #         )
+    #         # СНАЧАЛА добавляем в сессию
+    #         self.db.add(new_list)
+    #
+    #         for item_value in attribute_in.list_items:
+    #             if item_value:
+    #                 new_option = models.SelectOption(value=item_value, option_list=new_list)
+    #                 self.db.add(new_option)
+    #
+    #         # ТЕПЕРЬ делаем flush, чтобы получить ID
+    #         self.db.flush()
+    #
+    #         # ЯВНО добавляем ID списка в наши данные
+    #         attr_data['select_list_id'] = new_list.id
+    #
+    #     # 4. Создаем сам атрибут из подготовленного словаря
+    #     db_attribute = models.Attribute(**attr_data)
+    #     self.db.add(db_attribute)
+    #
+    #     # 5. Коммитим ВСЕ одной транзакцией
+    #     self.db.commit()
+    #     self.db.refresh(db_attribute)
+    #
+    #     # 6. Возвращаем объект SQLAlchemy
+    #     return db_attribute
 
 
 
