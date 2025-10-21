@@ -38,7 +38,12 @@ def delete_multiple_entities(
 
 
 
-@router.post("/{entity_type_name}", response_model=List[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+from pydantic import BaseModel
+class PaginatedEntityResponse(BaseModel):
+    total: int
+    data: List[Dict[str, Any]]
+# @router.post("/{entity_type_name}", response_model=List[Dict[str, Any]], status_code=status.HTTP_201_CREATED)
+@router.post("/{entity_type_name}", response_model=PaginatedEntityResponse, status_code=status.HTTP_201_CREATED)
 def create_entity(
         entity_type_name: str,
         data: Dict[str, Any] = Body(...),
