@@ -272,12 +272,16 @@ class Attribute(Base):
     target_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    back_relation_display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
 
     # Определяем связи для удобного доступа. `remote_side=[id]` нужен для self-referencing FK.
     target_entity_type = relationship("EntityType", foreign_keys=[target_entity_type_id])
     source_attribute = relationship("Attribute", foreign_keys=[source_attribute_id], remote_side=[id])
     target_attribute = relationship("Attribute", foreign_keys=[target_attribute_id], remote_side=[id])
     display_attribute = relationship("Attribute", foreign_keys=[display_attribute_id], remote_side=[id])
+
+    back_relation_display_attribute = relationship("Attribute", foreign_keys=[back_relation_display_attribute_id], remote_side=[id])
+
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
 

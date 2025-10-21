@@ -831,18 +831,17 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
-            # Валидация: теперь требуем display_attribute_id для ОБЕИХ связей
             if not all([
                 attribute_in.target_entity_type_id,
-                attribute_in.display_attribute_id,  # Для прямой связи
+                attribute_in.display_attribute_id,
                 attribute_in.back_relation_name,
                 attribute_in.back_relation_display_name,
-                attribute_in.back_relation_display_attribute_id  # Для обратной связи
+                attribute_in.back_relation_display_attribute_id
             ]):
                 raise HTTPException(status_code=400,
                                     detail="Для создания двусторонней связи не хватает обязательных полей.")
 
-            # Создаем ОСНОВНОЙ атрибут (например, "Задачи в проекте")
+            # Создаем ОСНОВНОЙ атрибут
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
@@ -852,14 +851,14 @@ class EAVService:
                 display_attribute_id=attribute_in.display_attribute_id
             )
 
-            # Создаем ОБРАТНЫЙ атрибут (например, "Родительский проект"), используя явные данные из запроса
+            # Создаем ОБРАТНЫЙ атрибут
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
                 value_type="relation",
                 entity_type_id=attribute_in.target_entity_type_id,
                 target_entity_type_id=source_entity_type.id,
-                display_attribute_id=attribute_in.back_relation_display_attribute_id  # <-- Используем новое поле
+                display_attribute_id=attribute_in.back_relation_display_attribute_id
             )
 
             self.db.add(main_attr)
@@ -868,40 +867,31 @@ class EAVService:
             self.db.refresh(main_attr)
             return main_attr
 
-        # --- СЦЕНАРИИ 2 и 3: Создание обычной колонки (включая select) ---
+        # --- СЦЕНАРИИ 2 и 3: Создание обычной колонки ---
         else:
-            # Готовим "чистый" словарь данных, исключая все виртуальные/управляющие поля
-            attr_data = attribute_in.model_dump(
-                exclude={"list_items", "create_back_relation", "back_relation_name", "back_relation_display_name"}
-            )
+            attr_data = attribute_in.model_dump(exclude_unset=True)  # exclude_unset=True безопаснее
+            attr_data.pop('create_back_relation', None)
+            attr_data.pop('back_relation_name', None)
+            attr_data.pop('back_relation_display_name', None)
+            attr_data.pop('back_relation_display_attribute_id', None)
+            attr_data.pop('list_items', None)
+
             attr_data['entity_type_id'] = entity_type_id
 
-            # СЦЕНАРИЙ 2: Если это 'select' и переданы элементы, создаем список
             if attribute_in.value_type == 'select' and attribute_in.list_items:
                 unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
-                new_list = models.SelectOptionList(
-                    name=unique_name,
-                    tenant_id=current_user.tenant_id
-                )
+                new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
                 self.db.add(new_list)
-
                 for item_value in attribute_in.list_items:
                     if item_value:
-                        new_option = models.SelectOption(value=item_value, option_list=new_list)
-                        self.db.add(new_option)
-
-                # Делаем flush, чтобы получить ID списка ПЕРЕД созданием атрибута
+                        self.db.add(models.SelectOption(value=item_value, option_list=new_list))
                 self.db.flush()
                 attr_data['select_list_id'] = new_list.id
 
-            # Создаем сам атрибут из подготовленного "чистого" словаря
             db_attribute = models.Attribute(**attr_data)
             self.db.add(db_attribute)
-
-            # Коммитим все одной транзакцией
             self.db.commit()
             self.db.refresh(db_attribute)
-
             return db_attribute
     # def create_attribute_for_type(
     #         self,
