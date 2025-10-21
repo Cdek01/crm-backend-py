@@ -282,6 +282,7 @@ class Attribute(Base):
     display_attribute = relationship("Attribute", foreign_keys=[display_attribute_id], remote_side=[id])
 
     back_relation_display_attribute = relationship("Attribute", foreign_keys=[back_relation_display_attribute_id], remote_side=[id])
+    reciprocal_attribute = relationship("Attribute", foreign_keys=[reciprocal_attribute_id], uselist=False)
 
     def __str__(self):
         return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
