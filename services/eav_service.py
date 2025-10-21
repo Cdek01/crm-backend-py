@@ -824,6 +824,7 @@ class EAVService:
         Создает новый атрибут ('колонку').
         Обрабатывает создание обычных полей и двусторонних ID-based связей.
         """
+        # Шаг 1: Проверка доступа (остается без изменений)
         source_entity_type = self.get_entity_type_by_id(
             entity_type_id=entity_type_id,
             current_user=current_user
@@ -831,6 +832,7 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
+            # Валидация
             if not all([
                 attribute_in.target_entity_type_id,
                 attribute_in.display_attribute_id,
@@ -845,7 +847,7 @@ class EAVService:
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
-                value_type="relation",
+                value_type=attribute_in.value_type.value,  # Используем .value для Enum
                 entity_type_id=entity_type_id,
                 target_entity_type_id=attribute_in.target_entity_type_id,
                 display_attribute_id=attribute_in.display_attribute_id
@@ -855,7 +857,7 @@ class EAVService:
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
-                value_type="relation",
+                value_type=attribute_in.value_type.value,
                 entity_type_id=attribute_in.target_entity_type_id,
                 target_entity_type_id=source_entity_type.id,
                 display_attribute_id=attribute_in.back_relation_display_attribute_id
@@ -867,17 +869,28 @@ class EAVService:
             self.db.refresh(main_attr)
             return main_attr
 
-        # --- СЦЕНАРИИ 2 и 3: Создание обычной колонки ---
+        # --- СЦЕНАРИИ 2 и 3: Создание ЛЮБОЙ обычной колонки ---
         else:
-            attr_data = attribute_in.model_dump(exclude_unset=True)  # exclude_unset=True безопаснее
-            attr_data.pop('create_back_relation', None)
-            attr_data.pop('back_relation_name', None)
-            attr_data.pop('back_relation_display_name', None)
-            attr_data.pop('back_relation_display_attribute_id', None)
-            attr_data.pop('list_items', None)
+            # ЯВНО и БЕЗОПАСНО собираем данные для конструктора SQLAlchemy
+            attr_data_for_db = {
+                "name": attribute_in.name,
+                "display_name": attribute_in.display_name,
+                "value_type": attribute_in.value_type.value,  # Используем .value для Enum
+                "entity_type_id": entity_type_id
+            }
 
-            attr_data['entity_type_id'] = entity_type_id
+            # Добавляем опциональные поля, только если они были переданы
+            if attribute_in.formula_text is not None:
+                attr_data_for_db["formula_text"] = attribute_in.formula_text
+            if attribute_in.currency_symbol is not None:
+                attr_data_for_db["currency_symbol"] = attribute_in.currency_symbol
+            # Для односторонних связей
+            if attribute_in.target_entity_type_id is not None:
+                attr_data_for_db["target_entity_type_id"] = attribute_in.target_entity_type_id
+            if attribute_in.display_attribute_id is not None:
+                attr_data_for_db["display_attribute_id"] = attribute_in.display_attribute_id
 
+            # Обработка select-списков
             if attribute_in.value_type == 'select' and attribute_in.list_items:
                 unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
                 new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
@@ -886,9 +899,10 @@ class EAVService:
                     if item_value:
                         self.db.add(models.SelectOption(value=item_value, option_list=new_list))
                 self.db.flush()
-                attr_data['select_list_id'] = new_list.id
+                attr_data_for_db['select_list_id'] = new_list.id
 
-            db_attribute = models.Attribute(**attr_data)
+            # Создаем атрибут из "чистого", собранного вручную словаря
+            db_attribute = models.Attribute(**attr_data_for_db)
             self.db.add(db_attribute)
             self.db.commit()
             self.db.refresh(db_attribute)
