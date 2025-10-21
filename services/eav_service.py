@@ -498,7 +498,7 @@ class EAVService:
             query = query.filter(models.Entity.id.in_(matching_entity_ids_subquery))
         # --- КОНЕЦ НОВОГО БЛОКА ---
 
-        
+
         # 3. Динамически применяем фильтры
         if filters:
             for f in filters:
@@ -972,23 +972,80 @@ class EAVService:
 
 
 
+    # def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
+    #     """Получить одну запись по ID с проверкой прав."""
+    #     entity = self.db.query(models.Entity).options(
+    #         joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute).joinedload(
+    #             models.Attribute.entity_type)
+    #     ).get(entity_id)
+    #
+    #     if not entity:
+    #         raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     # --- ИСПРАВЛЕНИЕ: Проверка прав доступа ---
+    #     if not current_user.is_superuser:
+    #         if entity.entity_type.tenant_id != current_user.tenant_id:
+    #             raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     return self._pivot_data(entity)
     def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
-        """Получить одну запись по ID с проверкой прав."""
+        """
+        Получить одну запись по ID с проверкой прав и "умной" подстановкой
+        связанных данных.
+        """
+        # --- ШАГ 1: Загружаем сущность со всеми необходимыми метаданными ---
+        # Мы "жадно" загружаем entity_type, его атрибуты и метаданные
+        # этих атрибутов, чтобы вся информация была доступна сразу.
         entity = self.db.query(models.Entity).options(
-            joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute).joinedload(
-                models.Attribute.entity_type)
-        ).get(entity_id)
+            joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
+            joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
+                models.Attribute.display_attribute)
+        ).filter(models.Entity.id == entity_id).first()
 
         if not entity:
             raise HTTPException(status_code=404, detail="Сущность не найдена")
 
-        # --- ИСПРАВЛЕНИЕ: Проверка прав доступа ---
-        if not current_user.is_superuser:
-            if entity.entity_type.tenant_id != current_user.tenant_id:
-                raise HTTPException(status_code=404, detail="Сущность не найдена")
+        # Проверка прав доступа
+        if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
+            # Здесь можно добавить более сложную проверку на "расшаренные" таблицы, если нужно
+            raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-        return self._pivot_data(entity)
+        # --- ШАГ 2: Преобразуем EAV в "плоский" словарь ---
+        pivoted_result = self._pivot_data(entity)
 
+        # --- ШАГ 3: Применяем ту же логику "Lookup", что и в get_all_entities_for_type ---
+        relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
+
+        if relation_attributes:
+            for rel_attr in relation_attributes:
+                if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
+                    continue
+
+                display_attr_id = rel_attr.display_attribute.id
+
+                # Получаем ID связанной записи из нашего результата
+                source_id = pivoted_result.get(rel_attr.name)
+
+                # Пропускаем, если ID не установлен или это не число
+                if not isinstance(source_id, int):
+                    continue
+
+                # Находим отображаемое значение для этого ОДНОГО ID
+                display_value_result = self.db.query(
+                    models.AttributeValue.value_string,
+                    models.AttributeValue.value_integer,
+                    models.AttributeValue.value_float
+                ).filter(
+                    models.AttributeValue.entity_id == source_id,
+                    models.AttributeValue.attribute_id == display_attr_id
+                ).first()  # .first(), так как ищем только одно значение
+
+                if display_value_result:
+                    val_str, val_int, val_float = display_value_result
+                    # Заменяем ID на найденное значение
+                    pivoted_result[rel_attr.name] = str(val_str or val_int or val_float or '')
+
+        return pivoted_result
 
 
 
