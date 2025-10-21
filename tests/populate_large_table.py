@@ -11,7 +11,7 @@ CORRECT_REGISTRATION_TOKEN = "your-super-secret-and-unique-token-12345"
 
 # --- Параметры генерации данных ---
 # ВНИМАНИЕ: Большое количество строк ( > 1000) будет выполняться ОЧЕНЬ долго.
-NUM_ROWS_TO_CREATE = 3000000
+NUM_ROWS_TO_CREATE = 10000
 NUM_COLUMNS = 30
 # -------------------------------------------
 
@@ -142,3 +142,20 @@ def run_data_loading():
 
 if __name__ == "__main__":
     run_data_loading()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

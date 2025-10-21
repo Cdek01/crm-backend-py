@@ -823,13 +823,16 @@ class EAVService:
         Создает новый атрибут ('колонку').
         """
         # 1. Проверяем доступ к родительской таблице
-        entity_type = self.db.query(models.EntityType).filter(
-            models.EntityType.id == entity_type_id,
-            models.EntityType.tenant_id == current_user.tenant_id
-        ).first()
-        if not entity_type:
-            raise HTTPException(status_code=404, detail="Тип сущности не найден")
-
+        # entity_type = self.db.query(models.EntityType).filter(
+        #     models.EntityType.id == entity_type_id,
+        #     models.EntityType.tenant_id == current_user.tenant_id
+        # ).first()
+        # if not entity_type:
+        #     raise HTTPException(status_code=404, detail="Тип сущности не найден")
+        entity_type = self.get_entity_type_by_id(
+            entity_type_id=entity_type_id,
+            current_user=current_user
+        )
         # 2. Подготавливаем словарь с данными
         attr_data = attribute_in.model_dump(exclude={"list_items"})
         attr_data['entity_type_id'] = entity_type_id
