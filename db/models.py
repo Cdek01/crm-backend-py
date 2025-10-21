@@ -273,6 +273,7 @@ class Attribute(Base):
     display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     # --- КОНЕЦ ИЗМЕНЕНИЙ ---
     back_relation_display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+    reciprocal_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
 
     # Определяем связи для удобного доступа. `remote_side=[id]` нужен для self-referencing FK.
     target_entity_type = relationship("EntityType", foreign_keys=[target_entity_type_id])

@@ -865,7 +865,14 @@ class EAVService:
 
             self.db.add(main_attr)
             self.db.add(back_relation_attr)
-            self.db.commit()
+            self.db.flush()  # <-- ВАЖНО: Используем flush, чтобы получить ID
+
+            # --- НАЧАЛО ИЗМЕНЕНИЙ: "Сшиваем" связи ---
+            main_attr.reciprocal_attribute_id = back_relation_attr.id
+            back_relation_attr.reciprocal_attribute_id = main_attr.id
+            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+            self.db.commit()  # Теперь коммитим все вместе
             self.db.refresh(main_attr)
             return main_attr
 
@@ -1048,79 +1055,188 @@ class EAVService:
 
 
 
+    # def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+    #     """Обновить запись с корректным преобразованием типов."""
+    #     from tasks.messaging import send_webhook_task, send_sms_for_entity_task
+    #     # --- ДОБАВЬТЕ ЛОГИРОВАНИЕ ---
+    #     logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
+    #     logger.debug(f"Входящие данные (data): {data}")  # debug для менее важной информации
+    #
+    #
+    #     # --- ПРОВЕРКА ФЛАГА ---
+    #     is_external_update = data.pop("_source", None) is not None
+    #     # ---------------------
+    #     logger.info(f"is_external_update: {is_external_update}")
+    #
+    #     # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
+    #     self.get_entity_by_id(entity_id, current_user)
+    #
+    #     # 2. Загружаем сам SQLAlchemy объект для работы
+    #     entity = self.db.query(models.Entity).options(
+    #         joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
+    #     ).get(entity_id)
+    #
+    #     if not entity:  # Дополнительная проверка на случай, если сущность удалили
+    #         raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
+    #
+    #     # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД ОБНОВЛЕНИЕМ ---
+    #     # Внедряем текущую дату, если колонка "Дата изменения" существует
+    #     if 'modification_date' in attributes_map:
+    #         data['modification_date'] = datetime.utcnow().isoformat()
+    #     # -------------------------------------------------
+    #
+    #     # 3. Проверяем триггер SMS и модифицируем входящие данные
+    #     if data.get("send_sms_trigger") is True:
+    #         data["sms_status"] = "pending"
+    #         data["send_sms_trigger"] = False  # Сбрасываем триггер
+    #         send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
+    #
+    #     # --- НАЧАЛО НОВОЙ ЛОГИКИ: Обновляем значения и "зеркальные" связи ---
+    #     reciprocal_updates = []
+    #     # 4. Обновляем значения атрибутов
+    #     for key, value in data.items():
+    #         if key not in attributes_map:
+    #             continue
+    #
+    #         attribute = attributes_map[key]
+    #         # --- Блок обновления значения (как и раньше, но с одним дополнением) ---
+    #         # ... (весь ваш код для multiselect и обычных типов) ...
+    #         # Внутри `elif attribute.value_type in VALUE_FIELD_MAP:`:
+    #         # 1. Обрабатываем значение
+    #         processed_value = self._process_value(value, attribute)
+    #         # 2. Обновляем или создаем AttributeValue
+    #         # ... (ваш код с existing_value и new_value)
+    #         # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    #         if attribute.value_type == 'multiselect':
+    #             # Загружаем существующий AttributeValue-контейнер вместе с его содержимым
+    #             existing_value_container = self.db.query(models.AttributeValue).options(
+    #                 joinedload(models.AttributeValue.multiselect_values)
+    #             ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
+    #
+    #             # Если пользователь передал пустой список или не список, очищаем значения
+    #             if not isinstance(value, list) or not value:
+    #                 if existing_value_container:
+    #                     existing_value_container.multiselect_values.clear()
+    #                 continue
+    #
+    #             # Если контейнера еще нет, создаем его
+    #             if not existing_value_container:
+    #                 existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+    #                 self.db.add(existing_value_container)
+    #
+    #             # Находим и присваиваем новые опции (SQLAlchemy сам разберется, что добавить/удалить)
+    #             options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+    #             existing_value_container.multiselect_values = options
+    #
+    #         elif attribute.value_type in VALUE_FIELD_MAP:
+    #             # Старая логика для всех остальных типов
+    #             processed_value = self._process_value(value, attribute)
+    #             value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+    #             existing_value = self.db.query(models.AttributeValue).filter_by(
+    #                 entity_id=entity_id, attribute_id=attribute.id
+    #             ).first()
+    #
+    #             if existing_value:
+    #                 if processed_value is None:
+    #                     self.db.delete(existing_value)
+    #                 else:
+    #                     for field in VALUE_FIELD_MAP.values():
+    #                         setattr(existing_value, field, None)
+    #                     setattr(existing_value, value_field_name, processed_value)
+    #             elif processed_value is not None:
+    #                 new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+    #                                                   **{value_field_name: processed_value})
+    #                 self.db.add(new_value)
+    #         # ---------------------------
+    #
+    #     # 5. Обновляем `updated_at` у самой сущности
+    #     entity.updated_at = datetime.utcnow()
+    #     self.db.add(entity)
+    #
+    #     # 6. Сохраняем все изменения
+    #     self.db.commit()
+    #     logger.info(f"Данные для entity_id={entity_id} закоммичены.")
+    #     # Логика отправки уведомления
+    #     if not is_external_update:
+    #         logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
+    #         entity_type_name = entity.entity_type.name
+    #         send_webhook_task.delay(
+    #             event_type="update",
+    #             table_name=entity_type_name,
+    #             entity_id=entity_id,
+    #             data=data,
+    #             tenant_id=current_user.tenant_id
+    #         )
+    #     else:
+    #         logger.info("Условие 'not is_external_update' НЕ пройдено. Уведомление webhook не отправляется.")
+    #
+    #     logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
+    #     return self.get_entity_by_id(entity_id, current_user)
+
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
-        """Обновить запись с корректным преобразованием типов."""
+        """Обновить запись с корректным преобразованием типов и двусторонним обновлением связей."""
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
-        # --- ДОБАВЬТЕ ЛОГИРОВАНИЕ ---
         logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
-        logger.debug(f"Входящие данные (data): {data}")  # debug для менее важной информации
+        logger.debug(f"Входящие данные (data): {data}")
 
-
-
-
-
-        # --- ПРОВЕРКА ФЛАГА ---
         is_external_update = data.pop("_source", None) is not None
-        # ---------------------
         logger.info(f"is_external_update: {is_external_update}")
 
-        # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
-        self.get_entity_by_id(entity_id, current_user)
-
-        # 2. Загружаем сам SQLAlchemy объект для работы
+        # Загружаем SQLAlchemy объект со всеми необходимыми связями для проверок
         entity = self.db.query(models.Entity).options(
-            joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
-        ).get(entity_id)
+            joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
+                models.Attribute.reciprocal_attribute)
+        ).filter(models.Entity.id == entity_id).first()
 
-        if not entity:  # Дополнительная проверка на случай, если сущность удалили
+        if not entity:
             raise HTTPException(status_code=404, detail="Сущность не найдена")
 
-        attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
+        # Проверка прав доступа
+        if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-        # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД ОБНОВЛЕНИЕМ ---
-        # Внедряем текущую дату, если колонка "Дата изменения" существует
+        attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
         if 'modification_date' in attributes_map:
             data['modification_date'] = datetime.utcnow().isoformat()
-        # -------------------------------------------------
 
-        # 3. Проверяем триггер SMS и модифицируем входящие данные
         if data.get("send_sms_trigger") is True:
             data["sms_status"] = "pending"
-            data["send_sms_trigger"] = False  # Сбрасываем триггер
+            data["send_sms_trigger"] = False
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
-        # 4. Обновляем значения атрибутов
+        # --- НАЧАЛО НОВОЙ ЛОГИКИ: Обновляем значения и "зеркальные" связи ---
+        reciprocal_updates = []
+
+        # --- Основной цикл обновления значений ---
         for key, value in data.items():
             if key not in attributes_map:
                 continue
 
             attribute = attributes_map[key]
+            processed_value = self._process_value(value, attribute)
 
-            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+            # Обработка multiselect
             if attribute.value_type == 'multiselect':
-                # Загружаем существующий AttributeValue-контейнер вместе с его содержимым
                 existing_value_container = self.db.query(models.AttributeValue).options(
                     joinedload(models.AttributeValue.multiselect_values)
                 ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
 
-                # Если пользователь передал пустой список или не список, очищаем значения
                 if not isinstance(value, list) or not value:
                     if existing_value_container:
                         existing_value_container.multiselect_values.clear()
                     continue
 
-                # Если контейнера еще нет, создаем его
                 if not existing_value_container:
                     existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
                     self.db.add(existing_value_container)
 
-                # Находим и присваиваем новые опции (SQLAlchemy сам разберется, что добавить/удалить)
                 options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
                 existing_value_container.multiselect_values = options
 
+            # Обработка всех остальных типов
             elif attribute.value_type in VALUE_FIELD_MAP:
-                # Старая логика для всех остальных типов
-                processed_value = self._process_value(value, attribute)
                 value_field_name = VALUE_FIELD_MAP[attribute.value_type]
                 existing_value = self.db.query(models.AttributeValue).filter_by(
                     entity_id=entity_id, attribute_id=attribute.id
@@ -1130,40 +1246,77 @@ class EAVService:
                     if processed_value is None:
                         self.db.delete(existing_value)
                     else:
-                        for field in VALUE_FIELD_MAP.values():
-                            setattr(existing_value, field, None)
                         setattr(existing_value, value_field_name, processed_value)
                 elif processed_value is not None:
                     new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
                                                       **{value_field_name: processed_value})
                     self.db.add(new_value)
-            # ---------------------------
 
-        # 5. Обновляем `updated_at` у самой сущности
+                # --- ДОПОЛНЕНИЕ: Если это связь с "зеркалом", готовим обратное обновление ---
+                if attribute.value_type == 'relation' and attribute.reciprocal_attribute_id:
+                    reciprocal_updates.append({
+                        "source_entity_id": entity_id,
+                        "target_entity_id": processed_value,
+                        "reciprocal_attr_id": attribute.reciprocal_attribute_id,
+                        # Нам также нужно знать ID старой связанной записи, чтобы очистить ее
+                        "old_target_entity_id": getattr(existing_value, value_field_name,
+                                                        None) if existing_value else None
+                    })
+
+        # --- Выполняем "зеркальные" обновления ПОСЛЕ основного цикла ---
+        if reciprocal_updates:
+            for update_info in reciprocal_updates:
+                reciprocal_attr_id = update_info["reciprocal_attr_id"]
+                new_target_entity_id = update_info["target_entity_id"]
+                old_target_entity_id = update_info["old_target_entity_id"]
+                value_to_set = update_info["source_entity_id"]
+
+                # 1. Очищаем старую обратную связь, если она была
+                if old_target_entity_id and old_target_entity_id != new_target_entity_id:
+                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
+                        entity_id=old_target_entity_id,
+                        attribute_id=reciprocal_attr_id,
+                        value_integer=value_to_set
+                    ).first()
+                    if old_reciprocal_value:
+                        self.db.delete(old_reciprocal_value)
+
+                # 2. Устанавливаем новую обратную связь, если она есть
+                if new_target_entity_id:
+                    reciprocal_value = self.db.query(models.AttributeValue).filter_by(
+                        entity_id=new_target_entity_id,
+                        attribute_id=reciprocal_attr_id
+                    ).first()
+
+                    if reciprocal_value:
+                        reciprocal_value.value_integer = value_to_set
+                    else:
+                        new_reciprocal_value = models.AttributeValue(
+                            entity_id=new_target_entity_id,
+                            attribute_id=reciprocal_attr_id,
+                            value_integer=value_to_set
+                        )
+                        self.db.add(new_reciprocal_value)
+        # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
         entity.updated_at = datetime.utcnow()
         self.db.add(entity)
-
-        # 6. Сохраняем все изменения
         self.db.commit()
+
         logger.info(f"Данные для entity_id={entity_id} закоммичены.")
-        # Логика отправки уведомления
+
         if not is_external_update:
             logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
             entity_type_name = entity.entity_type.name
             send_webhook_task.delay(
-                event_type="update",
-                table_name=entity_type_name,
-                entity_id=entity_id,
-                data=data,
-                tenant_id=current_user.tenant_id
+                event_type="update", table_name=entity_type_name,
+                entity_id=entity_id, data=data, tenant_id=current_user.tenant_id
             )
         else:
             logger.info("Условие 'not is_external_update' НЕ пройдено. Уведомление webhook не отправляется.")
 
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
-
-
 
 
 
