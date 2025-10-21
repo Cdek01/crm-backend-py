@@ -36,18 +36,26 @@ class AttributeBase(BaseModel):
 class AttributeCreate(BaseModel):
     name: str
     display_name: str
-    value_type: ValueTypeEnum
+    value_type: ValueTypeEnum  # Должен быть "relation" для этого сценария
+
+    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+    # Поля для основной (прямой) связи. Теперь они могут приходить сразу при создании.
+    target_entity_type_id: Optional[int] = None
+    source_attribute_id: Optional[int] = None  # Это поле нам пока не нужно для двусторонней связи
+    target_attribute_id: Optional[int] = None  # И это
+    display_attribute_id: Optional[int] = None
+
+    # Поля для создания ОБРАТНОЙ связи
+    create_back_relation: Optional[bool] = False  # Флаг "Создать обратную связь"
+    back_relation_name: Optional[str] = None  # Системное имя для обратной колонки (например, "project")
+    back_relation_display_name: Optional[str] = None  # Отображаемое имя ("Проект")
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+    # Эти поля остаются
     select_list_id: Optional[int] = None
     formula_text: Optional[str] = None
     currency_symbol: Optional[str] = None
-    # --- ДОБАВЬТЕ ЭТИ ПОЛЯ ---
-    target_entity_type_id: Optional[int] = None
-    source_attribute_id: Optional[int] = None
-    target_attribute_id: Optional[int] = None
-    display_attribute_id: Optional[int] = None
-    # ---------------------------
     list_items: Optional[List[str]] = None
-
 
 class Attribute(AttributeBase):
     id: int
