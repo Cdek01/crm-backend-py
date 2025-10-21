@@ -33,7 +33,7 @@ VALUE_FIELD_MAP = {
     "url": "value_string",
     "percent": "value_float",
     "currency": "value_float",
-    "relation": "value_string",  # Ключ связи (например, ИНН) будем хранить как строку
+    "relation": "value_integer",  # Ключ связи (например, ИНН) будем хранить как строку
     "multiselect": "value_string",  # Multi-select тоже будет хранить строки (например, "Тег1,Тег2")
 
 }
@@ -443,7 +443,7 @@ class EAVService:
             sort_order: str = 'desc',
             skip: int = 0,
             limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Получить все записи для указанного типа сущности с фильтрацией, сортировкой и пагинацией.
         """
@@ -616,7 +616,7 @@ class EAVService:
             order_expression = sort_func(sort_value_column).nullslast() if sort_order.lower() == 'desc' else sort_func(
                 sort_value_column).nullsfirst()
             query = query.order_by(order_expression)
-
+        total_count = query.count()
         # 5. Применяем пагинацию
         entities_page = query.offset(skip).limit(limit).all()
 
@@ -644,75 +644,56 @@ class EAVService:
 
         # --- НОВАЯ ЛОГИКА "LOOK UP" ПЕРЕД ВОЗВРАТОМ ДАННЫХ ---
         # 9. Преобразуем EAV в "плоский" список словарей
+        # --- НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ОТОБРАЖЕНИЯ СВЯЗЕЙ (ID-BASED) ---
         pivoted_results = [self._pivot_data(e) for e in sorted_entities]
 
-        # 10. Находим все связанные колонки в этой таблице
         relation_attributes = [attr for attr in entity_type.attributes if attr.value_type == 'relation']
 
-        # 11. Если есть связанные колонки, выполняем "JOIN в Python"
         if relation_attributes and pivoted_results:
-            print("\n--- [ОТЛАДКА] НАЧАЛО ОБРАБОТКИ СВЯЗЕЙ ---")
             for rel_attr in relation_attributes:
-                print(f"\n[ОТЛАДКА] Обработка связанной колонки: '{rel_attr.name}'")
-
-                if not all([rel_attr.source_attribute, rel_attr.target_attribute, rel_attr.display_attribute]):
-                    print("[ОТЛАДКА] -> Пропускаем, связь настроена не полностью.")
+                # Для ID-связи нам достаточно знать целевую таблицу и что отображать
+                if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
                     continue
 
-                source_attr_name = rel_attr.source_attribute.name
-                target_entity_type_id = rel_attr.target_entity_type_id
-                target_key_attr_id = rel_attr.target_attribute.id
                 display_attr_id = rel_attr.display_attribute.id
 
-                print(f"[ОТЛАДКА] -> Исходная колонка: '{source_attr_name}'")
+                # Собираем все УНИКАЛЬНЫЕ ID из колонки-связи (они хранятся в value_integer)
+                source_ids = {row.get(rel_attr.name) for row in pivoted_results if
+                              isinstance(row.get(rel_attr.name), int)}
 
-                source_keys = {row.get(source_attr_name) for row in pivoted_results if row.get(source_attr_name)}
-                print(f"[ОТЛАДКА] -> Найденные ключи для поиска: {source_keys}")
-                if not source_keys:
-                    print("[ОТЛАДКА] -> Ключи не найдены, пропускаем.")
+                if not source_ids:
                     continue
 
-                target_entities_query = self.db.query(models.AttributeValue.entity_id).join(models.Entity).filter(
-                    models.Entity.entity_type_id == target_entity_type_id,
-                    models.AttributeValue.attribute_id == target_key_attr_id,
-                    models.AttributeValue.value_string.in_(source_keys)
-                )
-                target_entity_ids = {eid for eid, in target_entities_query}
-                print(f"[ОТЛАДКА] -> ID целевых записей, найденные по ключам: {target_entity_ids}")
-                if not target_entity_ids:
-                    print("[ОТЛАДКА] -> Соответствия в целевой таблице не найдены, пропускаем.")
-                    continue
-
-                key_values = self.db.query(models.AttributeValue.entity_id, models.AttributeValue.value_string).filter(
-                    models.AttributeValue.entity_id.in_(target_entity_ids),
-                    models.AttributeValue.attribute_id == target_key_attr_id
+                # Находим отображаемые значения для всех этих ID одним запросом
+                # Мы ищем в таблице AttributeValue значения для нужных ID сущностей и нужной колонки.
+                display_values_query = self.db.query(
+                    models.AttributeValue.entity_id,
+                    models.AttributeValue.value_string,
+                    models.AttributeValue.value_integer,
+                    models.AttributeValue.value_float
+                ).filter(
+                    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+                    # Оборачиваем условия в `and_`
+                    and_(
+                        models.AttributeValue.entity_id.in_(source_ids),
+                        models.AttributeValue.attribute_id == display_attr_id
+                    )
+                    # ---------------------------
                 ).all()
 
-                display_values = self.db.query(models.AttributeValue.entity_id,
-                                               models.AttributeValue.value_string).filter(
-                    models.AttributeValue.entity_id.in_(target_entity_ids),
-                    models.AttributeValue.attribute_id == display_attr_id
-                ).all()
-
-                keys_by_entity_id = dict(key_values)
-                displays_by_entity_id = dict(display_values)
-
+                # Создаем удобный словарь-справку: {id_записи: 'Отображаемое значение'}
                 lookup_map = {
-                    keys_by_entity_id[eid]: displays_by_entity_id[eid]
-                    for eid in target_entity_ids if eid in keys_by_entity_id and eid in displays_by_entity_id
+                    entity_id: str(val_str or val_int or val_float or '')
+                    for entity_id, val_str, val_int, val_float in display_values_query
                 }
-                print(f"[ОТЛАДКА] -> Собранный словарь (lookup map): {lookup_map}")
 
+                # Проходим по результатам и заменяем ID на отображаемые значения
                 for row in pivoted_results:
-                    source_key = row.get(source_attr_name)
-                    if source_key in lookup_map:
-                        row[rel_attr.name] = lookup_map[source_key]
-                        print(
-                            f"[ОТЛАДКА] -> Для строки ID={row['id']} установлено значение: '{lookup_map[source_key]}'")
+                    source_id = row.get(rel_attr.name)
+                    if source_id in lookup_map:
+                        row[rel_attr.name] = lookup_map[source_id]
 
-            print("--- [ОТЛАДКА] КОНЕЦ ОБРАБОТКИ СВЯЗЕЙ ---\n")
-
-        return pivoted_results
+        return {"total": total_count, "data": pivoted_results}
 
 
 
@@ -817,12 +798,8 @@ class EAVService:
     ) -> models.Attribute:
         """
         Создает новый атрибут ('колонку').
-        Обрабатывает три сценария:
-        1. Создание двусторонней связи (relation с флагом create_back_relation).
-        2. Создание колонки типа 'select' с одновременным созданием списка.
-        3. Создание любой другой обычной колонки.
+        Обрабатывает создание обычных полей и двусторонних ID-based связей.
         """
-        # --- ШАГ 1: Унифицированная проверка доступа к родительской таблице ---
         source_entity_type = self.get_entity_type_by_id(
             entity_type_id=entity_type_id,
             current_user=current_user
@@ -830,39 +807,45 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
         if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
-            # Валидация: убеждаемся, что все необходимые данные переданы
             if not all([attribute_in.target_entity_type_id, attribute_in.back_relation_name,
-                        attribute_in.back_relation_display_name]):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Для создания обратной связи необходимо указать target_entity_type_id, back_relation_name и back_relation_display_name."
-                )
+                        attribute_in.back_relation_display_name, attribute_in.display_attribute_id]):
+                raise HTTPException(status_code=400,
+                                    detail="Для создания обратной связи необходимо указать target_entity_type_id, display_attribute_id, back_relation_name и back_relation_display_name.")
 
-            # Создаем ОБРАТНЫЙ атрибут в целевой таблице
+            # Получаем информацию об отображаемом поле в обратной связи
+            # (например, "Название проекта" в таблице "Проекты")
+            # Нам нужен его ID, чтобы настроить обратную связь.
+            main_display_attr_id = None
+            main_display_attr = self.db.query(models.Attribute).filter(
+                models.Attribute.entity_type_id == source_entity_type.id,
+                models.Attribute.name.in_(['name', 'title', 'display_name', 'company_name'])  # Ищем по типовым именам
+            ).first()
+            if main_display_attr:
+                main_display_attr_id = main_display_attr.id
+
+            # Создаем ОСНОВНОЙ атрибут (например, "Задачи в проекте")
+            main_attr = models.Attribute(
+                name=attribute_in.name,
+                display_name=attribute_in.display_name,
+                value_type="relation",
+                entity_type_id=entity_type_id,
+                target_entity_type_id=attribute_in.target_entity_type_id,
+                display_attribute_id=attribute_in.display_attribute_id
+            )
+
+            # Создаем ОБРАТНЫЙ атрибут (например, "Родительский проект")
             back_relation_attr = models.Attribute(
                 name=attribute_in.back_relation_name,
                 display_name=attribute_in.back_relation_display_name,
                 value_type="relation",
                 entity_type_id=attribute_in.target_entity_type_id,
                 target_entity_type_id=source_entity_type.id,
-                display_attribute_id=attribute_in.display_attribute_id
+                display_attribute_id=main_display_attr_id  # <-- Настраиваем отображение для обратной связи
             )
 
-            # Создаем ОСНОВНОЙ атрибут. Используем только те поля, которые есть в модели SQLAlchemy.
-            main_attr = models.Attribute(
-                name=attribute_in.name,
-                display_name=attribute_in.display_name,
-                value_type=attribute_in.value_type,
-                entity_type_id=entity_type_id,
-                target_entity_type_id=attribute_in.target_entity_type_id,
-                display_attribute_id=attribute_in.display_attribute_id
-            )
-
-            # Добавляем оба атрибута в сессию и коммитим
             self.db.add(main_attr)
             self.db.add(back_relation_attr)
             self.db.commit()
-
             self.db.refresh(main_attr)
             return main_attr
 
