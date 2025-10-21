@@ -223,6 +223,8 @@ class EntityType(Base):
     # --- ИЗМЕНЕНИЕ 2: Добавляем композитное ограничение ---
     # Это говорит базе данных: "Комбинация значений в колонках 'name' и 'tenant_id'
     # должна быть уникальной во всей таблице".
+    foreign_keys = "[Attribute.entity_type_id]"  # <--- ДОБАВЬТЕ ЭТОТ ПАРАМЕТР
+
     __table_args__ = (
         UniqueConstraint('name', 'tenant_id', name='_name_tenant_uc'),
     )
@@ -264,11 +266,12 @@ class Attribute(Base):
     # Хранит символ валюты, если value_type = 'currency'
     currency_symbol = Column(String(5), nullable=True)
 
-    # --- ПОЛЯ ДЛЯ СВЯЗЕЙ ---
-    target_entity_type_id = Column(Integer, ForeignKey('entity_types.id'), nullable=True)
-    source_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
-    target_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
-    display_attribute_id = Column(Integer, ForeignKey('attributes.id'), nullable=True)
+    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+    target_entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="SET NULL"), nullable=True)
+    source_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+    target_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+    display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
     # Определяем связи для удобного доступа. `remote_side=[id]` нужен для self-referencing FK.
     target_entity_type = relationship("EntityType", foreign_keys=[target_entity_type_id])

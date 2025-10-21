@@ -138,16 +138,16 @@ def run_reciprocal_relation_demo():
         print_status(False, f"Критическая ошибка HTTP: {e.response.status_code} - {e.response.text}")
     except Exception as e:
         print_status(False, f"Произошла непредвиденная ошибка: {e}")
-    finally:
-        # --- ШАГ 4: Очистка ---
-        print_header("Шаг 4: Очистка (удаление тестовых таблиц)")
-        if 'projects_table' in ids:
-            requests.delete(f"{BASE_URL}/api/meta/entity-types/{ids['projects_table']['id']}", headers=headers)
-            print(f" -> Таблица '{ids['projects_table']['display_name']}' удалена.")
-        if 'tasks_table' in ids:
-            requests.delete(f"{BASE_URL}/api/meta/entity-types/{ids['tasks_table']['id']}", headers=headers)
-            print(f" -> Таблица '{ids['tasks_table']['display_name']}' удалена.")
-        print_status(True, "Очистка завершена.")
+    # finally:
+    #     # --- ШАГ 4: Очистка ---
+    #     print_header("Шаг 4: Очистка (удаление тестовых таблиц)")
+    #     if 'projects_table' in ids:
+    #         requests.delete(f"{BASE_URL}/api/meta/entity-types/{ids['projects_table']['id']}", headers=headers)
+    #         print(f" -> Таблица '{ids['projects_table']['display_name']}' удалена.")
+    #     if 'tasks_table' in ids:
+    #         requests.delete(f"{BASE_URL}/api/meta/entity-types/{ids['tasks_table']['id']}", headers=headers)
+    #         print(f" -> Таблица '{ids['tasks_table']['display_name']}' удалена.")
+    #     print_status(True, "Очистка завершена.")
 
 
 if __name__ == "__main__":
