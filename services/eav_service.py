@@ -7,7 +7,6 @@ from sqlalchemy.orm import aliased
 from db import models, session
 from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeUpdate
 from .alias_service import AliasService
-from sqlalchemy import or_
 from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError
@@ -16,7 +15,7 @@ import time
 from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
-
+from sqlalchemy import or_, cast, Text
 import logging # <-- ШАГ 1: Добавьте этот импорт
 logger = logging.getLogger(__name__)
 
@@ -437,6 +436,8 @@ class EAVService:
             self,
             entity_type_name: str,
             current_user: models.User,
+            # --- ДОБАВЬТЕ `q` В ПАРАМЕТРЫ МЕТОДА ---
+            q: Optional[str] = None,
             tenant_id: Optional[int] = None,
             filters: List[Dict[str, Any]] = None,
             sort_by: str = 'position',
@@ -475,6 +476,29 @@ class EAVService:
         query = self.db.query(models.Entity).filter(
             models.Entity.entity_type_id == entity_type.id
         )
+
+        # --- НАЧАЛО НОВОГО БЛОКА ДЛЯ УНИВЕРСАЛЬНОГО ПОИСКА ---
+        if q and q.strip():
+            search_term = f"%{q.strip()}%"
+
+            # Создаем подзапрос, который найдет ID всех сущностей (строк),
+            # у которых хотя бы одно из значений атрибутов соответствует поисковому запросу.
+            matching_entity_ids_subquery = self.db.query(models.AttributeValue.entity_id).filter(
+                # Ищем по всем типам полей, которые могут содержать искомое значение.
+                # `cast(..., Text)` преобразует числовые поля в текст для поиска.
+                or_(
+                    models.AttributeValue.value_string.ilike(search_term),  # ilike для регистронезависимого поиска
+                    cast(models.AttributeValue.value_integer, Text).like(search_term),
+                    cast(models.AttributeValue.value_float, Text).like(search_term)
+                )
+            ).distinct()  # distinct, чтобы получить уникальные ID
+
+            # Фильтруем основной запрос: оставляем только те сущности,
+            # ID которых были найдены в подзапросе.
+            query = query.filter(models.Entity.id.in_(matching_entity_ids_subquery))
+        # --- КОНЕЦ НОВОГО БЛОКА ---
+
+        
         # 3. Динамически применяем фильтры
         if filters:
             for f in filters:
