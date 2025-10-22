@@ -166,6 +166,8 @@ def get_all_entities(
             None,
             description="ID клиента (тенанта). Доступно только для суперадминистраторов."
         ),
+        search_fields: Optional[str] = Query(None,
+                                             description="Список полей для поиска через запятую (напр. 'name,phone')"),
         filters: Optional[str] = None,
         sort_by: Optional[str] = Query(default='position', description="Поле для сортировки"),
         sort_order: str = Query(default='asc', description="Порядок сортировки: asc или desc"),
@@ -181,6 +183,7 @@ def get_all_entities(
     final_tenant_id = tenant_id
     if not current_user.is_superuser:
         final_tenant_id = None
+    search_fields_list = search_fields.split(',') if search_fields else []
 
     parsed_filters = []
     if filters:
@@ -195,6 +198,7 @@ def get_all_entities(
         entity_type_name=entity_type_name,
         current_user=current_user,
         q=q,
+        search_fields=search_fields_list,  # Передаем как список
         tenant_id=final_tenant_id,
         filters=parsed_filters,
         sort_by=sort_by,

@@ -436,8 +436,8 @@ class EAVService:
             self,
             entity_type_name: str,
             current_user: models.User,
-            # --- ДОБАВЬТЕ `q` В ПАРАМЕТРЫ МЕТОДА ---
             q: Optional[str] = None,
+            search_fields: List[str] = None,  # <-- Новый параметр
             tenant_id: Optional[int] = None,
             filters: List[Dict[str, Any]] = None,
             sort_by: str = 'position',
@@ -481,20 +481,30 @@ class EAVService:
         if q and q.strip():
             search_term = f"%{q.strip()}%"
 
-            # Создаем подзапрос, который найдет ID всех сущностей (строк),
-            # у которых хотя бы одно из значений атрибутов соответствует поисковому запросу.
+            # Находим ID атрибутов, по которым нужно искать
+            target_attribute_ids = []
+            if search_fields:
+                for attr in entity_type.attributes:
+                    if attr.name in search_fields:
+                        target_attribute_ids.append(attr.id)
+
+            # Если specific_fields не указан, ищем по всем (как и раньше)
+
             matching_entity_ids_subquery = self.db.query(models.AttributeValue.entity_id).filter(
-                # Ищем по всем типам полей, которые могут содержать искомое значение.
-                # `cast(..., Text)` преобразует числовые поля в текст для поиска.
                 or_(
-                    models.AttributeValue.value_string.ilike(search_term),  # ilike для регистронезависимого поиска
+                    models.AttributeValue.value_string.ilike(search_term),
                     cast(models.AttributeValue.value_integer, Text).like(search_term),
                     cast(models.AttributeValue.value_float, Text).like(search_term)
                 )
-            ).distinct()  # distinct, чтобы получить уникальные ID
+            )
 
-            # Фильтруем основной запрос: оставляем только те сущности,
-            # ID которых были найдены в подзапросе.
+            # Если указаны конкретные поля, добавляем это условие в подзапрос
+            if target_attribute_ids:
+                matching_entity_ids_subquery = matching_entity_ids_subquery.filter(
+                    models.AttributeValue.attribute_id.in_(target_attribute_ids)
+                )
+
+            matching_entity_ids_subquery = matching_entity_ids_subquery.distinct()
             query = query.filter(models.Entity.id.in_(matching_entity_ids_subquery))
         # --- КОНЕЦ НОВОГО БЛОКА ---
 
