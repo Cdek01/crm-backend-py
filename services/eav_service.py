@@ -1644,21 +1644,30 @@ class EAVService:
         # 4. Проверяем, есть ли у этого атрибута зеркальная пара
         reciprocal_attr = attribute_to_delete.reciprocal_attribute
         if reciprocal_attr:
-            # Если есть, удаляем и ее
-            # Но сначала нужно "разорвать" их связь, чтобы избежать проблем с внешними ключами
+            logger.info(
+                f"Обнаружена зеркальная колонка '{reciprocal_attr.name}' (ID: {reciprocal_attr.id}). Разрываем цикл.")
+            # Обнуляем ссылки друг на друга
+            attribute_to_delete.reciprocal_attribute_id = None
             reciprocal_attr.reciprocal_attribute_id = None
-            self.db.add(reciprocal_attr)  # Добавляем в сессию, чтобы изменение было учтено
-            self.db.delete(reciprocal_attr)
-            logger.info(f"Удалена зеркальная колонка '{reciprocal_attr.name}' (ID: {reciprocal_attr.id})")
+            # Коммитим эти изменения в отдельной транзакции
+            self.db.commit()
 
-        # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+            # Перезагружаем объекты из сессии, чтобы SQLAlchemy "увидел" изменения
+            self.db.refresh(attribute_to_delete)
+            self.db.refresh(reciprocal_attr)
 
-        # 5. Удаляем основной атрибут.
-        # Благодаря ondelete="CASCADE" и relationship, все связанные AttributeValue
-        # будут удалены автоматически.
+            # 5. ШАГ ВТОРОЙ: ТЕПЕРЬ БЕЗОПАСНО УДАЛЯЕМ
+            # Сначала удаляем основной атрибут
         self.db.delete(attribute_to_delete)
-        self.db.commit()
+        logger.info(f"Удаляется основная колонка '{attribute_to_delete.name}' (ID: {attribute_to_delete.id})")
 
+        # Затем удаляем "зеркальный" атрибут, если он был
+        if reciprocal_attr:
+            self.db.delete(reciprocal_attr)
+            logger.info(f"Удаляется зеркальная колонка '{reciprocal_attr.name}' (ID: {reciprocal_attr.id})")
+
+        # Коммитим удаление
+        self.db.commit()
         return None
     # def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
     #     """
