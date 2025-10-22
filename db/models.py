@@ -49,6 +49,7 @@ class Tenant(Base):
     roles = relationship("Role", cascade="all, delete-orphan")
     attribute_aliases = relationship("AttributeAlias", cascade="all, delete-orphan")
     table_aliases = relationship("TableAlias", cascade="all, delete-orphan")
+    select_option_lists = relationship("SelectOptionList", cascade="all, delete-orphan")
 
     # ---------------------------------------------
 
@@ -531,12 +532,15 @@ class SelectOptionList(Base):
     __tablename__ = 'select_option_lists'
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False) # Название списка
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="select_option_lists")
     options = relationship("SelectOption", back_populates="option_list", cascade="all, delete-orphan")
     # Гарантируем уникальность имен списков в рамках одного клиента
     __table_args__ = (UniqueConstraint('name', 'tenant_id', name='_option_list_name_tenant_uc'),)
     def __str__(self): return self.name
+
+
+
 
 class SelectOption(Base):
     """Одна опция в выпадающем списке, например, 'В работе'."""
