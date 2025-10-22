@@ -527,14 +527,6 @@ class EAVService:
                     models.AttributeValue.attribute_id == attribute.id
                 )
 
-                # --- НОВАЯ, ПЕРЕСТРОЕННАЯ ЛОГИКА ---
-
-
-
-
-
-
-
                 # 1. Сначала обрабатываем универсальные операторы
                 if op == 'blank':
                     query = query.filter(~subquery.exists())
@@ -652,11 +644,13 @@ class EAVService:
             query = query.order_by(order_expression)
         total_count = query.count()
         # 5. Применяем пагинацию
+        total_count = query.count()
+
         entities_page = query.offset(skip).limit(limit).all()
 
         # 6. Если на странице ничего нет, возвращаем пустой список
         if not entities_page:
-            return []
+            return {"total": total_count, "data": []}
 
         # 7. Загружаем полные данные (со значениями) только для записей на этой странице
         entity_ids_on_page = [e.id for e in entities_page]
