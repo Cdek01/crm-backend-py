@@ -826,7 +826,7 @@ class EAVService:
         """
         source_entity_type = self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-        # --- СЦЕНАРИЙ 1: Создание связи (односторонней или двусторонней) ---
+        # --- СЦЕНАРИЙ 1: Создание связи ---
         if attribute_in.value_type == 'relation':
             if not attribute_in.target_entity_type_id:
                 raise HTTPException(status_code=400,
@@ -835,33 +835,30 @@ class EAVService:
             target_entity_type = self.get_entity_type_by_id(entity_type_id=attribute_in.target_entity_type_id,
                                                             current_user=current_user)
 
-            # 1. Определяем отображаемую колонку для ПРЯМОЙ связи
+            # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи
             display_attr_id = attribute_in.display_attribute_id
             if not display_attr_id:
-                primary_attr = self._find_primary_display_attribute(target_entity_type.id)
+                primary_attr = self._find_primary_display_attribute(target_entity_type.id)  # <-- ИСПОЛЬЗУЕМ .id
                 if not primary_attr:
                     raise HTTPException(status_code=400,
                                         detail=f"Не удалось автоматически найти главную колонку в таблице '{target_entity_type.display_name}'.")
                 display_attr_id = primary_attr.id
 
-            # Создаем ОСНОВНОЙ атрибут
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
                 value_type=attribute_in.value_type.value,
                 entity_type_id=entity_type_id,
-                target_entity_type_id=target_entity_type.id,
+                target_entity_type_id=target_entity_type.id,  # <-- ИСПОЛЬЗУЕМ .id
                 display_attribute_id=display_attr_id
             )
             self.db.add(main_attr)
 
-            # 2. Обрабатываем ОБРАТНУЮ связь, если нужно
+            # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
-                # Генерируем имена по умолчанию, если они не переданы
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type.display_name}'"
 
-                # Определяем отображаемую колонку для ОБРАТНОЙ связи
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
                 if not back_display_attr_id:
                     primary_attr_back = self._find_primary_display_attribute(source_entity_type.id)
@@ -874,14 +871,13 @@ class EAVService:
                     name=back_name,
                     display_name=back_display_name,
                     value_type="relation",
-                    entity_type_id=target_entity_type.id,
+                    entity_type_id=target_entity_type.id,  # <-- ИСПОЛЬЗУЕМ .id
                     target_entity_type_id=source_entity_type.id,
                     display_attribute_id=back_display_attr_id
                 )
                 self.db.add(back_relation_attr)
-                self.db.flush()  # Получаем ID для "сшивания"
+                self.db.flush()
 
-                # "Сшиваем" связи
                 main_attr.reciprocal_attribute_id = back_relation_attr.id
                 back_relation_attr.reciprocal_attribute_id = main_attr.id
 
