@@ -34,13 +34,24 @@ attribute_value_multiselect_options = Table(
 # ------------------------------------
 
 
-
 class Tenant(Base):
     __tablename__ = 'tenants'
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    # --- ДОБАВЬТЕ ЭТОТ МЕТОД ---
+
+    # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
+    users = relationship("User", cascade="all, delete-orphan")
+    leads = relationship("Lead", cascade="all, delete-orphan")
+    legal_entities = relationship("LegalEntity", cascade="all, delete-orphan")
+    individuals = relationship("Individual", cascade="all, delete-orphan")
+    entity_types = relationship("EntityType", cascade="all, delete-orphan")
+    roles = relationship("Role", cascade="all, delete-orphan")
+    attribute_aliases = relationship("AttributeAlias", cascade="all, delete-orphan")
+    table_aliases = relationship("TableAlias", cascade="all, delete-orphan")
+
+    # ---------------------------------------------
+
     def __str__(self):
         return self.name
 
@@ -113,8 +124,8 @@ class LegalEntity(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="legal_entities") # Добавляем back_populates
 
 
 class Individual(Base):
@@ -142,8 +153,8 @@ class Individual(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="individuals")
 
 class Lead(Base):
     """Модель для Лидов (воронка продаж)"""
@@ -192,9 +203,8 @@ class Lead(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="leads")
 
 # ... (в конце файла, после существующих моделей User, Lead и т.д.)
 
@@ -218,8 +228,8 @@ class EntityType(Base):
 
     )
     entities = relationship("Entity", back_populates="entity_type", cascade="all, delete-orphan")
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="entity_types")
     # --- ИЗМЕНЕНИЕ 2: Добавляем композитное ограничение ---
     # Это говорит базе данных: "Комбинация значений в колонках 'name' и 'tenant_id'
     # должна быть уникальной во всей таблице".
@@ -381,8 +391,8 @@ class AttributeAlias(Base):
     # Пользовательское название, которое будет отображаться
     display_name = Column(String, nullable=False)
 
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="attribute_aliases")
     # Гарантируем, что для одного пользователя может быть только одно переименование
     # для одной колонки в одной таблице.
     __table_args__ = (
@@ -417,8 +427,8 @@ class TableAlias(Base):
     # Пользовательское название, которое будет отображаться
     display_name = Column(String, nullable=False)
 
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="table_aliases")
 
     # Гарантируем, что для одного пользователя может быть только одно переименование для одной таблицы.
     __table_args__ = (
@@ -444,8 +454,8 @@ class Role(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)  # Например, "Менеджер" или "Администратор"
 
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+    tenant = relationship("Tenant", back_populates="roles")
 
     # Связь с разрешениями (Многие-ко-Многим)
     permissions = relationship("Permission", secondary=role_permissions_table, backref="roles")
@@ -471,8 +481,8 @@ class User(Base):
     is_superuser = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True, index=True)
-    tenant = relationship("Tenant")
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=True, index=True)
+    tenant = relationship("Tenant", back_populates="users")
 
     roles = relationship("Role", secondary=user_roles_table, backref="users")
     # shared_entity_types = relationship("SharedEntityType", back_populates="user")
