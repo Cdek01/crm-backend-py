@@ -1886,16 +1886,35 @@ class EAVService:
     def _find_primary_display_attribute(self, entity_type_id: int) -> Optional[models.Attribute]:
         """
         Находит "главную" отображаемую колонку в таблице.
+        ИГНОРИРУЕТ системные колонки.
         """
         logger.info(f"--- [DEBUG] Запущен поиск главной колонки для таблицы ID: {entity_type_id} ---")
-        attributes = self.db.query(models.Attribute).filter_by(entity_type_id=entity_type_id).order_by(
-            models.Attribute.id).all()
-        if not attributes:
-            logger.warning(f"--- [DEBUG] Для таблицы ID: {entity_type_id} не найдено ни одной колонки.")
-            return None
 
-        # Ищем по приоритетным именам
-        for name in ['name', 'title', 'display_name', 'company_name', 'full_name']:
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+        SYSTEM_ATTRIBUTE_NAMES = {
+            "send_sms_trigger", "sms_status", "sms_last_error",
+            "phone_number", "message_text", "creation_date", "modification_date"
+        }
+
+        # Загружаем все атрибуты, КРОМЕ системных
+        attributes = self.db.query(models.Attribute).filter(
+            models.Attribute.entity_type_id == entity_type_id,
+            ~models.Attribute.name.in_(SYSTEM_ATTRIBUTE_NAMES)  # Знак ~ означает NOT IN
+        ).order_by(models.Attribute.id).all()
+
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+        if not attributes:
+            logger.warning(
+                f"--- [DEBUG] Для таблицы ID: {entity_type_id} не найдено ни одной ПОЛЬЗОВАТЕЛЬСКОЙ колонки.")
+            # Если пользовательских нет, попробуем найти хоть что-то среди всех
+            all_attributes = self.db.query(models.Attribute).filter_by(entity_type_id=entity_type_id).order_by(
+                models.Attribute.id).all()
+            return all_attributes[0] if all_attributes else None
+
+        # Ищем по приоритетным именам (этот код без изменений)
+        for name in ['name', 'title', 'display_name', 'company_name', 'full_name', 'contact_name', 'project_name']:
             for attr in attributes:
                 if attr.name == name:
                     logger.info(f"--- [DEBUG] Найдена колонка по приоритетному имени '{name}' (ID: {attr.id})")
@@ -1907,8 +1926,8 @@ class EAVService:
                 logger.info(f"--- [DEBUG] Найдена первая строковая колонка '{attr.name}' (ID: {attr.id})")
                 return attr
 
-        # Возвращаем первую попавшуюся
+        # Возвращаем первую попавшуюся пользовательскую колонку
         first_attr = attributes[0]
-        logger.info(f"--- [DEBUG] Возвращаем самую первую колонку '{first_attr.name}' (ID: {first_attr.id})")
+        logger.info(
+            f"--- [DEBUG] Возвращаем самую первую пользовательскую колонку '{first_attr.name}' (ID: {first_attr.id})")
         return first_attr
-
