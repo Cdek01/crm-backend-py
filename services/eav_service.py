@@ -820,68 +820,73 @@ class EAVService:
             attribute_in: AttributeCreate,
             current_user: models.User
     ) -> models.Attribute:
-        """
-        Создает новый атрибут ('колонку').
-        - Обрабатывает создание обычных полей (string, integer, select и т.д.).
-        - Умеет делать "умные предположения" для создания односторонних и двусторонних связей (relation).
-        """
+        logger.info(f"--- [DEBUG] Начало create_attribute_for_type для таблицы ID: {entity_type_id} ---")
+        logger.info(f"--- [DEBUG] Входящие данные: {attribute_in.model_dump_json(indent=2)}")
+
         source_entity_type_obj = self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-        # --- СЦЕНАРИЙ 1: Создание связи (relation) ---
         if attribute_in.value_type == 'relation':
             if not attribute_in.target_entity_type_id:
-                raise HTTPException(status_code=400,
-                                    detail="Для создания связи необходимо указать 'target_entity_type_id'.")
+                raise HTTPException(status_code=400, detail="Необходимо указать 'target_entity_type_id'.")
 
             target_entity_type_obj = self.get_entity_type_by_id(entity_type_id=attribute_in.target_entity_type_id,
                                                                 current_user=current_user)
 
-            # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи (что показывать)
+            # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи
             display_attr_id_for_main = attribute_in.display_attribute_id
+            logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id из запроса = {display_attr_id_for_main}")
             if not display_attr_id_for_main:
                 primary_attr = self._find_primary_display_attribute(target_entity_type_obj.id)
                 if not primary_attr:
                     raise HTTPException(status_code=400,
-                                        detail=f"Не удалось автоматически найти главную колонку в таблице '{target_entity_type_obj.display_name}'.")
+                                        detail=f"Не удалось найти главную колонку в '{target_entity_type_obj.display_name}'.")
                 display_attr_id_for_main = primary_attr.id
+                logger.info(
+                    f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id определен автоматически = {display_attr_id_for_main}")
 
-            # Создаем ОСНОВНОЙ атрибут (прямую связь), ТЕПЕРЬ С ПРАВИЛЬНЫМ display_attribute_id
-            main_attr = models.Attribute(
-                name=attribute_in.name,
-                display_name=attribute_in.display_name,
-                value_type=attribute_in.value_type.value,
-                entity_type_id=entity_type_id,
-                target_entity_type_id=target_entity_type_obj.id,
-                display_attribute_id=display_attr_id_for_main  # <--- ВОТ ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ
-            )
+            main_attr_data = {
+                "name": attribute_in.name, "display_name": attribute_in.display_name,
+                "value_type": attribute_in.value_type.value, "entity_type_id": entity_type_id,
+                "target_entity_type_id": target_entity_type_obj.id,
+                "display_attribute_id": display_attr_id_for_main
+            }
+            logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: Данные для создания = {main_attr_data}")
+            main_attr = models.Attribute(**main_attr_data)
             self.db.add(main_attr)
 
-            # 2. Обрабатываем ОБРАТНУЮ связь, если пользователь ее запросил
+            # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
+                logger.info("--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Обнаружен флаг create_back_relation.")
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
 
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
+                logger.info(
+                    f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id из запроса = {back_display_attr_id}")
                 if not back_display_attr_id:
                     primary_attr_back = self._find_primary_display_attribute(source_entity_type_obj.id)
                     if not primary_attr_back:
                         raise HTTPException(status_code=400,
-                                            detail=f"Не удалось автоматически найти главную колонку в таблице '{source_entity_type_obj.display_name}'.")
+                                            detail=f"Не удалось найти главную колонку в '{source_entity_type_obj.display_name}'.")
                     back_display_attr_id = primary_attr_back.id
+                    logger.info(
+                        f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id определен автоматически = {back_display_attr_id}")
 
-                back_relation_attr = models.Attribute(
-                    name=back_name,
-                    display_name=back_display_name,
-                    value_type="relation",
-                    entity_type_id=target_entity_type_obj.id,
-                    target_entity_type_id=source_entity_type_obj.id,
-                    display_attribute_id=back_display_attr_id
-                )
+                back_relation_attr_data = {
+                    "name": back_name, "display_name": back_display_name,
+                    "value_type": "relation", "entity_type_id": target_entity_type_obj.id,
+                    "target_entity_type_id": source_entity_type_obj.id,
+                    "display_attribute_id": back_display_attr_id
+                }
+                logger.info(f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Данные для создания = {back_relation_attr_data}")
+                back_relation_attr = models.Attribute(**back_relation_attr_data)
                 self.db.add(back_relation_attr)
                 self.db.flush()
 
                 main_attr.reciprocal_attribute_id = back_relation_attr.id
                 back_relation_attr.reciprocal_attribute_id = main_attr.id
+                logger.info(
+                    f"--- [DEBUG] СВЯЗЬ 'СШИТА': main.reciprocal_id={back_relation_attr.id}, back.reciprocal_id={main_attr.id}")
 
             self.db.commit()
             self.db.refresh(main_attr)
@@ -1881,27 +1886,29 @@ class EAVService:
     def _find_primary_display_attribute(self, entity_type_id: int) -> Optional[models.Attribute]:
         """
         Находит "главную" отображаемую колонку в таблице.
-        Приоритет: 1. `name`, 2. `title`, 3. `display_name`, 4. первая строковая колонка.
         """
-        # Загружаем все атрибуты для данной таблицы
+        logger.info(f"--- [DEBUG] Запущен поиск главной колонки для таблицы ID: {entity_type_id} ---")
         attributes = self.db.query(models.Attribute).filter_by(entity_type_id=entity_type_id).order_by(
             models.Attribute.id).all()
         if not attributes:
+            logger.warning(f"--- [DEBUG] Для таблицы ID: {entity_type_id} не найдено ни одной колонки.")
             return None
 
         # Ищем по приоритетным именам
         for name in ['name', 'title', 'display_name', 'company_name', 'full_name']:
             for attr in attributes:
                 if attr.name == name:
+                    logger.info(f"--- [DEBUG] Найдена колонка по приоритетному имени '{name}' (ID: {attr.id})")
                     return attr
 
-        # Если не нашли, возвращаем первую строковую колонку
+        # Ищем первую строковую
         for attr in attributes:
             if attr.value_type == 'string':
+                logger.info(f"--- [DEBUG] Найдена первая строковая колонка '{attr.name}' (ID: {attr.id})")
                 return attr
 
-        # Если и таких нет, возвращаем первую попавшуюся колонку
-        return attributes[0]
-
-        # --- ПОЛНОСТЬЮ ЗАМЕНИТЕ СТАРЫЙ МЕТОД НА ЭТОТ ---
+        # Возвращаем первую попавшуюся
+        first_attr = attributes[0]
+        logger.info(f"--- [DEBUG] Возвращаем самую первую колонку '{first_attr.name}' (ID: {first_attr.id})")
+        return first_attr
 
