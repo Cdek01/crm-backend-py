@@ -1606,48 +1606,100 @@ class EAVService:
 
         return None
 
-
-
     def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
         """
-        Удалить атрибут ('колонку') из типа сущности и все его значения.
+        Удалить атрибут ('колонку') из типа сущности.
+        Если у атрибута есть "зеркальная" пара (reciprocal_attribute), удаляет и ее тоже.
         """
-        # 1. Сначала проверяем, что сам тип сущности (таблица) существует
-        # и принадлежит текущему пользователю. Это защищает от попытки удалить
-        # колонку из чужой таблицы.
+        # 1. Проверяем доступ к родительской таблице
         self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-        # 2. Находим сам атрибут, который нужно удалить.
-        # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
-        attribute_to_delete = self.db.query(models.Attribute).filter(
+        # 2. Находим сам атрибут, который нужно удалить, "жадно" загружая его зеркальную пару
+        attribute_to_delete = self.db.query(models.Attribute).options(
+            joinedload(models.Attribute.reciprocal_attribute)
+        ).filter(
             models.Attribute.id == attribute_id,
             models.Attribute.entity_type_id == entity_type_id
         ).first()
 
-        # 3. Если атрибут не найден, возвращаем ошибку.
         if not attribute_to_delete:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=404,
                 detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
             )
 
-        # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
+        # 3. Проверяем, не является ли атрибут системным
         system_attributes = [
             "send_sms_trigger", "sms_status", "sms_last_error",
-            "phone_number", "message_text"
+            "phone_number", "message_text", "creation_date", "modification_date"
         ]
         if attribute_to_delete.name in system_attributes:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
             )
 
-        # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
-        # будут удалены автоматически на уровне базы данных.
+        # --- НАЧАЛО НОВОЙ ЛОГИКИ ---
+
+        # 4. Проверяем, есть ли у этого атрибута зеркальная пара
+        reciprocal_attr = attribute_to_delete.reciprocal_attribute
+        if reciprocal_attr:
+            # Если есть, удаляем и ее
+            # Но сначала нужно "разорвать" их связь, чтобы избежать проблем с внешними ключами
+            reciprocal_attr.reciprocal_attribute_id = None
+            self.db.add(reciprocal_attr)  # Добавляем в сессию, чтобы изменение было учтено
+            self.db.delete(reciprocal_attr)
+            logger.info(f"Удалена зеркальная колонка '{reciprocal_attr.name}' (ID: {reciprocal_attr.id})")
+
+        # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
+        # 5. Удаляем основной атрибут.
+        # Благодаря ondelete="CASCADE" и relationship, все связанные AttributeValue
+        # будут удалены автоматически.
         self.db.delete(attribute_to_delete)
         self.db.commit()
 
         return None
+    # def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
+    #     """
+    #     Удалить атрибут ('колонку') из типа сущности и все его значения.
+    #     """
+    #     # 1. Сначала проверяем, что сам тип сущности (таблица) существует
+    #     # и принадлежит текущему пользователю. Это защищает от попытки удалить
+    #     # колонку из чужой таблицы.
+    #     self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
+    #
+    #     # 2. Находим сам атрибут, который нужно удалить.
+    #     # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
+    #     attribute_to_delete = self.db.query(models.Attribute).filter(
+    #         models.Attribute.id == attribute_id,
+    #         models.Attribute.entity_type_id == entity_type_id
+    #     ).first()
+    #
+    #     # 3. Если атрибут не найден, возвращаем ошибку.
+    #     if not attribute_to_delete:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND,
+    #             detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
+    #         )
+    #
+    #     # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
+    #     system_attributes = [
+    #         "send_sms_trigger", "sms_status", "sms_last_error",
+    #         "phone_number", "message_text"
+    #     ]
+    #     if attribute_to_delete.name in system_attributes:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_400_BAD_REQUEST,
+    #             detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
+    #         )
+    #
+    #     # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
+    #     # будут удалены автоматически на уровне базы данных.
+    #     self.db.delete(attribute_to_delete)
+    #     self.db.commit()
+    #
+    #     return None
 
 
 
