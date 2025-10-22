@@ -822,11 +822,13 @@ class EAVService:
     ) -> models.Attribute:
         """
         Создает новый атрибут ('колонку').
-        Умеет делать "умные предположения" для создания двусторонних связей.
+        - Обрабатывает создание обычных полей (string, integer, select и т.д.).
+        - Умеет делать "умные предположения" для создания односторонних и двусторонних связей (relation).
         """
+        # Шаг 1: Получаем информацию о таблице, в которой создаем колонку
         source_entity_type = self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-        # --- СЦЕНАРИЙ 1: Создание связи ---
+        # --- СЦЕНАРИЙ 1: Создание связи (relation) ---
         if attribute_in.value_type == 'relation':
             if not attribute_in.target_entity_type_id:
                 raise HTTPException(status_code=400,
@@ -835,26 +837,27 @@ class EAVService:
             target_entity_type = self.get_entity_type_by_id(entity_type_id=attribute_in.target_entity_type_id,
                                                             current_user=current_user)
 
-            # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи
+            # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи (что показывать)
             display_attr_id = attribute_in.display_attribute_id
             if not display_attr_id:
-                primary_attr = self._find_primary_display_attribute(target_entity_type.id)  # <-- ИСПОЛЬЗУЕМ .id
+                primary_attr = self._find_primary_display_attribute(target_entity_type.id)  # <--- ИСПРАВЛЕНО
                 if not primary_attr:
                     raise HTTPException(status_code=400,
                                         detail=f"Не удалось автоматически найти главную колонку в таблице '{target_entity_type.display_name}'.")
                 display_attr_id = primary_attr.id
 
+            # Создаем ОСНОВНОЙ атрибут (прямую связь)
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
                 value_type=attribute_in.value_type.value,
                 entity_type_id=entity_type_id,
-                target_entity_type_id=target_entity_type.id,  # <-- ИСПОЛЬЗУЕМ .id
+                target_entity_type_id=target_entity_type.id,  # <--- ИСПРАВЛЕНО
                 display_attribute_id=display_attr_id
             )
             self.db.add(main_attr)
 
-            # 2. Обрабатываем ОБРАТНУЮ связь
+            # 2. Обрабатываем ОБРАТНУЮ связь, если пользователь ее запросил
             if attribute_in.create_back_relation:
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type.display_name}'"
@@ -871,13 +874,14 @@ class EAVService:
                     name=back_name,
                     display_name=back_display_name,
                     value_type="relation",
-                    entity_type_id=target_entity_type.id,  # <-- ИСПОЛЬЗУЕМ .id
+                    entity_type_id=target_entity_type.id,  # <--- ИСПРАВЛЕНО
                     target_entity_type_id=source_entity_type.id,
                     display_attribute_id=back_display_attr_id
                 )
                 self.db.add(back_relation_attr)
-                self.db.flush()
+                self.db.flush()  # Получаем ID для обеих колонок перед "сшиванием"
 
+                # "Сшиваем" связи, чтобы они знали друг о друге
                 main_attr.reciprocal_attribute_id = back_relation_attr.id
                 back_relation_attr.reciprocal_attribute_id = main_attr.id
 
@@ -887,21 +891,31 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 2: Создание любой другой обычной колонки ---
         else:
-            # Эта логика остается простой и явной
+            # Явно и безопасно собираем данные, чтобы избежать TypeError
             attr_data_for_db = {
                 "name": attribute_in.name,
                 "display_name": attribute_in.display_name,
                 "value_type": attribute_in.value_type.value,
-                "entity_type_id": entity_type_id,
-                "formula_text": attribute_in.formula_text,
-                "currency_symbol": attribute_in.currency_symbol
+                "entity_type_id": entity_type_id
             }
+            # Добавляем опциональные поля, только если они переданы
+            if attribute_in.formula_text is not None:
+                attr_data_for_db["formula_text"] = attribute_in.formula_text
+            if attribute_in.currency_symbol is not None:
+                attr_data_for_db["currency_symbol"] = attribute_in.currency_symbol
 
+            # Обработка select-списков
             if attribute_in.value_type == 'select' and attribute_in.list_items:
-                # ... (логика создания select-списка остается без изменений)
-                pass
+                unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+                new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
+                self.db.add(new_list)
+                for item_value in attribute_in.list_items:
+                    if item_value:
+                        self.db.add(models.SelectOption(value=item_value, option_list=new_list))
+                self.db.flush()
+                attr_data_for_db['select_list_id'] = new_list.id
 
-            db_attribute = models.Attribute(**{k: v for k, v in attr_data_for_db.items() if v is not None})
+            db_attribute = models.Attribute(**attr_data_for_db)
             self.db.add(db_attribute)
             self.db.commit()
             self.db.refresh(db_attribute)
