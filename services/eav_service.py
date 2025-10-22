@@ -1590,7 +1590,7 @@ class EAVService:
 
         # 4. Если все проверки пройдены, удаляем
         entity_type_name = entity_to_delete.entity_type.name
-        tenant_id_for_webhook = entity_to_delete.entity_type.tenant
+        tenant_id_for_webhook = entity_to_delete.entity_type.tenant_id
         self.db.delete(entity_to_delete)
         self.db.commit()
         # ---------------------------
