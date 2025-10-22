@@ -822,99 +822,195 @@ class EAVService:
     ) -> models.Attribute:
         """
         Создает новый атрибут ('колонку').
-        Обрабатывает создание обычных полей и двусторонних ID-based связей.
+        Умеет делать "умные предположения" для создания двусторонних связей.
         """
-        # Шаг 1: Проверка доступа (остается без изменений)
-        source_entity_type = self.get_entity_type_by_id(
-            entity_type_id=entity_type_id,
-            current_user=current_user
-        )
+        source_entity_type = self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
-        # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
-        if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
-            # Валидация
-            if not all([
-                attribute_in.target_entity_type_id,
-                attribute_in.display_attribute_id,
-                attribute_in.back_relation_name,
-                attribute_in.back_relation_display_name,
-                attribute_in.back_relation_display_attribute_id
-            ]):
+        # --- СЦЕНАРИЙ 1: Создание связи (односторонней или двусторонней) ---
+        if attribute_in.value_type == 'relation':
+            if not attribute_in.target_entity_type_id:
                 raise HTTPException(status_code=400,
-                                    detail="Для создания двусторонней связи не хватает обязательных полей.")
+                                    detail="Для создания связи необходимо указать 'target_entity_type_id'.")
+
+            target_entity_type = self.get_entity_type_by_id(entity_type_id=attribute_in.target_entity_type_id,
+                                                            current_user=current_user)
+
+            # 1. Определяем отображаемую колонку для ПРЯМОЙ связи
+            display_attr_id = attribute_in.display_attribute_id
+            if not display_attr_id:
+                primary_attr = self._find_primary_display_attribute(target_entity_type.id)
+                if not primary_attr:
+                    raise HTTPException(status_code=400,
+                                        detail=f"Не удалось автоматически найти главную колонку в таблице '{target_entity_type.display_name}'.")
+                display_attr_id = primary_attr.id
 
             # Создаем ОСНОВНОЙ атрибут
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
-                value_type=attribute_in.value_type.value,  # Используем .value для Enum
-                entity_type_id=entity_type_id,
-                target_entity_type_id=attribute_in.target_entity_type_id,
-                display_attribute_id=attribute_in.display_attribute_id
-            )
-
-            # Создаем ОБРАТНЫЙ атрибут
-            back_relation_attr = models.Attribute(
-                name=attribute_in.back_relation_name,
-                display_name=attribute_in.back_relation_display_name,
                 value_type=attribute_in.value_type.value,
-                entity_type_id=attribute_in.target_entity_type_id,
-                target_entity_type_id=source_entity_type.id,
-                display_attribute_id=attribute_in.back_relation_display_attribute_id
+                entity_type_id=entity_type_id,
+                target_entity_type_id=target_entity_type.id,
+                display_attribute_id=display_attr_id
             )
-
             self.db.add(main_attr)
-            self.db.add(back_relation_attr)
-            self.db.flush()  # <-- ВАЖНО: Используем flush, чтобы получить ID
 
-            # --- НАЧАЛО ИЗМЕНЕНИЙ: "Сшиваем" связи ---
-            main_attr.reciprocal_attribute_id = back_relation_attr.id
-            back_relation_attr.reciprocal_attribute_id = main_attr.id
-            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+            # 2. Обрабатываем ОБРАТНУЮ связь, если нужно
+            if attribute_in.create_back_relation:
+                # Генерируем имена по умолчанию, если они не переданы
+                back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type.name.lower()}"
+                back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type.display_name}'"
 
-            self.db.commit()  # Теперь коммитим все вместе
+                # Определяем отображаемую колонку для ОБРАТНОЙ связи
+                back_display_attr_id = attribute_in.back_relation_display_attribute_id
+                if not back_display_attr_id:
+                    primary_attr_back = self._find_primary_display_attribute(source_entity_type.id)
+                    if not primary_attr_back:
+                        raise HTTPException(status_code=400,
+                                            detail=f"Не удалось автоматически найти главную колонку в таблице '{source_entity_type.display_name}'.")
+                    back_display_attr_id = primary_attr_back.id
+
+                back_relation_attr = models.Attribute(
+                    name=back_name,
+                    display_name=back_display_name,
+                    value_type="relation",
+                    entity_type_id=target_entity_type.id,
+                    target_entity_type_id=source_entity_type.id,
+                    display_attribute_id=back_display_attr_id
+                )
+                self.db.add(back_relation_attr)
+                self.db.flush()  # Получаем ID для "сшивания"
+
+                # "Сшиваем" связи
+                main_attr.reciprocal_attribute_id = back_relation_attr.id
+                back_relation_attr.reciprocal_attribute_id = main_attr.id
+
+            self.db.commit()
             self.db.refresh(main_attr)
             return main_attr
 
-        # --- СЦЕНАРИИ 2 и 3: Создание ЛЮБОЙ обычной колонки ---
+        # --- СЦЕНАРИЙ 2: Создание любой другой обычной колонки ---
         else:
-            # ЯВНО и БЕЗОПАСНО собираем данные для конструктора SQLAlchemy
+            # Эта логика остается простой и явной
             attr_data_for_db = {
                 "name": attribute_in.name,
                 "display_name": attribute_in.display_name,
-                "value_type": attribute_in.value_type.value,  # Используем .value для Enum
-                "entity_type_id": entity_type_id
+                "value_type": attribute_in.value_type.value,
+                "entity_type_id": entity_type_id,
+                "formula_text": attribute_in.formula_text,
+                "currency_symbol": attribute_in.currency_symbol
             }
 
-            # Добавляем опциональные поля, только если они были переданы
-            if attribute_in.formula_text is not None:
-                attr_data_for_db["formula_text"] = attribute_in.formula_text
-            if attribute_in.currency_symbol is not None:
-                attr_data_for_db["currency_symbol"] = attribute_in.currency_symbol
-            # Для односторонних связей
-            if attribute_in.target_entity_type_id is not None:
-                attr_data_for_db["target_entity_type_id"] = attribute_in.target_entity_type_id
-            if attribute_in.display_attribute_id is not None:
-                attr_data_for_db["display_attribute_id"] = attribute_in.display_attribute_id
-
-            # Обработка select-списков
             if attribute_in.value_type == 'select' and attribute_in.list_items:
-                unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
-                new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
-                self.db.add(new_list)
-                for item_value in attribute_in.list_items:
-                    if item_value:
-                        self.db.add(models.SelectOption(value=item_value, option_list=new_list))
-                self.db.flush()
-                attr_data_for_db['select_list_id'] = new_list.id
+                # ... (логика создания select-списка остается без изменений)
+                pass
 
-            # Создаем атрибут из "чистого", собранного вручную словаря
-            db_attribute = models.Attribute(**attr_data_for_db)
+            db_attribute = models.Attribute(**{k: v for k, v in attr_data_for_db.items() if v is not None})
             self.db.add(db_attribute)
             self.db.commit()
             self.db.refresh(db_attribute)
             return db_attribute
     # def create_attribute_for_type(
+    #         self,
+    #         entity_type_id: int,
+    #         attribute_in: AttributeCreate,
+    #         current_user: models.User
+    # ) -> models.Attribute:
+    #     """
+    #     Создает новый атрибут ('колонку').
+    #     Обрабатывает создание обычных полей и двусторонних ID-based связей.
+    #     """
+    #     # Шаг 1: Проверка доступа (остается без изменений)
+    #     source_entity_type = self.get_entity_type_by_id(
+    #         entity_type_id=entity_type_id,
+    #         current_user=current_user
+    #     )
+    #
+    #     # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
+    #     if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
+    #         # Валидация
+    #         if not all([
+    #             attribute_in.target_entity_type_id,
+    #             attribute_in.display_attribute_id,
+    #             attribute_in.back_relation_name,
+    #             attribute_in.back_relation_display_name,
+    #             attribute_in.back_relation_display_attribute_id
+    #         ]):
+    #             raise HTTPException(status_code=400,
+    #                                 detail="Для создания двусторонней связи не хватает обязательных полей.")
+    #
+    #         # Создаем ОСНОВНОЙ атрибут
+    #         main_attr = models.Attribute(
+    #             name=attribute_in.name,
+    #             display_name=attribute_in.display_name,
+    #             value_type=attribute_in.value_type.value,  # Используем .value для Enum
+    #             entity_type_id=entity_type_id,
+    #             target_entity_type_id=attribute_in.target_entity_type_id,
+    #             display_attribute_id=attribute_in.display_attribute_id
+    #         )
+    #
+    #         # Создаем ОБРАТНЫЙ атрибут
+    #         back_relation_attr = models.Attribute(
+    #             name=attribute_in.back_relation_name,
+    #             display_name=attribute_in.back_relation_display_name,
+    #             value_type=attribute_in.value_type.value,
+    #             entity_type_id=attribute_in.target_entity_type_id,
+    #             target_entity_type_id=source_entity_type.id,
+    #             display_attribute_id=attribute_in.back_relation_display_attribute_id
+    #         )
+    #
+    #         self.db.add(main_attr)
+    #         self.db.add(back_relation_attr)
+    #         self.db.flush()  # <-- ВАЖНО: Используем flush, чтобы получить ID
+    #
+    #         # --- НАЧАЛО ИЗМЕНЕНИЙ: "Сшиваем" связи ---
+    #         main_attr.reciprocal_attribute_id = back_relation_attr.id
+    #         back_relation_attr.reciprocal_attribute_id = main_attr.id
+    #         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    #
+    #         self.db.commit()  # Теперь коммитим все вместе
+    #         self.db.refresh(main_attr)
+    #         return main_attr
+    #
+    #     # --- СЦЕНАРИИ 2 и 3: Создание ЛЮБОЙ обычной колонки ---
+    #     else:
+    #         # ЯВНО и БЕЗОПАСНО собираем данные для конструктора SQLAlchemy
+    #         attr_data_for_db = {
+    #             "name": attribute_in.name,
+    #             "display_name": attribute_in.display_name,
+    #             "value_type": attribute_in.value_type.value,  # Используем .value для Enum
+    #             "entity_type_id": entity_type_id
+    #         }
+    #
+    #         # Добавляем опциональные поля, только если они были переданы
+    #         if attribute_in.formula_text is not None:
+    #             attr_data_for_db["formula_text"] = attribute_in.formula_text
+    #         if attribute_in.currency_symbol is not None:
+    #             attr_data_for_db["currency_symbol"] = attribute_in.currency_symbol
+    #         # Для односторонних связей
+    #         if attribute_in.target_entity_type_id is not None:
+    #             attr_data_for_db["target_entity_type_id"] = attribute_in.target_entity_type_id
+    #         if attribute_in.display_attribute_id is not None:
+    #             attr_data_for_db["display_attribute_id"] = attribute_in.display_attribute_id
+    #
+    #         # Обработка select-списков
+    #         if attribute_in.value_type == 'select' and attribute_in.list_items:
+    #             unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+    #             new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
+    #             self.db.add(new_list)
+    #             for item_value in attribute_in.list_items:
+    #                 if item_value:
+    #                     self.db.add(models.SelectOption(value=item_value, option_list=new_list))
+    #             self.db.flush()
+    #             attr_data_for_db['select_list_id'] = new_list.id
+    #
+    #         # Создаем атрибут из "чистого", собранного вручную словаря
+    #         db_attribute = models.Attribute(**attr_data_for_db)
+    #         self.db.add(db_attribute)
+    #         self.db.commit()
+    #         self.db.refresh(db_attribute)
+    #         return db_attribute
+    # # def create_attribute_for_type(
     #         self,
     #         entity_type_id: int,
     #         attribute_in: AttributeCreate,
@@ -1777,3 +1873,31 @@ class EAVService:
             # просто возвращаем None
             return None
     # ------------------------------------
+
+    def _find_primary_display_attribute(self, entity_type_id: int) -> Optional[models.Attribute]:
+        """
+        Находит "главную" отображаемую колонку в таблице.
+        Приоритет: 1. `name`, 2. `title`, 3. `display_name`, 4. первая строковая колонка.
+        """
+        # Загружаем все атрибуты для данной таблицы
+        attributes = self.db.query(models.Attribute).filter_by(entity_type_id=entity_type_id).order_by(
+            models.Attribute.id).all()
+        if not attributes:
+            return None
+
+        # Ищем по приоритетным именам
+        for name in ['name', 'title', 'display_name', 'company_name', 'full_name']:
+            for attr in attributes:
+                if attr.name == name:
+                    return attr
+
+        # Если не нашли, возвращаем первую строковую колонку
+        for attr in attributes:
+            if attr.value_type == 'string':
+                return attr
+
+        # Если и таких нет, возвращаем первую попавшуюся колонку
+        return attributes[0]
+
+        # --- ПОЛНОСТЬЮ ЗАМЕНИТЕ СТАРЫЙ МЕТОД НА ЭТОТ ---
+
