@@ -822,10 +822,9 @@ class EAVService:
     ) -> models.Attribute:
         """
         Создает новый атрибут ('колонку').
-        Обрабатывает создание обычных полей (string, integer, select и т.д.).
-        Умеет делать "умные предположения" для создания односторонних и двусторонних связей (relation).
+        - Обрабатывает создание обычных полей (string, integer, select и т.д.).
+        - Умеет делать "умные предположения" для создания односторонних и двусторонних связей (relation).
         """
-        # Шаг 1: Получаем информацию о таблице, в которой создаем колонку
         source_entity_type_obj = self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
 
         # --- СЦЕНАРИЙ 1: Создание связи (relation) ---
@@ -838,22 +837,22 @@ class EAVService:
                                                                 current_user=current_user)
 
             # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи (что показывать)
-            display_attr_id = attribute_in.display_attribute_id
-            if not display_attr_id:
+            display_attr_id_for_main = attribute_in.display_attribute_id
+            if not display_attr_id_for_main:
                 primary_attr = self._find_primary_display_attribute(target_entity_type_obj.id)
                 if not primary_attr:
                     raise HTTPException(status_code=400,
                                         detail=f"Не удалось автоматически найти главную колонку в таблице '{target_entity_type_obj.display_name}'.")
-                display_attr_id = primary_attr.id
+                display_attr_id_for_main = primary_attr.id
 
-            # Создаем ОСНОВНОЙ атрибут (прямую связь)
+            # Создаем ОСНОВНОЙ атрибут (прямую связь), ТЕПЕРЬ С ПРАВИЛЬНЫМ display_attribute_id
             main_attr = models.Attribute(
                 name=attribute_in.name,
                 display_name=attribute_in.display_name,
                 value_type=attribute_in.value_type.value,
                 entity_type_id=entity_type_id,
                 target_entity_type_id=target_entity_type_obj.id,
-                display_attribute_id=display_attr_id
+                display_attribute_id=display_attr_id_for_main  # <--- ВОТ ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ
             )
             self.db.add(main_attr)
 
@@ -864,8 +863,7 @@ class EAVService:
 
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
                 if not back_display_attr_id:
-                    primary_attr_back = self._find_primary_display_attribute(
-                        source_entity_type_obj.id)  # <--- ИСПРАВЛЕНИЕ ЗДЕСЬ
+                    primary_attr_back = self._find_primary_display_attribute(source_entity_type_obj.id)
                     if not primary_attr_back:
                         raise HTTPException(status_code=400,
                                             detail=f"Не удалось автоматически найти главную колонку в таблице '{source_entity_type_obj.display_name}'.")
@@ -876,7 +874,7 @@ class EAVService:
                     display_name=back_display_name,
                     value_type="relation",
                     entity_type_id=target_entity_type_obj.id,
-                    target_entity_type_id=source_entity_type_obj.id,  # <--- И ИСПРАВЛЕНИЕ ЗДЕСЬ
+                    target_entity_type_id=source_entity_type_obj.id,
                     display_attribute_id=back_display_attr_id
                 )
                 self.db.add(back_relation_attr)
