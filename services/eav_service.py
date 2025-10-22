@@ -1369,8 +1369,16 @@ class EAVService:
         # ... (остальной код с вебхуками и return)
         logger.info(f"Данные для entity_id={entity_id} закоммичены.")
         if not is_external_update:
-            # ...
-            pass
+            logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
+            entity_type_name = entity.entity_type.name
+            # --- ВЫЗОВ ЧЕРЕЗ CELERY ---
+            send_webhook_task.delay(
+                event_type="update",
+                table_name=entity_type_name,
+                entity_id=entity_id,
+                data=data,
+                tenant_id=current_user.tenant_id
+            )
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
@@ -1547,6 +1555,8 @@ class EAVService:
 
 
     def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
+        from tasks.messaging import send_webhook_task  # <--- ИМПОРТ ВНУТРИ ФУНКЦИИ
+
         """Удалить запись."""
         is_external_update = source is not None
 
@@ -1575,17 +1585,19 @@ class EAVService:
                                         detail="Сущность не найдена или недостаточно прав для удаления")
 
         # 4. Если все проверки пройдены, удаляем
-        entity_type_name = entity_to_delete.entity_type.name  # Получаем имя для уведомления
+        entity_type_name = entity_to_delete.entity_type.name
+        tenant_id_for_webhook = entity_to_delete.entity_type.tenant_
         self.db.delete(entity_to_delete)
         self.db.commit()
         # ---------------------------
 
         if not is_external_update:
-            external_api_client.send_update_to_colleague(
+            send_webhook_task.delay(
                 event_type="delete",
                 table_name=entity_type_name,
                 entity_id=entity_id,
-                data={"id": entity_id}
+                data={"id": entity_id},
+                tenant_id=tenant_id_for_webhook
             )
 
         return None
