@@ -60,8 +60,6 @@ class AttributeCreate(BaseModel):
 class Attribute(AttributeBase):
     id: int
     entity_type_id: int
-
-    # --- УБЕДИТЕСЬ, ЧТО ЭТИ ПОЛЯ ЗДЕСЬ ЕСТЬ ---
     select_list_id: Optional[int] = None
     formula_text: Optional[str] = None
     currency_symbol: Optional[str] = None
@@ -69,7 +67,11 @@ class Attribute(AttributeBase):
     source_attribute_id: Optional[int] = None
     target_attribute_id: Optional[int] = None
     display_attribute_id: Optional[int] = None
-    # ----------------------------------------
+    back_relation_display_attribute_id: Optional[int] = None  # Это поле у вас уже должно быть
+
+    # --- ДОБАВЬТЕ ЭТУ СТРОКУ ---
+    reciprocal_attribute_id: Optional[int] = None
+    # ---------------------------
 
     model_config = ConfigDict(from_attributes=True)
 
