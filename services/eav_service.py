@@ -1473,6 +1473,7 @@ class EAVService:
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
         # --- Основной цикл обновления ---
+        # --- Основной цикл обновления ---
         for key, value in data.items():
             if key not in attributes_map:
                 continue
@@ -1480,14 +1481,13 @@ class EAVService:
 
             # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
             if attribute.relation_type == 'many-to-many':
-                # Удаляем старые связи
-                self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.id,
-                                                               entity_a_id=entity_id).delete()
+                self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.id, entity_a_id=entity_id).delete(
+                    synchronize_session=False)
                 if attribute.reciprocal_attribute_id:
                     self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.reciprocal_attribute_id,
-                                                                   entity_b_id=entity_id).delete()
+                                                                   entity_b_id=entity_id).delete(
+                        synchronize_session=False)
 
-                # Создаем новые
                 if isinstance(value, list) and value:
                     new_relations = [models.EntityRelation(attribute_id=attribute.id, entity_a_id=entity_id,
                                                            entity_b_id=int(linked_id)) for linked_id in value]
@@ -1498,9 +1498,9 @@ class EAVService:
                                               for linked_id in value]
                         self.db.add_all(new_back_relations)
 
-                continue  # <--- ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+                continue  # <--- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Предотвращает "проваливание"
 
-            # --- СЦЕНАРИЙ 2: Все остальные типы ---
+            # --- СЦЕНАРИЙ 2: Все остальные типы, включая "один-ко-многим" ---
             processed_value = self._process_value(value, attribute)
             value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
             if not value_field_name:
@@ -1520,7 +1520,7 @@ class EAVService:
                                                   **{value_field_name: processed_value}))
 
             # Обработка обратной связи для "один-ко-многим"
-            if attribute.value_type == 'relation' and attribute.reciprocal_attribute_id:
+            if attribute.value_type == 'relation' and attribute.relation_type != 'many-to-many' and attribute.reciprocal_attribute_id:
                 reciprocal_attr_id = attribute.reciprocal_attribute_id
                 new_linked_id = processed_value
 
@@ -1535,7 +1535,7 @@ class EAVService:
                     new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=new_linked_id,
                                                                                           attribute_id=reciprocal_attr_id).first()
                     if new_reciprocal_value:
-                        new_reciprocal_value.value_integer = new_linked_id
+                        new_reciprocal_value.value_integer = entity_id
                     else:
                         self.db.add(models.AttributeValue(entity_id=new_linked_id, attribute_id=reciprocal_attr_id,
                                                           value_integer=entity_id))
@@ -1685,31 +1685,39 @@ class EAVService:
 
             attribute = attributes_map[key]
 
-
-            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
-            if attribute.value_type == 'multiselect':
-                # Создаем "пустой" AttributeValue, который будет контейнером
-                attr_value = models.AttributeValue(entity_id=new_entity.id, attribute_id=attribute.id)
+            # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
+            if attribute.relation_type == 'many-to-many':
                 if isinstance(value, list) and value:
-                    # Находим объекты SelectOption по списку ID
-                    options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
-                    attr_value.multiselect_values.extend(options)
-                self.db.add(attr_value)
+                    new_relations = [models.EntityRelation(attribute_id=attribute.id, entity_a_id=new_entity.id,
+                                                           entity_b_id=int(linked_id)) for linked_id in value]
+                    self.db.add_all(new_relations)
+                    if attribute.reciprocal_attribute_id:
+                        new_back_relations = [models.EntityRelation(attribute_id=attribute.reciprocal_attribute_id,
+                                                                    entity_a_id=int(linked_id),
+                                                                    entity_b_id=new_entity.id) for linked_id in value]
+                        self.db.add_all(new_back_relations)
+                continue  # <-- ВАЖНО
 
-            elif attribute.value_type in VALUE_FIELD_MAP:
-                # Старая логика для всех остальных типов
-                processed_value = self._process_value(value, attribute)  # Передаем весь `attribute`
-                if processed_value is None:
-                    continue
+            # --- СЦЕНАРИЙ 2: Все остальные типы ---
+            processed_value = self._process_value(value, attribute)
+            if processed_value is None:
+                continue
 
-                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-                attr_value = models.AttributeValue(
-                    entity_id=new_entity.id,
-                    attribute_id=attribute.id
-                )
-                setattr(attr_value, value_field_name, processed_value)
-                self.db.add(attr_value)
-            # ---------------------------
+            value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
+            if not value_field_name:
+                continue
+
+            attr_value = models.AttributeValue(entity_id=new_entity.id, attribute_id=attribute.id)
+            setattr(attr_value, value_field_name, processed_value)
+            self.db.add(attr_value)
+
+            # Обработка обратной связи для "один-ко-многим" (при создании)
+            if attribute.value_type == 'relation' and attribute.relation_type != 'many-to-many' and attribute.reciprocal_attribute_id:
+                reciprocal_attr_id = attribute.reciprocal_attribute_id
+                new_linked_id = processed_value
+                if new_linked_id:
+                    self.db.add(models.AttributeValue(entity_id=new_linked_id, attribute_id=reciprocal_attr_id,
+                                                      value_integer=new_entity.id))
 
         self.db.commit()
 
