@@ -32,15 +32,7 @@ attribute_value_multiselect_options = Table(
     Column('select_option_id', Integer, ForeignKey('select_options.id', ondelete="CASCADE"), primary_key=True)
 )
 # ------------------------------------
-# --- НАЧАЛО ИЗМЕНЕНИЙ ---
-# Новая связующая таблица для отношений "один-ко-многим" и "многие-ко-многим".
-# Связывает одну ячейку (AttributeValue) с несколькими записями (Entity).
-attribute_value_relations = Table(
-    'attribute_value_relations', Base.metadata,
-    Column('attribute_value_id', Integer, ForeignKey('attribute_values.id', ondelete="CASCADE"), primary_key=True),
-    Column('target_entity_id', Integer, ForeignKey('entities.id', ondelete="CASCADE"), primary_key=True)
-)
-# --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
 
 class Tenant(Base):
     __tablename__ = 'tenants'
@@ -215,8 +207,7 @@ class Lead(Base):
     tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
     tenant = relationship("Tenant", back_populates="leads")
 
-
-
+# ... (в конце файла, после существующих моделей User, Lead и т.д.)
 
 class EntityType(Base):
     """Описывает 'тип' пользовательской таблицы, например, 'Проекты', 'Контракты'."""
@@ -265,7 +256,7 @@ class Attribute(Base):
     value_type = Column(String, nullable=False)
 
     entity_type = relationship("EntityType", back_populates="attributes",
-                               foreign_keys=[entity_type_id])
+        foreign_keys=[entity_type_id])
 
     # Это отношение говорит SQLAlchemy, что у одного Атрибута может быть много Значений.
     # cascade="all, delete-orphan" - самая важная часть.
@@ -273,6 +264,7 @@ class Attribute(Base):
     # "delete-orphan" - удаляет 'AttributeValue', если он больше не связан ни с каким 'Attribute'.
     # "delete" (в составе "all") - удаляет все связанные 'AttributeValue', когда удаляется сам 'Attribute'.
     values = relationship("AttributeValue", cascade="all, delete-orphan")
+
 
     # Если value_type = 'select', это поле будет ссылаться на список опций
     select_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=True)
@@ -290,14 +282,8 @@ class Attribute(Base):
     source_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     target_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
-
-    # Новые поля для настройки связи
-    allow_multiple = Column(Boolean, default=False, nullable=False)  # Разрешить множественный выбор
-    is_symmetrical = Column(Boolean, default=False, nullable=False)  # Является ли связь двусторонней
     # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-
-    back_relation_display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"),
-                                                nullable=True)
+    back_relation_display_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
     reciprocal_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
 
     # Определяем связи для удобного доступа. `remote_side=[id]` нужен для self-referencing FK.
@@ -306,12 +292,13 @@ class Attribute(Base):
     target_attribute = relationship("Attribute", foreign_keys=[target_attribute_id], remote_side=[id])
     display_attribute = relationship("Attribute", foreign_keys=[display_attribute_id], remote_side=[id])
 
-    back_relation_display_attribute = relationship("Attribute", foreign_keys=[back_relation_display_attribute_id],
-                                                   remote_side=[id])
+    back_relation_display_attribute = relationship("Attribute", foreign_keys=[back_relation_display_attribute_id], remote_side=[id])
     reciprocal_attribute = relationship("Attribute", foreign_keys=[reciprocal_attribute_id], uselist=False)
 
     def __str__(self):
-        return self.display_name  # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
+        return self.display_name # Будет отображаться "Номер телефона", "Статус отправки" и т.д.
+
+
 
 
 class Entity(Base):
@@ -374,14 +361,6 @@ class AttributeValue(Base):
         secondary=attribute_value_multiselect_options
     )
 
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    # Новая связь для полей-отношений с множественным выбором.
-    linked_entities = relationship(
-        "Entity",
-        secondary=attribute_value_relations
-    )
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-
     def __str__(self):
         # Эта функция вернет первое непустое значение из полей
         value = (
@@ -437,7 +416,6 @@ class AttributeAlias(Base):
 
         # Преобразуем значение в строку и возвращаем
         return str(value)
-
 
 
 class TableAlias(Base):

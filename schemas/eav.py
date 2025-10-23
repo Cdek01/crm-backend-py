@@ -36,29 +36,26 @@ class AttributeBase(BaseModel):
 class AttributeCreate(BaseModel):
     name: str
     display_name: str
-    value_type: ValueTypeEnum
+    value_type: ValueTypeEnum  # Должен быть "relation" для этого сценария
 
     # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    # Поля для настройки связи
+    # Поля для основной (прямой) связи. Теперь они могут приходить сразу при создании.
     target_entity_type_id: Optional[int] = None
+    source_attribute_id: Optional[int] = None  # Это поле нам пока не нужно для двусторонней связи
+    target_attribute_id: Optional[int] = None  # И это
     display_attribute_id: Optional[int] = None
-    allow_multiple: Optional[bool] = False
-    is_symmetrical: Optional[bool] = False
 
-    # Поля для создания ОБРАТНОЙ связи, если is_symmetrical=True
-    create_back_relation: Optional[bool] = False # Это поле уже было, но теперь используется с is_symmetrical
-    back_relation_name: Optional[str] = None
-    back_relation_display_name: Optional[str] = None
+    # Поля для создания ОБРАТНОЙ связи
+    create_back_relation: Optional[bool] = False  # Флаг "Создать обратную связь"
+    back_relation_name: Optional[str] = None  # Системное имя для обратной колонки (например, "project")
+    back_relation_display_name: Optional[str] = None  # Отображаемое имя ("Проект")
     back_relation_display_attribute_id: Optional[int] = None
-    back_relation_allow_multiple: Optional[bool] = False # Определяет кардинальность обратной связи
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
     # Эти поля остаются
     select_list_id: Optional[int] = None
     formula_text: Optional[str] = None
     currency_symbol: Optional[str] = None
     list_items: Optional[List[str]] = None
-
 
 class Attribute(AttributeBase):
     id: int
@@ -70,16 +67,14 @@ class Attribute(AttributeBase):
     source_attribute_id: Optional[int] = None
     target_attribute_id: Optional[int] = None
     display_attribute_id: Optional[int] = None
-    back_relation_display_attribute_id: Optional[int] = None
+    back_relation_display_attribute_id: Optional[int] = None  # Это поле у вас уже должно быть
 
+    # --- ДОБАВЬТЕ ЭТУ СТРОКУ ---
     reciprocal_attribute_id: Optional[int] = None
-
-    # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-    allow_multiple: bool
-    is_symmetrical: bool
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    # ---------------------------
 
     model_config = ConfigDict(from_attributes=True)
+
 
     @field_validator('value_type', mode='before')
     @classmethod
