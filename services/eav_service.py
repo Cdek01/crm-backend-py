@@ -1152,30 +1152,22 @@ class EAVService:
     def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
         """
         Получить одну запись по ID с проверкой прав и "умной" подстановкой
-        связанных данных.
+        связанных данных (включая M2M).
         """
-        # --- НАША КОНТРОЛЬНАЯ ТОЧКА ---
-        logger.info(f"--- [DEBUG] Executing NEW get_entity_by_id for entity_id: {entity_id} ---")
-        # --------------------------------
+        logger.info(f"--- [DEBUG] Executing get_entity_by_id for entity_id: {entity_id} ---")
 
-        # --- ШАГ 1: Загружаем сущность со всеми необходимыми метаданными ---
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
                 models.Attribute.display_attribute)
         ).filter(models.Entity.id == entity_id).first()
 
-        if not entity:
-            raise HTTPException(status_code=404, detail="Сущность не найдена")
-
-        # Проверка прав доступа
+        if not entity: raise HTTPException(status_code=404, detail="Сущность не найдена")
         if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
             raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-        # --- ШАГ 2: Преобразуем EAV в "плоский" словарь ---
         pivoted_result = self._pivot_data(entity)
 
-        # --- ШАГ 3: Применяем ту же логику "Lookup" ---
         relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
 
         if relation_attributes:
@@ -1185,10 +1177,8 @@ class EAVService:
 
                 display_attr_id = rel_attr.display_attribute.id
 
-                # --- НАЧАЛО ИСПРАВЛЕННОЙ ЛОГИКИ ---
                 # Сценарий 1: Связь "Многие-ко-многим"
                 if rel_attr.relation_type == 'many-to-many':
-                    # Находим все ID, связанные с ТЕКУЩЕЙ записью
                     linked_ids_query = self.db.query(models.EntityRelation.entity_b_id).filter(
                         models.EntityRelation.attribute_id == rel_attr.id,
                         models.EntityRelation.entity_a_id == entity_id
@@ -1196,43 +1186,21 @@ class EAVService:
                     linked_ids = {row[0] for row in linked_ids_query}
 
                     if not linked_ids:
-                        pivoted_result[rel_attr.name] = []  # Возвращаем пустой список
+                        pivoted_result[rel_attr.name] = []
                         continue
 
-                    # Находим отображаемые значения для этих ID
                     display_values = self._get_display_values_for_ids(linked_ids, display_attr_id)
                     pivoted_result[rel_attr.name] = list(display_values.values())
 
-                # Сценарий 2: Связь "Многие-к-одному" (старая логика)
+                # Сценарий 2: Связь "Многие-к-одному"
                 else:
                     source_id = pivoted_result.get(rel_attr.name)
                     if not isinstance(source_id, int):
                         continue
 
-                    # Используем ту же вспомогательную функцию
                     lookup_map = self._get_display_values_for_ids({source_id}, display_attr_id)
                     if source_id in lookup_map:
                         pivoted_result[rel_attr.name] = lookup_map[source_id]
-                # --- КОНЕЦ ИСПРАВЛЕННОЙ ЛОГИКИ ---
-
-
-                source_id = pivoted_result.get(rel_attr.name)
-
-                if not isinstance(source_id, int):
-                    continue
-
-                display_value_result = self.db.query(
-                    models.AttributeValue.value_string,
-                    models.AttributeValue.value_integer,
-                    models.AttributeValue.value_float
-                ).filter(
-                    models.AttributeValue.entity_id == source_id,
-                    models.AttributeValue.attribute_id == display_attr_id
-                ).first()
-
-                if display_value_result:
-                    val_str, val_int, val_float = display_value_result
-                    pivoted_result[rel_attr.name] = str(val_str or val_int or val_float or '')
 
         return pivoted_result
 
