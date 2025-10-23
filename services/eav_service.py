@@ -351,37 +351,7 @@ class EAVService:
 
 
 
-    def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
-        result = {
-            "id": entity.id,
-            "created_at": entity.created_at,
-            "updated_at": entity.updated_at,
-            "position": entity.position
-        }
-        if entity.values and entity.values[0].attribute:
-            result['tenant_id'] = entity.values[0].attribute.entity_type.tenant_id
 
-        for value_obj in entity.values:
-            attr = value_obj.attribute
-            attr_name = attr.name
-            value_type = attr.value_type
-
-            if value_type == 'relation' and attr.allow_multiple_selection:
-                # Для связи "многие-ко-многим" сразу формируем список ID
-                # Мы не делаем lookup здесь для производительности, он будет позже
-                result[attr_name] = [link.id for link in value_obj.many_to_many_links]
-            elif value_type == 'multiselect':
-            # ... (логика для multiselect без изменений)
-            elif value_type in VALUE_FIELD_MAP:
-                db_field = VALUE_FIELD_MAP[value_type]
-                result[attr_name] = getattr(value_obj, db_field)
-
-        for attribute in entity.entity_type.attributes:
-            if attribute.value_type == 'formula' and attribute.formula_text:
-                formula_value = self._calculate_formula(attribute.formula_text, result)
-                result[attribute.name] = formula_value
-
-        return result
 
     def get_all_entities_for_type(
             self,
