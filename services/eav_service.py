@@ -1473,6 +1473,7 @@ class EAVService:
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
         # --- Основной цикл обновления ---
+
         for key, value in data.items():
             if key not in attributes_map:
                 continue
