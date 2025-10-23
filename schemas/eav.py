@@ -37,6 +37,8 @@ class AttributeCreate(BaseModel):
     name: str
     display_name: str
     value_type: ValueTypeEnum  # Должен быть "relation" для этого сценария
+    allow_multiple: Optional[bool] = False
+    is_symmetrical: Optional[bool] = False # Это наш новый create_back_relation
 
     # --- НАЧАЛО ИЗМЕНЕНИЙ ---
     # Поля для основной (прямой) связи. Теперь они могут приходить сразу при создании.
@@ -68,6 +70,7 @@ class Attribute(AttributeBase):
     target_attribute_id: Optional[int] = None
     display_attribute_id: Optional[int] = None
     back_relation_display_attribute_id: Optional[int] = None  # Это поле у вас уже должно быть
+    allow_multiple: bool
 
     # --- ДОБАВЬТЕ ЭТУ СТРОКУ ---
     reciprocal_attribute_id: Optional[int] = None
