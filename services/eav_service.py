@@ -1355,10 +1355,6 @@ class EAVService:
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
         # --- НАЧАЛО ФИНАЛЬНОГО ИСПРАВЛЕНИЯ ---
-        for key, value in data.items():
-            if key not in attributes_map: continue
-            attribute = attributes_map[key]
-
             # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
             if attribute.relation_type == 'many-to-many':
                 # Удаляем старые связи
@@ -1381,17 +1377,17 @@ class EAVService:
 
                 continue  # <--- ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
 
-            # СЦЕНАРИЙ 2: Все остальные типы, включая "один-ко-многим"
+            # --- СЦЕНАРИЙ 2: Все остальные типы ---
             processed_value = self._process_value(value, attribute)
             value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
-            if not value_field_name: continue
+            if not value_field_name:
+                continue
 
             existing_value = self.db.query(models.AttributeValue).filter_by(entity_id=entity_id,
                                                                             attribute_id=attribute.id).first()
+            old_linked_id = existing_value.value_integer if existing_value and attribute.value_type == 'relation' else None
 
-            old_linked_id = None
             if existing_value:
-                old_linked_id = existing_value.value_integer
                 if processed_value is None:
                     self.db.delete(existing_value)
                 else:
@@ -1416,16 +1412,17 @@ class EAVService:
                     new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=new_linked_id,
                                                                                           attribute_id=reciprocal_attr_id).first()
                     if new_reciprocal_value:
-                        new_reciprocal_value.value_integer = entity_id
+                        new_reciprocal_value.value_integer = new_linked_id
                     else:
                         self.db.add(models.AttributeValue(entity_id=new_linked_id, attribute_id=reciprocal_attr_id,
                                                           value_integer=entity_id))
-        # --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ ---
 
         entity.updated_at = datetime.utcnow()
         self.db.commit()
 
-        # ... (остальной код с вебхуками и return)
+
+
+
         logger.info(f"Данные для entity_id={entity_id} закоммичены.")
         if not is_external_update:
             logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
