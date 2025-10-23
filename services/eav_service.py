@@ -1359,32 +1359,27 @@ class EAVService:
             if key not in attributes_map: continue
             attribute = attributes_map[key]
 
-            # СЦЕНАРИЙ 1: Связь "Многие-ко-многим"
+            # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
             if attribute.relation_type == 'many-to-many':
-                # 1. Удаляем все старые связи (прямые и обратные)
-                self.db.query(models.EntityRelation).filter(
-                    models.EntityRelation.attribute_id == attribute.id,
-                    models.EntityRelation.entity_a_id == entity_id
-                ).delete(synchronize_session=False)
+                # Удаляем старые связи
+                self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.id,
+                                                               entity_a_id=entity_id).delete()
                 if attribute.reciprocal_attribute_id:
-                    self.db.query(models.EntityRelation).filter(
-                        models.EntityRelation.attribute_id == attribute.reciprocal_attribute_id,
-                        models.EntityRelation.entity_b_id == entity_id
-                    ).delete(synchronize_session=False)
+                    self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.reciprocal_attribute_id,
+                                                                   entity_b_id=entity_id).delete()
 
-                # 2. Создаем новые связи
+                # Создаем новые
                 if isinstance(value, list) and value:
-                    new_relations = []
-                    new_back_relations = []
-                    for linked_id in value:
-                        new_relations.append(models.EntityRelation(attribute_id=attribute.id, entity_a_id=entity_id,
-                                                                   entity_b_id=int(linked_id)))
-                        if attribute.reciprocal_attribute_id:
-                            new_back_relations.append(
-                                models.EntityRelation(attribute_id=attribute.reciprocal_attribute_id,
-                                                      entity_a_id=int(linked_id), entity_b_id=entity_id))
-                    self.db.add_all(new_relations + new_back_relations)
-                continue
+                    new_relations = [models.EntityRelation(attribute_id=attribute.id, entity_a_id=entity_id,
+                                                           entity_b_id=int(linked_id)) for linked_id in value]
+                    self.db.add_all(new_relations)
+                    if attribute.reciprocal_attribute_id:
+                        new_back_relations = [models.EntityRelation(attribute_id=attribute.reciprocal_attribute_id,
+                                                                    entity_a_id=int(linked_id), entity_b_id=entity_id)
+                                              for linked_id in value]
+                        self.db.add_all(new_back_relations)
+
+                continue  # <--- ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
 
             # СЦЕНАРИЙ 2: Все остальные типы, включая "один-ко-многим"
             processed_value = self._process_value(value, attribute)
