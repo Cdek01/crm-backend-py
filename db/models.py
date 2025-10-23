@@ -254,7 +254,7 @@ class Attribute(Base):
     display_name = Column(String, nullable=False)
     # Тип значения: 'string', 'integer', 'float', 'date', 'boolean'. Важно для валидации.
     value_type = Column(String, nullable=False)
-
+    relation_type = Column(String, nullable=True)
     entity_type = relationship("EntityType", back_populates="attributes",
         foreign_keys=[entity_type_id])
 
