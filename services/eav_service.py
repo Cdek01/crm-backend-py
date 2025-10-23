@@ -1185,51 +1185,35 @@ class EAVService:
 
                 display_attr_id = rel_attr.display_attribute.id
 
-                # --- НАЧАЛО НОВОЙ ЛОГИКИ ---
+                # --- НАЧАЛО ИСПРАВЛЕННОЙ ЛОГИКИ ---
                 # Сценарий 1: Связь "Многие-ко-многим"
                 if rel_attr.relation_type == 'many-to-many':
-                    source_entity_ids = [row['id'] for row in pivoted_result]
-
-                    # Находим все "ниточки" для всех записей на странице
-                    links = self.db.query(models.EntityRelation.entity_a_id, models.EntityRelation.entity_b_id).filter(
+                    # Находим все ID, связанные с ТЕКУЩЕЙ записью
+                    linked_ids_query = self.db.query(models.EntityRelation.entity_b_id).filter(
                         models.EntityRelation.attribute_id == rel_attr.id,
-                        models.EntityRelation.entity_a_id.in_(source_entity_ids)
-                    ).all()
+                        models.EntityRelation.entity_a_id == entity_id
+                    )
+                    linked_ids = {row[0] for row in linked_ids_query}
 
-                    linked_ids = {link.entity_b_id for link in links}
-                    if not linked_ids: continue
+                    if not linked_ids:
+                        pivoted_result[rel_attr.name] = []  # Возвращаем пустой список
+                        continue
 
-                    # Находим отображаемые значения для всех связанных записей
+                    # Находим отображаемые значения для этих ID
                     display_values = self._get_display_values_for_ids(linked_ids, display_attr_id)
-
-                    # Собираем связи в словарь {id_исходной_записи: [id_связанной_1, id_связанной_2]}
-                    links_map = {}
-                    for a_id, b_id in links:
-                        if a_id not in links_map: links_map[a_id] = []
-                        links_map[a_id].append(b_id)
-
-                    # Заполняем результат
-                    for row in pivoted_result:
-                        linked_display_values = []
-                        if row['id'] in links_map:
-                            for linked_id in links_map[row['id']]:
-                                if linked_id in display_values:
-                                    linked_display_values.append(display_values[linked_id])
-                        row[rel_attr.name] = linked_display_values  # Результат - МАССИВ строк
+                    pivoted_result[rel_attr.name] = list(display_values.values())
 
                 # Сценарий 2: Связь "Многие-к-одному" (старая логика)
                 else:
-                    source_ids = {row.get(rel_attr.name) for row in pivoted_result if
-                                  isinstance(row.get(rel_attr.name), int)}
-                    if not source_ids: continue
+                    source_id = pivoted_result.get(rel_attr.name)
+                    if not isinstance(source_id, int):
+                        continue
 
-                    lookup_map = self._get_display_values_for_ids(source_ids, display_attr_id)
-
-                    for row in pivoted_result:
-                        source_id = row.get(rel_attr.name)
-                        if source_id in lookup_map:
-                            row[rel_attr.name] = lookup_map[source_id]  # Результат - одна СТРОКА
-                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+                    # Используем ту же вспомогательную функцию
+                    lookup_map = self._get_display_values_for_ids({source_id}, display_attr_id)
+                    if source_id in lookup_map:
+                        pivoted_result[rel_attr.name] = lookup_map[source_id]
+                # --- КОНЕЦ ИСПРАВЛЕННОЙ ЛОГИКИ ---
 
 
                 source_id = pivoted_result.get(rel_attr.name)
