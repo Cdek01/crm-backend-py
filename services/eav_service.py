@@ -1425,8 +1425,25 @@ class EAVService:
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
+    def _get_display_values_for_ids(self, ids: set, display_attribute_id: int) -> Dict[int, str]:
+        """Для множества ID находит их отображаемые значения."""
+        if not ids:
+            return {}
 
+        results = self.db.query(
+            models.AttributeValue.entity_id,
+            models.AttributeValue.value_string,
+            models.AttributeValue.value_integer,
+            models.AttributeValue.value_float
+        ).filter(
+            models.AttributeValue.entity_id.in_(ids),
+            models.AttributeValue.attribute_id == display_attribute_id
+        ).all()
 
+        return {
+            entity_id: str(val_str or val_int or val_float or '')
+            for entity_id, val_str, val_int, val_float in results
+        }
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
 
