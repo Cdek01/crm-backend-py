@@ -684,7 +684,51 @@ class EAVService:
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
+                # --- НАЧАЛО НОВОЙ ЛОГИКИ ---
+                # Сценарий 1: Связь "Многие-ко-многим"
+                if rel_attr.relation_type == 'many-to-many':
+                    source_entity_ids = [row['id'] for row in pivoted_results]
 
+                    # Находим все "ниточки" для всех записей на странице
+                    links = self.db.query(models.EntityRelation.entity_a_id, models.EntityRelation.entity_b_id).filter(
+                        models.EntityRelation.attribute_id == rel_attr.id,
+                        models.EntityRelation.entity_a_id.in_(source_entity_ids)
+                    ).all()
+
+                    linked_ids = {link.entity_b_id for link in links}
+                    if not linked_ids: continue
+
+                    # Находим отображаемые значения для всех связанных записей
+                    display_values = self._get_display_values_for_ids(linked_ids, display_attr_id)
+
+                    # Собираем связи в словарь {id_исходной_записи: [id_связанной_1, id_связанной_2]}
+                    links_map = {}
+                    for a_id, b_id in links:
+                        if a_id not in links_map: links_map[a_id] = []
+                        links_map[a_id].append(b_id)
+
+                    # Заполняем результат
+                    for row in pivoted_results:
+                        linked_display_values = []
+                        if row['id'] in links_map:
+                            for linked_id in links_map[row['id']]:
+                                if linked_id in display_values:
+                                    linked_display_values.append(display_values[linked_id])
+                        row[rel_attr.name] = linked_display_values  # Результат - МАССИВ строк
+
+                # Сценарий 2: Связь "Многие-к-одному" (старая логика)
+                else:
+                    source_ids = {row.get(rel_attr.name) for row in pivoted_results if
+                                  isinstance(row.get(rel_attr.name), int)}
+                    if not source_ids: continue
+
+                    lookup_map = self._get_display_values_for_ids(source_ids, display_attr_id)
+
+                    for row in pivoted_results:
+                        source_id = row.get(rel_attr.name)
+                        if source_id in lookup_map:
+                            row[rel_attr.name] = lookup_map[source_id]  # Результат - одна СТРОКА
+                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
                 # Собираем все УНИКАЛЬНЫЕ ID из колонки-связи (они хранятся в value_integer)
                 source_ids = {row.get(rel_attr.name) for row in pivoted_results if
                               isinstance(row.get(rel_attr.name), int)}
@@ -1140,6 +1184,54 @@ class EAVService:
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
+
+                # --- НАЧАЛО НОВОЙ ЛОГИКИ ---
+                # Сценарий 1: Связь "Многие-ко-многим"
+                if rel_attr.relation_type == 'many-to-many':
+                    source_entity_ids = [row['id'] for row in pivoted_result]
+
+                    # Находим все "ниточки" для всех записей на странице
+                    links = self.db.query(models.EntityRelation.entity_a_id, models.EntityRelation.entity_b_id).filter(
+                        models.EntityRelation.attribute_id == rel_attr.id,
+                        models.EntityRelation.entity_a_id.in_(source_entity_ids)
+                    ).all()
+
+                    linked_ids = {link.entity_b_id for link in links}
+                    if not linked_ids: continue
+
+                    # Находим отображаемые значения для всех связанных записей
+                    display_values = self._get_display_values_for_ids(linked_ids, display_attr_id)
+
+                    # Собираем связи в словарь {id_исходной_записи: [id_связанной_1, id_связанной_2]}
+                    links_map = {}
+                    for a_id, b_id in links:
+                        if a_id not in links_map: links_map[a_id] = []
+                        links_map[a_id].append(b_id)
+
+                    # Заполняем результат
+                    for row in pivoted_result:
+                        linked_display_values = []
+                        if row['id'] in links_map:
+                            for linked_id in links_map[row['id']]:
+                                if linked_id in display_values:
+                                    linked_display_values.append(display_values[linked_id])
+                        row[rel_attr.name] = linked_display_values  # Результат - МАССИВ строк
+
+                # Сценарий 2: Связь "Многие-к-одному" (старая логика)
+                else:
+                    source_ids = {row.get(rel_attr.name) for row in pivoted_result if
+                                  isinstance(row.get(rel_attr.name), int)}
+                    if not source_ids: continue
+
+                    lookup_map = self._get_display_values_for_ids(source_ids, display_attr_id)
+
+                    for row in pivoted_result:
+                        source_id = row.get(rel_attr.name)
+                        if source_id in lookup_map:
+                            row[rel_attr.name] = lookup_map[source_id]  # Результат - одна СТРОКА
+                # --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
+
                 source_id = pivoted_result.get(rel_attr.name)
 
                 if not isinstance(source_id, int):
@@ -1316,6 +1408,47 @@ class EAVService:
 
             attribute = attributes_map[key]
             processed_value = self._process_value(value, attribute)
+
+            # --- НАЧАЛО НОВОЙ ЛОГИКИ ДЛЯ M2M ---
+            if attribute.relation_type == 'many-to-many':
+                # 1. Удаляем все старые связи для этой ячейки
+                self.db.query(models.EntityRelation).filter(
+                    models.EntityRelation.attribute_id == attribute.id,
+                    models.EntityRelation.entity_a_id == entity_id
+                ).delete(synchronize_session=False)
+
+                # 2. Создаем новые связи, если передан непустой список ID
+                if isinstance(value, list) and value:
+                    new_relations = [
+                        models.EntityRelation(
+                            attribute_id=attribute.id,
+                            entity_a_id=entity_id,
+                            entity_b_id=int(linked_id)
+                        ) for linked_id in value
+                    ]
+                    self.db.add_all(new_relations)
+
+                # 3. Обрабатываем обратную связь
+                if attribute.reciprocal_attribute_id:
+                    reciprocal_attr_id = attribute.reciprocal_attribute_id
+                    # Удаляем все старые обратные связи
+                    self.db.query(models.EntityRelation).filter(
+                        models.EntityRelation.attribute_id == reciprocal_attr_id,
+                        models.EntityRelation.entity_b_id == entity_id
+                    ).delete(synchronize_session=False)
+
+                    # Создаем новые обратные связи
+                    if isinstance(value, list) and value:
+                        new_back_relations = [
+                            models.EntityRelation(
+                                attribute_id=reciprocal_attr_id,
+                                entity_a_id=int(linked_id),
+                                entity_b_id=entity_id
+                            ) for linked_id in value
+                        ]
+                        self.db.add_all(new_back_relations)
+                continue  # Переходим к следующему ключу
+
 
             # 1. Обновляем основное значение (как и раньше)
             value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
@@ -2008,3 +2141,26 @@ class EAVService:
         logger.info(
             f"--- [DEBUG] Возвращаем самую первую пользовательскую колонку '{first_attr.name}' (ID: {first_attr.id})")
         return first_attr
+
+
+
+    # --- ДОБАВЬТЕ ЭТУ НОВУЮ ВСПОМОГАТЕЛЬНУЮ ФУНКЦИЮ ---
+    def _get_display_values_for_ids(self, ids: set, display_attribute_id: int) -> Dict[int, str]:
+        """Для списка ID находит их отображаемые значения."""
+        if not ids:
+            return {}
+
+        results = self.db.query(
+            models.AttributeValue.entity_id,
+            models.AttributeValue.value_string,
+            models.AttributeValue.value_integer,
+            models.AttributeValue.value_float
+        ).filter(
+            models.AttributeValue.entity_id.in_(ids),
+            models.AttributeValue.attribute_id == display_attribute_id
+        ).all()
+
+        return {
+            entity_id: str(val_str or val_int or val_float or '')
+            for entity_id, val_str, val_int, val_float in results
+        }

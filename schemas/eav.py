@@ -23,6 +23,12 @@ class ValueTypeEnum(str, Enum):
     relation = "relation"
 
 
+# --- ДОБАВЬТЕ ЭТОТ ENUM ---
+class RelationTypeEnum(str, Enum):
+    one_to_many = "one-to-many"
+    many_to_many = "many-to-many"
+# ----------------------------
+
 
 # --- Схемы для Атрибутов ('колонок') ---
 class AttributeBase(BaseModel):
@@ -37,7 +43,9 @@ class AttributeCreate(BaseModel):
     name: str
     display_name: str
     value_type: ValueTypeEnum  # Должен быть "relation" для этого сценария
-
+    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
+    relation_type: Optional[RelationTypeEnum] = None
+    # --------------------------
     # --- НАЧАЛО ИЗМЕНЕНИЙ ---
     # Поля для основной (прямой) связи. Теперь они могут приходить сразу при создании.
     target_entity_type_id: Optional[int] = None
@@ -72,7 +80,9 @@ class Attribute(AttributeBase):
     # --- ДОБАВЬТЕ ЭТУ СТРОКУ ---
     reciprocal_attribute_id: Optional[int] = None
     # ---------------------------
-
+    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
+    relation_type: Optional[RelationTypeEnum] = None
+    # --------------------------
     model_config = ConfigDict(from_attributes=True)
 
 

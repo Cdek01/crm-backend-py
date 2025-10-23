@@ -254,6 +254,9 @@ class Attribute(Base):
     display_name = Column(String, nullable=False)
     # Тип значения: 'string', 'integer', 'float', 'date', 'boolean'. Важно для валидации.
     value_type = Column(String, nullable=False)
+    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
+    # Тип связи: 'one-to-many' или 'many-to-many'
+    relation_type = Column(String, nullable=True)
 
     entity_type = relationship("EntityType", back_populates="attributes",
         foreign_keys=[entity_type_id])
@@ -550,3 +553,30 @@ class SelectOption(Base):
     option_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=False)
     option_list = relationship("SelectOptionList", back_populates="options")
     def __str__(self): return self.value
+
+
+# --- ДОБАВЬТЕ ЭТОТ НОВЫЙ КЛАСС ---
+class EntityRelation(Base):
+    """Таблица-связка для хранения связей Многие-ко-многим."""
+    __tablename__ = 'entity_relations'
+
+    id = Column(Integer, primary_key=True)
+
+    # Какая колонка-связь определяет эту "ниточку"
+    attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # ID "левой" стороны связи (например, ID Проекта)
+    entity_a_id = Column(Integer, ForeignKey('entities.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # ID "правой" стороны связи (например, ID Задачи)
+    entity_b_id = Column(Integer, ForeignKey('entities.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # Связи для удобного доступа
+    attribute = relationship("Attribute")
+    entity_a = relationship("Entity", foreign_keys=[entity_a_id])
+    entity_b = relationship("Entity", foreign_keys=[entity_b_id])
+
+    __table_args__ = (
+        UniqueConstraint('attribute_id', 'entity_a_id', 'entity_b_id', name='_relation_uc'),
+    )
+# ------------------------------------
