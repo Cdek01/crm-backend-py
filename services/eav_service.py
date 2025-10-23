@@ -1196,32 +1196,40 @@ class EAVService:
             existing_value = self.db.query(models.AttributeValue).filter_by(entity_id=entity_id,
                                                                             attribute_id=attribute.id).first()
 
-            # --- Обработка связей ---
+            # --- НАЧАЛО ИСПРАВЛЕНИЯ: ИСПОЛЬЗУЕМ `continue` ---
+
             if attribute.value_type == 'relation':
                 self._update_relation_value(entity, attribute, value, existing_value)
-            # --- Обработка multiselect ---
-            elif attribute.value_type == 'multiselect':
+                continue  # <-- Пропускаем остальные проверки для этого атрибута
+
+            if attribute.value_type == 'multiselect':
                 if not existing_value:
                     existing_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
                     self.db.add(existing_value)
 
                 options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value or [])).all()
                 existing_value.multiselect_values = options
-            # --- Обработка всех остальных типов ---
-            elif attribute.value_type in VALUE_FIELD_MAP:
+                continue  # <-- Пропускаем остальные проверки
+
+            if attribute.value_type in VALUE_FIELD_MAP:
                 processed_value = self._process_value(value, attribute)
                 value_field_name = VALUE_FIELD_MAP[attribute.value_type]
 
+                # Обнуляем все поля перед установкой нового значения, чтобы избежать ошибок с типами
                 if existing_value:
-                    if processed_value is None:
-                        self.db.delete(existing_value)
-                    else:
-                        setattr(existing_value, value_field_name, processed_value)
-                elif processed_value is not None:
-                    new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-                                                      **{value_field_name: processed_value})
-                    self.db.add(new_value)
+                    for field in VALUE_FIELD_MAP.values():
+                        setattr(existing_value, field, None)
 
+                if processed_value is None:
+                    if existing_value: self.db.delete(existing_value)
+                else:
+                    if not existing_value:
+                        existing_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+                        self.db.add(existing_value)
+                    setattr(existing_value, value_field_name, processed_value)
+                continue  # <-- Пропускаем остальные проверки
+
+            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         entity.updated_at = datetime.utcnow()
         self.db.commit()
 
