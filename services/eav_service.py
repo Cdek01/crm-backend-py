@@ -1340,60 +1340,71 @@ class EAVService:
 
         # --- ФИНАЛЬНАЯ ИСПРАВЛЕННАЯ ЛОГИКА ---
         for key, value in data.items():
-            if key not in attributes_map: continue
-
+            if key not in attributes_map:
+                continue
             attribute = attributes_map[key]
-            processed_value = self._process_value(value, attribute)
 
-            # 1. Обновляем основное значение (как и раньше)
+            # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
+            if attribute.relation_type == 'many-to-many':
+                # Удаляем старые связи
+                self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.id,
+                                                               entity_a_id=entity_id).delete()
+                if attribute.reciprocal_attribute_id:
+                    self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.reciprocal_attribute_id,
+                                                                   entity_b_id=entity_id).delete()
+
+                # Создаем новые
+                if isinstance(value, list) and value:
+                    new_relations = [models.EntityRelation(attribute_id=attribute.id, entity_a_id=entity_id,
+                                                           entity_b_id=int(linked_id)) for linked_id in value]
+                    self.db.add_all(new_relations)
+                    if attribute.reciprocal_attribute_id:
+                        new_back_relations = [models.EntityRelation(attribute_id=attribute.reciprocal_attribute_id,
+                                                                    entity_a_id=int(linked_id), entity_b_id=entity_id)
+                                              for linked_id in value]
+                        self.db.add_all(new_back_relations)
+
+                continue  # <--- ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
+
+            # --- СЦЕНАРИЙ 2: Все остальные типы ---
+            processed_value = self._process_value(value, attribute)
             value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
-            if not value_field_name: continue  # Пропускаем типы без хранения (напр. multiselect)
+            if not value_field_name:
+                continue
 
             existing_value = self.db.query(models.AttributeValue).filter_by(entity_id=entity_id,
                                                                             attribute_id=attribute.id).first()
+            old_linked_id = existing_value.value_integer if existing_value and attribute.value_type == 'relation' else None
 
-            old_linked_id = None
             if existing_value:
-                old_linked_id = existing_value.value_integer  # Запоминаем старый ID для очистки
                 if processed_value is None:
                     self.db.delete(existing_value)
                 else:
                     setattr(existing_value, value_field_name, processed_value)
             elif processed_value is not None:
-                new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-                                                  **{value_field_name: processed_value})
-                self.db.add(new_value)
+                self.db.add(models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+                                                  **{value_field_name: processed_value}))
 
-            # 2. Обрабатываем "зеркальную" связь, если она есть
+            # Обработка обратной связи для "один-ко-многим"
             if attribute.value_type == 'relation' and attribute.reciprocal_attribute_id:
                 reciprocal_attr_id = attribute.reciprocal_attribute_id
-                new_linked_id = processed_value  # ID новой связанной записи
+                new_linked_id = processed_value
 
-                # 2.1 Очищаем старую обратную связь
                 if old_linked_id and old_linked_id != new_linked_id:
-                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
-                        entity_id=old_linked_id,
-                        attribute_id=reciprocal_attr_id,
-                        value_integer=entity_id  # Где значением был ID ТЕКУЩЕЙ записи
-                    ).first()
+                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=old_linked_id,
+                                                                                          attribute_id=reciprocal_attr_id,
+                                                                                          value_integer=entity_id).first()
                     if old_reciprocal_value:
                         self.db.delete(old_reciprocal_value)
 
-                # 2.2 Устанавливаем новую обратную связь
                 if new_linked_id:
-                    # Проверяем, существует ли уже значение, чтобы не создавать дубли
-                    new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
-                        entity_id=new_linked_id,
-                        attribute_id=reciprocal_attr_id
-                    ).first()
+                    new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=new_linked_id,
+                                                                                          attribute_id=reciprocal_attr_id).first()
                     if new_reciprocal_value:
-                        new_reciprocal_value.value_integer = entity_id
+                        new_reciprocal_value.value_integer = new_linked_id
                     else:
-                        self.db.add(models.AttributeValue(
-                            entity_id=new_linked_id,
-                            attribute_id=reciprocal_attr_id,
-                            value_integer=entity_id
-                        ))
+                        self.db.add(models.AttributeValue(entity_id=new_linked_id, attribute_id=reciprocal_attr_id,
+                                                          value_integer=entity_id))
 
         entity.updated_at = datetime.utcnow()
         self.db.commit()
