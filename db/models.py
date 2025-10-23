@@ -255,8 +255,6 @@ class Attribute(Base):
     # Тип значения: 'string', 'integer', 'float', 'date', 'boolean'. Важно для валидации.
     value_type = Column(String, nullable=False)
 
-    allow_multiple = Column(Boolean, default=False, nullable=False)
-
     entity_type = relationship("EntityType", back_populates="attributes",
         foreign_keys=[entity_type_id])
 
@@ -552,10 +550,3 @@ class SelectOption(Base):
     option_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=False)
     option_list = relationship("SelectOptionList", back_populates="options")
     def __str__(self): return self.value
-
-
-
-
-
-
-

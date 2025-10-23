@@ -674,66 +674,52 @@ class EAVService:
         # 9. Преобразуем EAV в "плоский" список словарей
         # --- НОВАЯ, ИСПРАВЛЕННАЯ ЛОГИКА ОТОБРАЖЕНИЯ СВЯЗЕЙ (ID-BASED) ---
         pivoted_results = [self._pivot_data(e) for e in sorted_entities]
+
         relation_attributes = [attr for attr in entity_type.attributes if attr.value_type == 'relation']
 
-        if relation_attributes:
+        if relation_attributes and pivoted_results:
             for rel_attr in relation_attributes:
+                # Для ID-связи нам достаточно знать целевую таблицу и что отображать
                 if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
-                    # Если связь не настроена, присваиваем пустой массив и идем дальше
-                    for row in pivoted_results: row[rel_attr.name] = []
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
 
-                # --- НОВАЯ УНИВЕРСАЛЬНАЯ ЛОГИКА ---
+                # Собираем все УНИКАЛЬНЫЕ ID из колонки-связи (они хранятся в value_integer)
+                source_ids = {row.get(rel_attr.name) for row in pivoted_results if
+                              isinstance(row.get(rel_attr.name), int)}
 
-                # 1. Определяем, откуда брать ID связей
-                source_ids_map = {}  # {source_entity_id: [linked_id_1, linked_id_2]}
+                if not source_ids:
+                    continue
 
-                if rel_attr.allow_multiple:  # M:M и 1:M
-                    source_entity_ids = [row['id'] for row in pivoted_results]
-                    links = self.db.query(models.EntityRelation.entity_a_id, models.EntityRelation.entity_b_id).filter(
-                        models.EntityRelation.attribute_id == rel_attr.id,
-                        models.EntityRelation.entity_a_id.in_(source_entity_ids)
-                    ).all()
-                    for a_id, b_id in links:
-                        if a_id not in source_ids_map: source_ids_map[a_id] = []
-                        source_ids_map[a_id].append(b_id)
-                else:  # 1:1 и M:1
-                    for row in pivoted_results:
-                        linked_id = row.get(rel_attr.name)
-                        if isinstance(linked_id, int):
-                            source_ids_map[row['id']] = [linked_id]
+                # Находим отображаемые значения для всех этих ID одним запросом
+                # Мы ищем в таблице AttributeValue значения для нужных ID сущностей и нужной колонки.
+                display_values_query = self.db.query(
+                    models.AttributeValue.entity_id,
+                    models.AttributeValue.value_string,
+                    models.AttributeValue.value_integer,
+                    models.AttributeValue.value_float
+                ).filter(
+                    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+                    # Оборачиваем условия в `and_`
+                    and_(
+                        models.AttributeValue.entity_id.in_(source_ids),
+                        models.AttributeValue.attribute_id == display_attr_id
+                    )
+                    # ---------------------------
+                ).all()
 
-                # 2. Находим все уникальные связанные ID и их отображаемые значения
-                all_linked_ids = {id for ids in source_ids_map.values() for id in ids}
-                display_values_map = self._get_display_values_for_ids(all_linked_ids, display_attr_id)
+                # Создаем удобный словарь-справку: {id_записи: 'Отображаемое значение'}
+                lookup_map = {
+                    entity_id: str(val_str or val_int or val_float or '')
+                    for entity_id, val_str, val_int, val_float in display_values_query
+                }
 
-                # 3. Формируем финальный результат
+                # Проходим по результатам и заменяем ID на отображаемые значения
                 for row in pivoted_results:
-                    result_array = []
-                    linked_ids = source_ids_map.get(row['id'], [])
-                    for lid in linked_ids:
-                        if lid in display_values_map:
-                            result_array.append({
-                                "id": lid,
-                                "display_value": display_values_map[lid]
-                            })
-                    row[rel_attr.name] = result_array  # ВСЕГДА возвращаем массив
-
-                # Сценарий 2: Связь "Многие-к-одному"
-                else:
-                    source_ids = {row.get(rel_attr.name) for row in pivoted_results if
-                                  isinstance(row.get(rel_attr.name), int)}
-                    if not source_ids:
-                        continue
-
-                    lookup_map = self._get_display_values_for_ids(source_ids, display_attr_id)
-
-                    for row in pivoted_results:
-                        source_id = row.get(rel_attr.name)
-                        if source_id in lookup_map:
-                            row[rel_attr.name] = lookup_map[source_id]
+                    source_id = row.get(rel_attr.name)
+                    if source_id in lookup_map:
+                        row[rel_attr.name] = lookup_map[source_id]
 
         return {"total": total_count, "data": pivoted_results}
 
@@ -937,7 +923,187 @@ class EAVService:
             self.db.commit()
             self.db.refresh(db_attribute)
             return db_attribute
+    # def create_attribute_for_type(
+    #         self,
+    #         entity_type_id: int,
+    #         attribute_in: AttributeCreate,
+    #         current_user: models.User
+    # ) -> models.Attribute:
+    #     """
+    #     Создает новый атрибут ('колонку').
+    #     Обрабатывает создание обычных полей и двусторонних ID-based связей.
+    #     """
+    #     # Шаг 1: Проверка доступа (остается без изменений)
+    #     source_entity_type = self.get_entity_type_by_id(
+    #         entity_type_id=entity_type_id,
+    #         current_user=current_user
+    #     )
+    #
+    #     # --- СЦЕНАРИЙ 1: Создание двусторонней связи ---
+    #     if attribute_in.create_back_relation and attribute_in.value_type == 'relation':
+    #         # Валидация
+    #         if not all([
+    #             attribute_in.target_entity_type_id,
+    #             attribute_in.display_attribute_id,
+    #             attribute_in.back_relation_name,
+    #             attribute_in.back_relation_display_name,
+    #             attribute_in.back_relation_display_attribute_id
+    #         ]):
+    #             raise HTTPException(status_code=400,
+    #                                 detail="Для создания двусторонней связи не хватает обязательных полей.")
+    #
+    #         # Создаем ОСНОВНОЙ атрибут
+    #         main_attr = models.Attribute(
+    #             name=attribute_in.name,
+    #             display_name=attribute_in.display_name,
+    #             value_type=attribute_in.value_type.value,  # Используем .value для Enum
+    #             entity_type_id=entity_type_id,
+    #             target_entity_type_id=attribute_in.target_entity_type_id,
+    #             display_attribute_id=attribute_in.display_attribute_id
+    #         )
+    #
+    #         # Создаем ОБРАТНЫЙ атрибут
+    #         back_relation_attr = models.Attribute(
+    #             name=attribute_in.back_relation_name,
+    #             display_name=attribute_in.back_relation_display_name,
+    #             value_type=attribute_in.value_type.value,
+    #             entity_type_id=attribute_in.target_entity_type_id,
+    #             target_entity_type_id=source_entity_type.id,
+    #             display_attribute_id=attribute_in.back_relation_display_attribute_id
+    #         )
+    #
+    #         self.db.add(main_attr)
+    #         self.db.add(back_relation_attr)
+    #         self.db.flush()  # <-- ВАЖНО: Используем flush, чтобы получить ID
+    #
+    #         # --- НАЧАЛО ИЗМЕНЕНИЙ: "Сшиваем" связи ---
+    #         main_attr.reciprocal_attribute_id = back_relation_attr.id
+    #         back_relation_attr.reciprocal_attribute_id = main_attr.id
+    #         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    #
+    #         self.db.commit()  # Теперь коммитим все вместе
+    #         self.db.refresh(main_attr)
+    #         return main_attr
+    #
+    #     # --- СЦЕНАРИИ 2 и 3: Создание ЛЮБОЙ обычной колонки ---
+    #     else:
+    #         # ЯВНО и БЕЗОПАСНО собираем данные для конструктора SQLAlchemy
+    #         attr_data_for_db = {
+    #             "name": attribute_in.name,
+    #             "display_name": attribute_in.display_name,
+    #             "value_type": attribute_in.value_type.value,  # Используем .value для Enum
+    #             "entity_type_id": entity_type_id
+    #         }
+    #
+    #         # Добавляем опциональные поля, только если они были переданы
+    #         if attribute_in.formula_text is not None:
+    #             attr_data_for_db["formula_text"] = attribute_in.formula_text
+    #         if attribute_in.currency_symbol is not None:
+    #             attr_data_for_db["currency_symbol"] = attribute_in.currency_symbol
+    #         # Для односторонних связей
+    #         if attribute_in.target_entity_type_id is not None:
+    #             attr_data_for_db["target_entity_type_id"] = attribute_in.target_entity_type_id
+    #         if attribute_in.display_attribute_id is not None:
+    #             attr_data_for_db["display_attribute_id"] = attribute_in.display_attribute_id
+    #
+    #         # Обработка select-списков
+    #         if attribute_in.value_type == 'select' and attribute_in.list_items:
+    #             unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+    #             new_list = models.SelectOptionList(name=unique_name, tenant_id=current_user.tenant_id)
+    #             self.db.add(new_list)
+    #             for item_value in attribute_in.list_items:
+    #                 if item_value:
+    #                     self.db.add(models.SelectOption(value=item_value, option_list=new_list))
+    #             self.db.flush()
+    #             attr_data_for_db['select_list_id'] = new_list.id
+    #
+    #         # Создаем атрибут из "чистого", собранного вручную словаря
+    #         db_attribute = models.Attribute(**attr_data_for_db)
+    #         self.db.add(db_attribute)
+    #         self.db.commit()
+    #         self.db.refresh(db_attribute)
+    #         return db_attribute
+    # # def create_attribute_for_type(
+    #         self,
+    #         entity_type_id: int,
+    #         attribute_in: AttributeCreate,
+    #         current_user: models.User
+    # ) -> models.Attribute:
+    #     """
+    #     Создает новый атрибут ('колонку').
+    #     """
+    #     # 1. Проверяем доступ к родительской таблице
+    #     # entity_type = self.db.query(models.EntityType).filter(
+    #     #     models.EntityType.id == entity_type_id,
+    #     #     models.EntityType.tenant_id == current_user.tenant_id
+    #     # ).first()
+    #     # if not entity_type:
+    #     #     raise HTTPException(status_code=404, detail="Тип сущности не найден")
+    #     entity_type = self.get_entity_type_by_id(
+    #         entity_type_id=entity_type_id,
+    #         current_user=current_user
+    #     )
+    #     if not entity_type:
+    #         raise HTTPException(status_code=404, detail="Тип сущности не найден")
+    #
+    #
+    #     # 2. Подготавливаем словарь с данными
+    #     attr_data = attribute_in.model_dump(exclude={"list_items"})
+    #     attr_data['entity_type_id'] = entity_type_id
+    #
+    #     # 3. Если это 'select' и переданы элементы, создаем список
+    #     if attribute_in.value_type == 'select' and attribute_in.list_items:
+    #         unique_name = f"Список для '{attribute_in.display_name}' ({int(time.time())})"
+    #         new_list = models.SelectOptionList(
+    #             name=unique_name,
+    #             tenant_id=current_user.tenant_id
+    #         )
+    #         # СНАЧАЛА добавляем в сессию
+    #         self.db.add(new_list)
+    #
+    #         for item_value in attribute_in.list_items:
+    #             if item_value:
+    #                 new_option = models.SelectOption(value=item_value, option_list=new_list)
+    #                 self.db.add(new_option)
+    #
+    #         # ТЕПЕРЬ делаем flush, чтобы получить ID
+    #         self.db.flush()
+    #
+    #         # ЯВНО добавляем ID списка в наши данные
+    #         attr_data['select_list_id'] = new_list.id
+    #
+    #     # 4. Создаем сам атрибут из подготовленного словаря
+    #     db_attribute = models.Attribute(**attr_data)
+    #     self.db.add(db_attribute)
+    #
+    #     # 5. Коммитим ВСЕ одной транзакцией
+    #     self.db.commit()
+    #     self.db.refresh(db_attribute)
+    #
+    #     # 6. Возвращаем объект SQLAlchemy
+    #     return db_attribute
 
+
+
+
+
+    # def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
+    #     """Получить одну запись по ID с проверкой прав."""
+    #     entity = self.db.query(models.Entity).options(
+    #         joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute).joinedload(
+    #             models.Attribute.entity_type)
+    #     ).get(entity_id)
+    #
+    #     if not entity:
+    #         raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     # --- ИСПРАВЛЕНИЕ: Проверка прав доступа ---
+    #     if not current_user.is_superuser:
+    #         if entity.entity_type.tenant_id != current_user.tenant_id:
+    #             raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     return self._pivot_data(entity)
+    # Замените ВЕСЬ метод get_entity_by_id на этот
 
     def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
         """
@@ -971,65 +1137,26 @@ class EAVService:
         if relation_attributes:
             for rel_attr in relation_attributes:
                 if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
-                    # Если связь не настроена, присваиваем пустой массив и идем дальше
-                    for row in pivoted_result: row[rel_attr.name] = []
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
+                source_id = pivoted_result.get(rel_attr.name)
 
-                # --- НОВАЯ УНИВЕРСАЛЬНАЯ ЛОГИКА ---
+                if not isinstance(source_id, int):
+                    continue
 
-                # 1. Определяем, откуда брать ID связей
-                source_ids_map = {}  # {source_entity_id: [linked_id_1, linked_id_2]}
+                display_value_result = self.db.query(
+                    models.AttributeValue.value_string,
+                    models.AttributeValue.value_integer,
+                    models.AttributeValue.value_float
+                ).filter(
+                    models.AttributeValue.entity_id == source_id,
+                    models.AttributeValue.attribute_id == display_attr_id
+                ).first()
 
-                if rel_attr.allow_multiple:  # M:M и 1:M
-                    source_entity_ids = [row['id'] for row in pivoted_result]
-                    links = self.db.query(models.EntityRelation.entity_a_id, models.EntityRelation.entity_b_id).filter(
-                        models.EntityRelation.attribute_id == rel_attr.id,
-                        models.EntityRelation.entity_a_id.in_(source_entity_ids)
-                    ).all()
-                    for a_id, b_id in links:
-                        if a_id not in source_ids_map: source_ids_map[a_id] = []
-                        source_ids_map[a_id].append(b_id)
-                else:  # 1:1 и M:1
-                    for row in pivoted_result:
-                        linked_id = row.get(rel_attr.name)
-                        if isinstance(linked_id, int):
-                            source_ids_map[row['id']] = [linked_id]
-
-                # 2. Находим все уникальные связанные ID и их отображаемые значения
-                all_linked_ids = {id for ids in source_ids_map.values() for id in ids}
-                display_values_map = self._get_display_values_for_ids(all_linked_ids, display_attr_id)
-
-                # 3. Формируем финальный результат
-                for row in pivoted_result:
-                    result_array = []
-                    linked_ids = source_ids_map.get(row['id'], [])
-                    for lid in linked_ids:
-                        if lid in display_values_map:
-                            result_array.append({
-                                "id": lid,
-                                "display_value": display_values_map[lid]
-                            })
-                    row[rel_attr.name] = result_array  # ВСЕГДА возвращаем массив
-
-                # source_id = pivoted_result.get(rel_attr.name)
-                #
-                # if not isinstance(source_id, int):
-                #     continue
-                #
-                # display_value_result = self.db.query(
-                #     models.AttributeValue.value_string,
-                #     models.AttributeValue.value_integer,
-                #     models.AttributeValue.value_float
-                # ).filter(
-                #     models.AttributeValue.entity_id == source_id,
-                #     models.AttributeValue.attribute_id == display_attr_id
-                # ).first()
-                #
-                # if display_value_result:
-                #     val_str, val_int, val_float = display_value_result
-                #     pivoted_result[rel_attr.name] = str(val_str or val_int or val_float or '')
+                if display_value_result:
+                    val_str, val_int, val_float = display_value_result
+                    pivoted_result[rel_attr.name] = str(val_str or val_int or val_float or '')
 
         return pivoted_result
 
@@ -1037,6 +1164,125 @@ class EAVService:
 
 
 
+    # def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+    #     """Обновить запись с корректным преобразованием типов."""
+    #     from tasks.messaging import send_webhook_task, send_sms_for_entity_task
+    #     # --- ДОБАВЬТЕ ЛОГИРОВАНИЕ ---
+    #     logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
+    #     logger.debug(f"Входящие данные (data): {data}")  # debug для менее важной информации
+    #
+    #
+    #     # --- ПРОВЕРКА ФЛАГА ---
+    #     is_external_update = data.pop("_source", None) is not None
+    #     # ---------------------
+    #     logger.info(f"is_external_update: {is_external_update}")
+    #
+    #     # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
+    #     self.get_entity_by_id(entity_id, current_user)
+    #
+    #     # 2. Загружаем сам SQLAlchemy объект для работы
+    #     entity = self.db.query(models.Entity).options(
+    #         joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
+    #     ).get(entity_id)
+    #
+    #     if not entity:  # Дополнительная проверка на случай, если сущность удалили
+    #         raise HTTPException(status_code=404, detail="Сущность не найдена")
+    #
+    #     attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
+    #
+    #     # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД ОБНОВЛЕНИЕМ ---
+    #     # Внедряем текущую дату, если колонка "Дата изменения" существует
+    #     if 'modification_date' in attributes_map:
+    #         data['modification_date'] = datetime.utcnow().isoformat()
+    #     # -------------------------------------------------
+    #
+    #     # 3. Проверяем триггер SMS и модифицируем входящие данные
+    #     if data.get("send_sms_trigger") is True:
+    #         data["sms_status"] = "pending"
+    #         data["send_sms_trigger"] = False  # Сбрасываем триггер
+    #         send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
+    #
+    #     # --- НАЧАЛО НОВОЙ ЛОГИКИ: Обновляем значения и "зеркальные" связи ---
+    #     reciprocal_updates = []
+    #     # 4. Обновляем значения атрибутов
+    #     for key, value in data.items():
+    #         if key not in attributes_map:
+    #             continue
+    #
+    #         attribute = attributes_map[key]
+    #         # --- Блок обновления значения (как и раньше, но с одним дополнением) ---
+    #         # ... (весь ваш код для multiselect и обычных типов) ...
+    #         # Внутри `elif attribute.value_type in VALUE_FIELD_MAP:`:
+    #         # 1. Обрабатываем значение
+    #         processed_value = self._process_value(value, attribute)
+    #         # 2. Обновляем или создаем AttributeValue
+    #         # ... (ваш код с existing_value и new_value)
+    #         # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    #         if attribute.value_type == 'multiselect':
+    #             # Загружаем существующий AttributeValue-контейнер вместе с его содержимым
+    #             existing_value_container = self.db.query(models.AttributeValue).options(
+    #                 joinedload(models.AttributeValue.multiselect_values)
+    #             ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
+    #
+    #             # Если пользователь передал пустой список или не список, очищаем значения
+    #             if not isinstance(value, list) or not value:
+    #                 if existing_value_container:
+    #                     existing_value_container.multiselect_values.clear()
+    #                 continue
+    #
+    #             # Если контейнера еще нет, создаем его
+    #             if not existing_value_container:
+    #                 existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+    #                 self.db.add(existing_value_container)
+    #
+    #             # Находим и присваиваем новые опции (SQLAlchemy сам разберется, что добавить/удалить)
+    #             options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+    #             existing_value_container.multiselect_values = options
+    #
+    #         elif attribute.value_type in VALUE_FIELD_MAP:
+    #             # Старая логика для всех остальных типов
+    #             processed_value = self._process_value(value, attribute)
+    #             value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+    #             existing_value = self.db.query(models.AttributeValue).filter_by(
+    #                 entity_id=entity_id, attribute_id=attribute.id
+    #             ).first()
+    #
+    #             if existing_value:
+    #                 if processed_value is None:
+    #                     self.db.delete(existing_value)
+    #                 else:
+    #                     for field in VALUE_FIELD_MAP.values():
+    #                         setattr(existing_value, field, None)
+    #                     setattr(existing_value, value_field_name, processed_value)
+    #             elif processed_value is not None:
+    #                 new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+    #                                                   **{value_field_name: processed_value})
+    #                 self.db.add(new_value)
+    #         # ---------------------------
+    #
+    #     # 5. Обновляем `updated_at` у самой сущности
+    #     entity.updated_at = datetime.utcnow()
+    #     self.db.add(entity)
+    #
+    #     # 6. Сохраняем все изменения
+    #     self.db.commit()
+    #     logger.info(f"Данные для entity_id={entity_id} закоммичены.")
+    #     # Логика отправки уведомления
+    #     if not is_external_update:
+    #         logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
+    #         entity_type_name = entity.entity_type.name
+    #         send_webhook_task.delay(
+    #             event_type="update",
+    #             table_name=entity_type_name,
+    #             entity_id=entity_id,
+    #             data=data,
+    #             tenant_id=current_user.tenant_id
+    #         )
+    #     else:
+    #         logger.info("Условие 'not is_external_update' НЕ пройдено. Уведомление webhook не отправляется.")
+    #
+    #     logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
+    #     return self.get_entity_by_id(entity_id, current_user)
 
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
@@ -1066,71 +1312,60 @@ class EAVService:
 
         # --- ФИНАЛЬНАЯ ИСПРАВЛЕННАЯ ЛОГИКА ---
         for key, value in data.items():
-            if key not in attributes_map:
-                continue
+            if key not in attributes_map: continue
+
             attribute = attributes_map[key]
-
-            # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
-            if attribute.relation_type == 'many-to-many':
-                # Удаляем старые связи
-                self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.id,
-                                                               entity_a_id=entity_id).delete()
-                if attribute.reciprocal_attribute_id:
-                    self.db.query(models.EntityRelation).filter_by(attribute_id=attribute.reciprocal_attribute_id,
-                                                                   entity_b_id=entity_id).delete()
-
-                # Создаем новые
-                if isinstance(value, list) and value:
-                    new_relations = [models.EntityRelation(attribute_id=attribute.id, entity_a_id=entity_id,
-                                                           entity_b_id=int(linked_id)) for linked_id in value]
-                    self.db.add_all(new_relations)
-                    if attribute.reciprocal_attribute_id:
-                        new_back_relations = [models.EntityRelation(attribute_id=attribute.reciprocal_attribute_id,
-                                                                    entity_a_id=int(linked_id), entity_b_id=entity_id)
-                                              for linked_id in value]
-                        self.db.add_all(new_back_relations)
-
-                continue  # <--- ВОТ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
-
-            # --- СЦЕНАРИЙ 2: Все остальные типы ---
             processed_value = self._process_value(value, attribute)
+
+            # 1. Обновляем основное значение (как и раньше)
             value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
-            if not value_field_name:
-                continue
+            if not value_field_name: continue  # Пропускаем типы без хранения (напр. multiselect)
 
             existing_value = self.db.query(models.AttributeValue).filter_by(entity_id=entity_id,
                                                                             attribute_id=attribute.id).first()
-            old_linked_id = existing_value.value_integer if existing_value and attribute.value_type == 'relation' else None
 
+            old_linked_id = None
             if existing_value:
+                old_linked_id = existing_value.value_integer  # Запоминаем старый ID для очистки
                 if processed_value is None:
                     self.db.delete(existing_value)
                 else:
                     setattr(existing_value, value_field_name, processed_value)
             elif processed_value is not None:
-                self.db.add(models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-                                                  **{value_field_name: processed_value}))
+                new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+                                                  **{value_field_name: processed_value})
+                self.db.add(new_value)
 
-            # Обработка обратной связи для "один-ко-многим"
+            # 2. Обрабатываем "зеркальную" связь, если она есть
             if attribute.value_type == 'relation' and attribute.reciprocal_attribute_id:
                 reciprocal_attr_id = attribute.reciprocal_attribute_id
-                new_linked_id = processed_value
+                new_linked_id = processed_value  # ID новой связанной записи
 
+                # 2.1 Очищаем старую обратную связь
                 if old_linked_id and old_linked_id != new_linked_id:
-                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=old_linked_id,
-                                                                                          attribute_id=reciprocal_attr_id,
-                                                                                          value_integer=entity_id).first()
+                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
+                        entity_id=old_linked_id,
+                        attribute_id=reciprocal_attr_id,
+                        value_integer=entity_id  # Где значением был ID ТЕКУЩЕЙ записи
+                    ).first()
                     if old_reciprocal_value:
                         self.db.delete(old_reciprocal_value)
 
+                # 2.2 Устанавливаем новую обратную связь
                 if new_linked_id:
-                    new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(entity_id=new_linked_id,
-                                                                                          attribute_id=reciprocal_attr_id).first()
+                    # Проверяем, существует ли уже значение, чтобы не создавать дубли
+                    new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
+                        entity_id=new_linked_id,
+                        attribute_id=reciprocal_attr_id
+                    ).first()
                     if new_reciprocal_value:
-                        new_reciprocal_value.value_integer = new_linked_id
+                        new_reciprocal_value.value_integer = entity_id
                     else:
-                        self.db.add(models.AttributeValue(entity_id=new_linked_id, attribute_id=reciprocal_attr_id,
-                                                          value_integer=entity_id))
+                        self.db.add(models.AttributeValue(
+                            entity_id=new_linked_id,
+                            attribute_id=reciprocal_attr_id,
+                            value_integer=entity_id
+                        ))
 
         entity.updated_at = datetime.utcnow()
         self.db.commit()
@@ -1151,25 +1386,8 @@ class EAVService:
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
-    def _get_display_values_for_ids(self, ids: set, display_attribute_id: int) -> Dict[int, str]:
-        """Для множества ID находит их отображаемые значения."""
-        if not ids:
-            return {}
 
-        results = self.db.query(
-            models.AttributeValue.entity_id,
-            models.AttributeValue.value_string,
-            models.AttributeValue.value_integer,
-            models.AttributeValue.value_float
-        ).filter(
-            models.AttributeValue.entity_id.in_(ids),
-            models.AttributeValue.attribute_id == display_attribute_id
-        ).all()
 
-        return {
-            entity_id: str(val_str or val_int or val_float or '')
-            for entity_id, val_str, val_int, val_float in results
-        }
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
 
@@ -1451,6 +1669,49 @@ class EAVService:
         # Коммитим удаление
         self.db.commit()
         return None
+    # def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
+    #     """
+    #     Удалить атрибут ('колонку') из типа сущности и все его значения.
+    #     """
+    #     # 1. Сначала проверяем, что сам тип сущности (таблица) существует
+    #     # и принадлежит текущему пользователю. Это защищает от попытки удалить
+    #     # колонку из чужой таблицы.
+    #     self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
+    #
+    #     # 2. Находим сам атрибут, который нужно удалить.
+    #     # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
+    #     attribute_to_delete = self.db.query(models.Attribute).filter(
+    #         models.Attribute.id == attribute_id,
+    #         models.Attribute.entity_type_id == entity_type_id
+    #     ).first()
+    #
+    #     # 3. Если атрибут не найден, возвращаем ошибку.
+    #     if not attribute_to_delete:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_404_NOT_FOUND,
+    #             detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
+    #         )
+    #
+    #     # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
+    #     system_attributes = [
+    #         "send_sms_trigger", "sms_status", "sms_last_error",
+    #         "phone_number", "message_text"
+    #     ]
+    #     if attribute_to_delete.name in system_attributes:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_400_BAD_REQUEST,
+    #             detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
+    #         )
+    #
+    #     # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
+    #     # будут удалены автоматически на уровне базы данных.
+    #     self.db.delete(attribute_to_delete)
+    #     self.db.commit()
+    #
+    #     return None
+
+
+
 
 
     def update_entity_type(
