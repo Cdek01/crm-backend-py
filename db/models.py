@@ -32,7 +32,14 @@ attribute_value_multiselect_options = Table(
     Column('select_option_id', Integer, ForeignKey('select_options.id', ondelete="CASCADE"), primary_key=True)
 )
 # ------------------------------------
-
+# Связывает одну ячейку (AttributeValue) с несколькими записями (Entity)
+# для реализации связи "многие-ко-многим".
+attribute_value_many_to_many_links = Table(
+    'attribute_value_many_to_many_links', Base.metadata,
+    Column('attribute_value_id', Integer, ForeignKey('attribute_values.id', ondelete="CASCADE"), primary_key=True),
+    Column('target_entity_id', Integer, ForeignKey('entities.id', ondelete="CASCADE"), primary_key=True)
+)
+# -----------------------------
 
 class Tenant(Base):
     __tablename__ = 'tenants'
@@ -293,6 +300,11 @@ class Attribute(Base):
     display_attribute = relationship("Attribute", foreign_keys=[display_attribute_id], remote_side=[id])
 
     back_relation_display_attribute = relationship("Attribute", foreign_keys=[back_relation_display_attribute_id], remote_side=[id])
+    # --- ДОБАВЬТЕ ЭТО ПОЛЕ ---
+    # Если True, то эта колонка-связь может хранить ссылки на несколько записей (многие-ко-многим).
+    # Если False, то только на одну (один-ко-многим).
+    allow_multiple_selection = Column(Boolean, default=False, nullable=False)
+    # ---------------------------
     reciprocal_attribute = relationship("Attribute", foreign_keys=[reciprocal_attribute_id], uselist=False)
 
     def __str__(self):
@@ -360,7 +372,12 @@ class AttributeValue(Base):
         "SelectOption",
         secondary=attribute_value_multiselect_options
     )
-
+    # --- ДОБАВЬТЕ ЭТОТ RELATIONSHIP ---
+    # Это "виртуальное" поле для доступа к связанным записям через нашу новую таблицу.
+    many_to_many_links = relationship(
+        "Entity",
+        secondary=attribute_value_many_to_many_links
+    )
     def __str__(self):
         # Эта функция вернет первое непустое значение из полей
         value = (

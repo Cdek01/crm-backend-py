@@ -388,45 +388,35 @@ class EAVService:
         return None
     # --- МЕТОДЫ ДЛЯ ДАННЫХ (Строки в таблицах) ---
 
-
     def _pivot_data(self, entity: models.Entity) -> Dict[str, Any]:
         result = {
             "id": entity.id,
             "created_at": entity.created_at,
             "updated_at": entity.updated_at,
-            "position": entity.position # <-- ДОБАВЬТЕ ЭТО ПОЛЕ
-        }        # --- ИСПРАВЛЕНИЕ: Добавляем проверку, что атрибуты существуют ---
+            "position": entity.position
+        }
         if entity.values and entity.values[0].attribute:
             result['tenant_id'] = entity.values[0].attribute.entity_type.tenant_id
-        # -------------------------------------------------------------
+
         for value_obj in entity.values:
-            attr_name = value_obj.attribute.name
-            value_type = value_obj.attribute.value_type
-            # --- ИЗМЕНЕННАЯ ЛОГИКА ---
-            if value_type == 'multiselect':
-                db_field = VALUE_FIELD_MAP[value_type]
-                # Если тип multiselect, собираем ID и значения выбранных опций.
-                # Мы используем joinedload, чтобы эти данные уже были загружены.
-                result[attr_name] = [
-                    {"id": opt.id, "value": opt.value}
-                    for opt in value_obj.multiselect_values
-                ]
+            attr = value_obj.attribute
+            attr_name = attr.name
+            value_type = attr.value_type
+
+            if value_type == 'relation' and attr.allow_multiple_selection:
+                # Для связи "многие-ко-многим" сразу формируем список ID
+                # Мы не делаем lookup здесь для производительности, он будет позже
+                result[attr_name] = [link.id for link in value_obj.many_to_many_links]
+            elif value_type == 'multiselect':
+            # ... (логика для multiselect без изменений)
             elif value_type in VALUE_FIELD_MAP:
-                # Старая логика для всех остальных типов
                 db_field = VALUE_FIELD_MAP[value_type]
                 result[attr_name] = getattr(value_obj, db_field)
 
-        # Шаг 2: Теперь проходим по всем колонкам таблицы и вычисляем формулы
         for attribute in entity.entity_type.attributes:
             if attribute.value_type == 'formula' and attribute.formula_text:
-                # Вызываем наш "движок"
-                # `result` здесь - это уже "плоский" словарь с данными строки
                 formula_value = self._calculate_formula(attribute.formula_text, result)
-
-                # Записываем результат (или None) в итоговый JSON
                 result[attribute.name] = formula_value
-
-
 
         return result
 
@@ -679,34 +669,38 @@ class EAVService:
 
         if relation_attributes and pivoted_results:
             for rel_attr in relation_attributes:
-                # Для ID-связи нам достаточно знать целевую таблицу и что отображать
                 if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
                     continue
 
                 display_attr_id = rel_attr.display_attribute.id
 
-                # Собираем все УНИКАЛЬНЫЕ ID из колонки-связи (они хранятся в value_integer)
-                source_ids = {row.get(rel_attr.name) for row in pivoted_results if
-                              isinstance(row.get(rel_attr.name), int)}
+                # Собираем все УНИКАЛЬНЫЕ ID из колонки-связи
+                source_ids = set()
+                if rel_attr.allow_multiple_selection:
+                    # Для "многие-ко-многим" проходим по вложенным спискам
+                    for row in pivoted_results:
+                        if isinstance(row.get(rel_attr.name), list):
+                            source_ids.update(row.get(rel_attr.name))
+                else:
+                    # Для "один-ко-многим" просто собираем значения
+                    source_ids.update(
+                        row.get(rel_attr.name) for row in pivoted_results if isinstance(row.get(rel_attr.name), int)
+                    )
 
                 if not source_ids:
                     continue
 
                 # Находим отображаемые значения для всех этих ID одним запросом
-                # Мы ищем в таблице AttributeValue значения для нужных ID сущностей и нужной колонки.
                 display_values_query = self.db.query(
                     models.AttributeValue.entity_id,
                     models.AttributeValue.value_string,
                     models.AttributeValue.value_integer,
                     models.AttributeValue.value_float
                 ).filter(
-                    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-                    # Оборачиваем условия в `and_`
                     and_(
                         models.AttributeValue.entity_id.in_(source_ids),
                         models.AttributeValue.attribute_id == display_attr_id
                     )
-                    # ---------------------------
                 ).all()
 
                 # Создаем удобный словарь-справку: {id_записи: 'Отображаемое значение'}
@@ -717,9 +711,19 @@ class EAVService:
 
                 # Проходим по результатам и заменяем ID на отображаемые значения
                 for row in pivoted_results:
-                    source_id = row.get(rel_attr.name)
-                    if source_id in lookup_map:
-                        row[rel_attr.name] = lookup_map[source_id]
+                    if rel_attr.allow_multiple_selection:
+                        # Заменяем список ID на список объектов
+                        source_id_list = row.get(rel_attr.name)
+                        if isinstance(source_id_list, list):
+                            row[rel_attr.name] = [
+                                {"id": sid, "value": lookup_map.get(sid)}
+                                for sid in source_id_list if sid in lookup_map
+                            ]
+                    else:
+                        # Заменяем один ID на одно значение (как и раньше)
+                        source_id = row.get(rel_attr.name)
+                        if source_id in lookup_map:
+                            row[rel_attr.name] = lookup_map[source_id]
 
         return {"total": total_count, "data": pivoted_results}
 
@@ -852,7 +856,8 @@ class EAVService:
                 "name": attribute_in.name, "display_name": attribute_in.display_name,
                 "value_type": attribute_in.value_type.value, "entity_type_id": entity_type_id,
                 "target_entity_type_id": target_entity_type_obj.id,
-                "display_attribute_id": display_attr_id_for_main
+                "display_attribute_id": display_attr_id_for_main,
+                "allow_multiple_selection": attribute_in.allow_multiple_selection  # <-- ДОБАВЬТЕ ЭТО
             }
             logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: Данные для создания = {main_attr_data}")
             main_attr = models.Attribute(**main_attr_data)
@@ -880,7 +885,9 @@ class EAVService:
                     "name": back_name, "display_name": back_display_name,
                     "value_type": "relation", "entity_type_id": target_entity_type_obj.id,
                     "target_entity_type_id": source_entity_type_obj.id,
-                    "display_attribute_id": back_display_attr_id
+                    "display_attribute_id": back_display_attr_id,
+                    # Обратная связь тоже должна поддерживать множественный выбор
+                    "allow_multiple_selection": attribute_in.allow_multiple_selection  # <-- И ЭТО
                 }
                 logger.info(f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Данные для создания = {back_relation_attr_data}")
                 back_relation_attr = models.Attribute(**back_relation_attr_data)
@@ -1160,129 +1167,9 @@ class EAVService:
 
         return pivoted_result
 
+        # services/eav_service.py
 
-
-
-
-    # def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
-    #     """Обновить запись с корректным преобразованием типов."""
-    #     from tasks.messaging import send_webhook_task, send_sms_for_entity_task
-    #     # --- ДОБАВЬТЕ ЛОГИРОВАНИЕ ---
-    #     logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
-    #     logger.debug(f"Входящие данные (data): {data}")  # debug для менее важной информации
-    #
-    #
-    #     # --- ПРОВЕРКА ФЛАГА ---
-    #     is_external_update = data.pop("_source", None) is not None
-    #     # ---------------------
-    #     logger.info(f"is_external_update: {is_external_update}")
-    #
-    #     # 1. Сначала получаем сущность с проверкой прав, чтобы убедиться в доступе.
-    #     self.get_entity_by_id(entity_id, current_user)
-    #
-    #     # 2. Загружаем сам SQLAlchemy объект для работы
-    #     entity = self.db.query(models.Entity).options(
-    #         joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
-    #     ).get(entity_id)
-    #
-    #     if not entity:  # Дополнительная проверка на случай, если сущность удалили
-    #         raise HTTPException(status_code=404, detail="Сущность не найдена")
-    #
-    #     attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
-    #
-    #     # --- ДОБАВЬТЕ ЭТУ СТРОКУ ПЕРЕД ОБНОВЛЕНИЕМ ---
-    #     # Внедряем текущую дату, если колонка "Дата изменения" существует
-    #     if 'modification_date' in attributes_map:
-    #         data['modification_date'] = datetime.utcnow().isoformat()
-    #     # -------------------------------------------------
-    #
-    #     # 3. Проверяем триггер SMS и модифицируем входящие данные
-    #     if data.get("send_sms_trigger") is True:
-    #         data["sms_status"] = "pending"
-    #         data["send_sms_trigger"] = False  # Сбрасываем триггер
-    #         send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
-    #
-    #     # --- НАЧАЛО НОВОЙ ЛОГИКИ: Обновляем значения и "зеркальные" связи ---
-    #     reciprocal_updates = []
-    #     # 4. Обновляем значения атрибутов
-    #     for key, value in data.items():
-    #         if key not in attributes_map:
-    #             continue
-    #
-    #         attribute = attributes_map[key]
-    #         # --- Блок обновления значения (как и раньше, но с одним дополнением) ---
-    #         # ... (весь ваш код для multiselect и обычных типов) ...
-    #         # Внутри `elif attribute.value_type in VALUE_FIELD_MAP:`:
-    #         # 1. Обрабатываем значение
-    #         processed_value = self._process_value(value, attribute)
-    #         # 2. Обновляем или создаем AttributeValue
-    #         # ... (ваш код с existing_value и new_value)
-    #         # --- ИЗМЕНЕННАЯ ЛОГИКА ---
-    #         if attribute.value_type == 'multiselect':
-    #             # Загружаем существующий AttributeValue-контейнер вместе с его содержимым
-    #             existing_value_container = self.db.query(models.AttributeValue).options(
-    #                 joinedload(models.AttributeValue.multiselect_values)
-    #             ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
-    #
-    #             # Если пользователь передал пустой список или не список, очищаем значения
-    #             if not isinstance(value, list) or not value:
-    #                 if existing_value_container:
-    #                     existing_value_container.multiselect_values.clear()
-    #                 continue
-    #
-    #             # Если контейнера еще нет, создаем его
-    #             if not existing_value_container:
-    #                 existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
-    #                 self.db.add(existing_value_container)
-    #
-    #             # Находим и присваиваем новые опции (SQLAlchemy сам разберется, что добавить/удалить)
-    #             options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
-    #             existing_value_container.multiselect_values = options
-    #
-    #         elif attribute.value_type in VALUE_FIELD_MAP:
-    #             # Старая логика для всех остальных типов
-    #             processed_value = self._process_value(value, attribute)
-    #             value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-    #             existing_value = self.db.query(models.AttributeValue).filter_by(
-    #                 entity_id=entity_id, attribute_id=attribute.id
-    #             ).first()
-    #
-    #             if existing_value:
-    #                 if processed_value is None:
-    #                     self.db.delete(existing_value)
-    #                 else:
-    #                     for field in VALUE_FIELD_MAP.values():
-    #                         setattr(existing_value, field, None)
-    #                     setattr(existing_value, value_field_name, processed_value)
-    #             elif processed_value is not None:
-    #                 new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-    #                                                   **{value_field_name: processed_value})
-    #                 self.db.add(new_value)
-    #         # ---------------------------
-    #
-    #     # 5. Обновляем `updated_at` у самой сущности
-    #     entity.updated_at = datetime.utcnow()
-    #     self.db.add(entity)
-    #
-    #     # 6. Сохраняем все изменения
-    #     self.db.commit()
-    #     logger.info(f"Данные для entity_id={entity_id} закоммичены.")
-    #     # Логика отправки уведомления
-    #     if not is_external_update:
-    #         logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
-    #         entity_type_name = entity.entity_type.name
-    #         send_webhook_task.delay(
-    #             event_type="update",
-    #             table_name=entity_type_name,
-    #             entity_id=entity_id,
-    #             data=data,
-    #             tenant_id=current_user.tenant_id
-    #         )
-    #     else:
-    #         logger.info("Условие 'not is_external_update' НЕ пройдено. Уведомление webhook не отправляется.")
-    #
-    #     logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
-    #     return self.get_entity_by_id(entity_id, current_user)
+        # ... (все импорты и начало класса EAVService)
 
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
@@ -1291,7 +1178,7 @@ class EAVService:
 
         is_external_update = data.pop("_source", None) is not None
 
-        # Загружаем сущность и ее атрибуты, включая информацию о зеркальных связях
+        # 1. Загружаем сущность и ее метаданные (атрибуты)
         entity = self.db.query(models.Entity).options(
             joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes)
         ).get(entity_id)
@@ -1302,6 +1189,8 @@ class EAVService:
             raise HTTPException(status_code=403, detail="Доступ запрещен")
 
         attributes_map = {attr.name: attr for attr in entity.entity_type.attributes}
+
+        # 2. Обновляем системные поля и проверяем триггеры
         if 'modification_date' in attributes_map:
             data['modification_date'] = datetime.utcnow().isoformat()
 
@@ -1310,72 +1199,141 @@ class EAVService:
             data["send_sms_trigger"] = False
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
-        # --- ФИНАЛЬНАЯ ИСПРАВЛЕННАЯ ЛОГИКА ---
+        # 3. Основной цикл обновления данных
         for key, value in data.items():
-            if key not in attributes_map: continue
+            if key not in attributes_map:
+                continue
 
             attribute = attributes_map[key]
-            processed_value = self._process_value(value, attribute)
 
-            # 1. Обновляем основное значение (как и раньше)
-            value_field_name = VALUE_FIELD_MAP.get(attribute.value_type)
-            if not value_field_name: continue  # Пропускаем типы без хранения (напр. multiselect)
+            # --- Сценарий 1: Обработка Связей (Relation) ---
+            if attribute.value_type == 'relation':
+                # Находим или создаем "контейнер" для значения этой ячейки
+                existing_value_container = self.db.query(models.AttributeValue).options(
+                    joinedload(models.AttributeValue.many_to_many_links)  # Загружаем текущие м-м связи
+                ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
 
-            existing_value = self.db.query(models.AttributeValue).filter_by(entity_id=entity_id,
-                                                                            attribute_id=attribute.id).first()
+                if not existing_value_container:
+                    existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+                    self.db.add(existing_value_container)
 
-            old_linked_id = None
-            if existing_value:
-                old_linked_id = existing_value.value_integer  # Запоминаем старый ID для очистки
-                if processed_value is None:
-                    self.db.delete(existing_value)
-                else:
-                    setattr(existing_value, value_field_name, processed_value)
-            elif processed_value is not None:
-                new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-                                                  **{value_field_name: processed_value})
-                self.db.add(new_value)
+                # --- Подсценарий 1.1: Множественный выбор (Многие-ко-Многим) ---
+                if attribute.allow_multiple_selection:
+                    # Запоминаем старые ID для обработки зеркальной связи
+                    old_linked_ids = {link.id for link in existing_value_container.many_to_many_links}
 
-            # 2. Обрабатываем "зеркальную" связь, если она есть
-            if attribute.value_type == 'relation' and attribute.reciprocal_attribute_id:
-                reciprocal_attr_id = attribute.reciprocal_attribute_id
-                new_linked_id = processed_value  # ID новой связанной записи
+                    # Очищаем поле для одиночной связи на случай, если тип колонки поменялся
+                    existing_value_container.value_integer = None
 
-                # 2.1 Очищаем старую обратную связь
-                if old_linked_id and old_linked_id != new_linked_id:
-                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
-                        entity_id=old_linked_id,
-                        attribute_id=reciprocal_attr_id,
-                        value_integer=entity_id  # Где значением был ID ТЕКУЩЕЙ записи
-                    ).first()
-                    if old_reciprocal_value:
-                        self.db.delete(old_reciprocal_value)
-
-                # 2.2 Устанавливаем новую обратную связь
-                if new_linked_id:
-                    # Проверяем, существует ли уже значение, чтобы не создавать дубли
-                    new_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
-                        entity_id=new_linked_id,
-                        attribute_id=reciprocal_attr_id
-                    ).first()
-                    if new_reciprocal_value:
-                        new_reciprocal_value.value_integer = entity_id
+                    new_linked_ids = set()
+                    if isinstance(value, list) and value:
+                        new_linked_ids = set(value)
+                        linked_entities = self.db.query(models.Entity).filter(
+                            models.Entity.id.in_(new_linked_ids)).all()
+                        existing_value_container.many_to_many_links = linked_entities
                     else:
-                        self.db.add(models.AttributeValue(
-                            entity_id=new_linked_id,
-                            attribute_id=reciprocal_attr_id,
-                            value_integer=entity_id
-                        ))
+                        existing_value_container.many_to_many_links.clear()
 
+                    # Обрабатываем "зеркальную" связь
+                    if attribute.reciprocal_attribute_id:
+                        reciprocal_attr_id = attribute.reciprocal_attribute_id
+                        ids_to_add = new_linked_ids - old_linked_ids
+                        ids_to_remove = old_linked_ids - new_linked_ids
+
+                        # Удаляем старые зеркальные связи
+                        for target_id in ids_to_remove:
+                            reciprocal_container = self.db.query(models.AttributeValue).filter_by(
+                                entity_id=target_id, attribute_id=reciprocal_attr_id).first()
+                            if reciprocal_container:
+                                target_entity_to_remove = self.db.query(models.Entity).get(entity_id)
+                                if target_entity_to_remove in reciprocal_container.many_to_many_links:
+                                    reciprocal_container.many_to_many_links.remove(target_entity_to_remove)
+
+                        # Добавляем новые зеркальные связи
+                        for target_id in ids_to_add:
+                            reciprocal_container = self.db.query(models.AttributeValue).filter_by(
+                                entity_id=target_id, attribute_id=reciprocal_attr_id).first()
+                            if not reciprocal_container:
+                                reciprocal_container = models.AttributeValue(entity_id=target_id,
+                                                                             attribute_id=reciprocal_attr_id)
+                                self.db.add(reciprocal_container)
+                            target_entity_to_add = self.db.query(models.Entity).get(entity_id)
+                            if target_entity_to_add not in reciprocal_container.many_to_many_links:
+                                reciprocal_container.many_to_many_links.append(target_entity_to_add)
+
+                # --- Подсценарий 1.2: Одиночный выбор (Один-ко-Многим) ---
+                else:
+                    old_linked_id = existing_value_container.value_integer
+
+                    # Очищаем поле для множественной связи
+                    existing_value_container.many_to_many_links.clear()
+
+                    new_linked_id = self._process_value(value, attribute)
+                    existing_value_container.value_integer = new_linked_id
+
+                    # Обрабатываем "зеркальную" связь
+                    if attribute.reciprocal_attribute_id and old_linked_id != new_linked_id:
+                        reciprocal_attr_id = attribute.reciprocal_attribute_id
+                        # Удаляем старую зеркальную связь
+                        if old_linked_id:
+                            reciprocal_value_to_remove = self.db.query(models.AttributeValue).filter_by(
+                                entity_id=old_linked_id, attribute_id=reciprocal_attr_id).first()
+                            if reciprocal_value_to_remove:
+                                reciprocal_value_to_remove.value_integer = None
+
+                        # Добавляем новую зеркальную связь
+                        if new_linked_id:
+                            reciprocal_value_to_add = self.db.query(models.AttributeValue).filter_by(
+                                entity_id=new_linked_id, attribute_id=reciprocal_attr_id).first()
+                            if not reciprocal_value_to_add:
+                                reciprocal_value_to_add = models.AttributeValue(entity_id=new_linked_id,
+                                                                                attribute_id=reciprocal_attr_id)
+                                self.db.add(reciprocal_value_to_add)
+                            reciprocal_value_to_add.value_integer = entity_id
+
+            # --- Сценарий 2: Обработка Multiselect (без изменений) ---
+            elif attribute.value_type == 'multiselect':
+                existing_value_container = self.db.query(models.AttributeValue).options(
+                    joinedload(models.AttributeValue.multiselect_values)
+                ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
+                if not isinstance(value, list) or not value:
+                    if existing_value_container:
+                        existing_value_container.multiselect_values.clear()
+                    continue
+                if not existing_value_container:
+                    existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
+                    self.db.add(existing_value_container)
+                options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+                existing_value_container.multiselect_values = options
+
+            # --- Сценарий 3: Обработка всех остальных типов полей ---
+            elif attribute.value_type in VALUE_FIELD_MAP:
+                processed_value = self._process_value(value, attribute)
+                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+                existing_value = self.db.query(models.AttributeValue).filter_by(
+                    entity_id=entity_id, attribute_id=attribute.id
+                ).first()
+
+                if existing_value:
+                    if processed_value is None:
+                        self.db.delete(existing_value)
+                    else:
+                        for field in VALUE_FIELD_MAP.values():
+                            setattr(existing_value, field, None)
+                        setattr(existing_value, value_field_name, processed_value)
+                elif processed_value is not None:
+                    new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
+                                                      **{value_field_name: processed_value})
+                    self.db.add(new_value)
+
+        # 4. Сохраняем все изменения и отправляем уведомления
         entity.updated_at = datetime.utcnow()
         self.db.commit()
 
-        # ... (остальной код с вебхуками и return)
         logger.info(f"Данные для entity_id={entity_id} закоммичены.")
         if not is_external_update:
             logger.info("Условие 'not is_external_update' пройдено. Вызов .delay() для webhook.")
             entity_type_name = entity.entity_type.name
-            # --- ВЫЗОВ ЧЕРЕЗ CELERY ---
             send_webhook_task.delay(
                 event_type="update",
                 table_name=entity_type_name,
@@ -1383,8 +1341,11 @@ class EAVService:
                 data=data,
                 tenant_id=current_user.tenant_id
             )
+
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
+
+    # ... (остальной код класса EAVService)
 
 
 
@@ -1510,9 +1471,24 @@ class EAVService:
 
             attribute = attributes_map[key]
 
+            if attribute.value_type == 'relation':
+                attr_value = models.AttributeValue(entity_id=new_entity.id, attribute_id=attribute.id)
+                self.db.add(attr_value)
+
+                if attribute.allow_multiple_selection:
+                    # Множественная связь: value - это список ID
+                    if isinstance(value, list) and value:
+                        linked_entities = self.db.query(models.Entity).filter(models.Entity.id.in_(value)).all()
+                        attr_value.many_to_many_links.extend(linked_entities)
+                else:
+                    # Одиночная связь: value - это один ID
+                    processed_value = self._process_value(value, attribute)
+                    if processed_value is not None:
+                        attr_value.value_integer = processed_value
+
 
             # --- ИЗМЕНЕННАЯ ЛОГИКА ---
-            if attribute.value_type == 'multiselect':
+            elif attribute.value_type == 'multiselect':
                 # Создаем "пустой" AttributeValue, который будет контейнером
                 attr_value = models.AttributeValue(entity_id=new_entity.id, attribute_id=attribute.id)
                 if isinstance(value, list) and value:
