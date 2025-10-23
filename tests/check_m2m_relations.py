@@ -56,7 +56,6 @@ def run_update_test():
         # --- ШАГ 1: ПОДГОТОВКА ---
         print_header("Шаг 1: Создание таблиц 'Проекты', 'Пользователи', 'Теги'")
 
-        # Создаем таблицы
         table_names['projects'] = f"projects_upd_{int(time.time())}"
         table_names['users'] = f"users_upd_{int(time.time())}"
         table_names['tags'] = f"tags_upd_{int(time.time())}"
@@ -67,7 +66,6 @@ def run_update_test():
             resp.raise_for_status();
             ids[f'{key}_table'] = resp.json()
 
-        # Создаем базовые колонки
         resp = requests.post(f"{BASE_URL}/api/meta/entity-types/{ids['projects_table']['id']}/attributes",
                              headers=headers,
                              json={"name": "project_name", "display_name": "Название проекта", "value_type": "string"});
@@ -82,14 +80,11 @@ def run_update_test():
         resp.raise_for_status();
         ids['tag_name_attr'] = resp.json()
 
-        # Создаем связи
-        # 1. O2M: Проект <-> Пользователи
+        # Создаем связи "умным" способом
         payload_o2m = {"name": "lead_dev", "display_name": "Ведущий разработчик", "value_type": "relation",
-                       "relation_type": "one-to-many", "target_entity_type_id": ids['users_table']['id'],
-                       "create_back_relation": True}
+                       "target_entity_type_id": ids['users_table']['id'], "create_back_relation": True}
         requests.post(f"{BASE_URL}/api/meta/entity-types/{ids['projects_table']['id']}/attributes", headers=headers,
                       json=payload_o2m).raise_for_status()
-        # 2. M2M: Проект <-> Теги
         payload_m2m = {"name": "project_tags", "display_name": "Теги проекта", "value_type": "relation",
                        "relation_type": "many-to-many", "target_entity_type_id": ids['tags_table']['id'],
                        "create_back_relation": True}
@@ -135,7 +130,6 @@ def run_update_test():
         user_details = get_entity_details(headers, table_names['users'], ids['user_alice']['id'])
         print_status(project_details.get('lead_dev') == "Алиса",
                      "Прямая связь (Проект -> Пользователь) отображается корректно.")
-        # Имя обратной связи генерируется автоматически
         back_relation_name = f"link_from_{table_names['projects']}"
         print_status(user_details.get(back_relation_name) == "Проект 'Феникс' (Обновлен)",
                      "Обратная связь (Пользователь -> Проект) отображается корректно.")
@@ -155,7 +149,7 @@ def run_update_test():
 
         # --- ТЕСТ 4: ИЗМЕНЕНИЕ СВЯЗИ MANY-TO-MANY ---
         print_header("Тест 4: Изменение связи 'Многие-ко-многим'")
-        new_tags = [ids['tag_internal']['id'], ids['tag_client']['id']]  # Убираем 'Срочно', добавляем 'Для клиента'
+        new_tags = [ids['tag_internal']['id'], ids['tag_client']['id']]
         requests.put(f"{BASE_URL}/api/data/{table_names['projects']}/{ids['project_phoenix']['id']}", headers=headers,
                      json={"project_tags": new_tags}).raise_for_status()
         project_details = get_entity_details(headers, table_names['projects'], ids['project_phoenix']['id'])
