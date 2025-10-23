@@ -1460,10 +1460,12 @@ class EAVService:
 
                 # 2.1 Очищаем старую обратную связь
                 if old_linked_id and old_linked_id != new_linked_id:
-                    old_reciprocal_value = self.db.query(models.AttributeValue).filter_by(
-                        entity_id=old_linked_id,
-                        attribute_id=reciprocal_attr_id,
-                        value_integer=entity_id  # Где значением был ID ТЕКУЩЕЙ записи
+                    old_reciprocal_value = self.db.query(models.AttributeValue).filter(
+                        and_(
+                            models.AttributeValue.entity_id == old_linked_id,
+                            models.AttributeValue.attribute_id == reciprocal_attr_id,
+                            models.AttributeValue.value_integer == entity_id
+                        )
                     ).first()
                     if old_reciprocal_value:
                         self.db.delete(old_reciprocal_value)
@@ -2130,7 +2132,7 @@ class EAVService:
 
     # --- ДОБАВЬТЕ ЭТУ НОВУЮ ВСПОМОГАТЕЛЬНУЮ ФУНКЦИЮ ---
     def _get_display_values_for_ids(self, ids: set, display_attribute_id: int) -> Dict[int, str]:
-        """Для списка ID находит их отображаемые значения."""
+        """Для множества ID находит их отображаемые значения."""
         if not ids:
             return {}
 
@@ -2140,7 +2142,11 @@ class EAVService:
             models.AttributeValue.value_integer,
             models.AttributeValue.value_float
         ).filter(
+            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+            # Убеждаемся, что используется именно .in_()
+            # SQLAlchemy сам преобразует `set` в `list` или `tuple` для запроса.
             models.AttributeValue.entity_id.in_(ids),
+            # ---------------------------
             models.AttributeValue.attribute_id == display_attribute_id
         ).all()
 
