@@ -1355,6 +1355,10 @@ class EAVService:
             send_sms_for_entity_task.delay(entity_id=entity_id, user_id=current_user.id)
 
         # --- НАЧАЛО ФИНАЛЬНОГО ИСПРАВЛЕНИЯ ---
+        for key, value in data.items():
+            if key not in attributes_map:
+                continue
+            attribute = attributes_map[key]
             # --- СЦЕНАРИЙ 1: Связь "Многие-ко-многим" ---
             if attribute.relation_type == 'many-to-many':
                 # Удаляем старые связи
