@@ -766,9 +766,6 @@ class EAVService:
             if attribute_in.create_back_relation:
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
-
-                # --- ИСПРАВЛЕННАЯ И ФИНАЛЬНАЯ ЛОГИКА ---
-                # Приоритет отдаем ID, переданному с фронтенда.
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
 
                 if not back_display_attr_id:
