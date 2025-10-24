@@ -740,8 +740,8 @@ class EAVService:
 
             # 1. Определяем `display_attribute_id` для ПРЯМОЙ связи
             display_attr_id_for_main = attribute_in.display_attribute_id
-            logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id из запроса = {display_attr_id_for_main}")
             if not display_attr_id_for_main:
+                logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id не передан, ищем автоматически.")
                 primary_attr = self._find_primary_display_attribute(target_entity_type_obj.id)
                 if not primary_attr:
                     raise HTTPException(status_code=400,
@@ -749,51 +749,56 @@ class EAVService:
                 display_attr_id_for_main = primary_attr.id
                 logger.info(
                     f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id определен автоматически = {display_attr_id_for_main}")
+            else:
+                logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: display_attribute_id передан явно = {display_attr_id_for_main}")
 
             main_attr_data = {
                 "name": attribute_in.name, "display_name": attribute_in.display_name,
                 "value_type": attribute_in.value_type.value, "entity_type_id": entity_type_id,
                 "target_entity_type_id": target_entity_type_obj.id,
                 "display_attribute_id": display_attr_id_for_main,
-                "allow_multiple_selection": attribute_in.allow_multiple_selection  # <-- ДОБАВЬТЕ ЭТО
+                "allow_multiple_selection": attribute_in.allow_multiple_selection
             }
-            logger.info(f"--- [DEBUG] ПРЯМАЯ СВЯЗЬ: Данные для создания = {main_attr_data}")
             main_attr = models.Attribute(**main_attr_data)
             self.db.add(main_attr)
 
-            # 2. Обрабатываем ОБРАТНУЮ связь
             # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
 
-                # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
-                # Ищем главную колонку для отображения в ИСХОДНОЙ таблице ("Задачи")
-                # Это значение будет использоваться для `value` в `linked_tasks`
-                primary_attr_for_back_relation = self._find_primary_display_attribute(source_entity_type_obj.id)
-                if not primary_attr_for_back_relation:
-                    raise HTTPException(status_code=400,
-                                        detail=f"Не удалось найти главную колонку в исходной таблице '{source_entity_type_obj.display_name}' для создания обратной связи.")
-                back_display_attr_id = primary_attr_for_back_relation.id
-                # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+                # --- ИСПРАВЛЕННАЯ И ФИНАЛЬНАЯ ЛОГИКА ---
+                # Приоритет отдаем ID, переданному с фронтенда.
+                back_display_attr_id = attribute_in.back_relation_display_attribute_id
+
+                if not back_display_attr_id:
+                    logger.info(
+                        f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id не передан, ищем автоматически.")
+                    primary_attr_for_back_relation = self._find_primary_display_attribute(source_entity_type_obj.id)
+                    if not primary_attr_for_back_relation:
+                        raise HTTPException(status_code=400,
+                                            detail=f"Не удалось найти главную колонку в исходной таблице '{source_entity_type_obj.display_name}' для создания обратной связи.")
+                    back_display_attr_id = primary_attr_for_back_relation.id
+                    logger.info(
+                        f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id определен автоматически = {back_display_attr_id}")
+                else:
+                    logger.info(
+                        f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id передан явно = {back_display_attr_id}")
+                # --- КОНЕЦ ИСПРАВЛЕНИЙ ---
 
                 back_relation_attr_data = {
                     "name": back_name, "display_name": back_display_name,
                     "value_type": "relation", "entity_type_id": target_entity_type_obj.id,
                     "target_entity_type_id": source_entity_type_obj.id,
                     "display_attribute_id": back_display_attr_id,
-                    # Обратная связь тоже должна поддерживать множественный выбор
-                    "allow_multiple_selection": attribute_in.allow_multiple_selection  # <-- И ЭТО
+                    "allow_multiple_selection": attribute_in.allow_multiple_selection
                 }
-                logger.info(f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Данные для создания = {back_relation_attr_data}")
                 back_relation_attr = models.Attribute(**back_relation_attr_data)
                 self.db.add(back_relation_attr)
                 self.db.flush()
 
                 main_attr.reciprocal_attribute_id = back_relation_attr.id
                 back_relation_attr.reciprocal_attribute_id = main_attr.id
-                logger.info(
-                    f"--- [DEBUG] СВЯЗЬ 'СШИТА': main.reciprocal_id={back_relation_attr.id}, back.reciprocal_id={main_attr.id}")
 
             self.db.commit()
             self.db.refresh(main_attr)
@@ -801,7 +806,6 @@ class EAVService:
 
         # --- СЦЕНАРИЙ 2: Создание любой другой обычной колонки ---
         else:
-            # ... (этот блок без изменений, он работает правильно)
             attr_data_for_db = {
                 "name": attribute_in.name,
                 "display_name": attribute_in.display_name,
@@ -826,65 +830,6 @@ class EAVService:
             self.db.commit()
             self.db.refresh(db_attribute)
             return db_attribute
-
-    def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
-        entity = self.db.query(models.Entity).options(
-            joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
-            joinedload(models.Entity.values).joinedload(models.AttributeValue.many_to_many_links),  # <-- Добавлено
-            joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
-                models.Attribute.display_attribute)
-        ).filter(models.Entity.id == entity_id).first()
-
-        if not entity:
-            raise HTTPException(status_code=404, detail="Сущность не найдена")
-        if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
-            raise HTTPException(status_code=403, detail="Доступ запрещен")
-
-        pivoted_result = self._pivot_data(entity)
-
-        relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
-        if relation_attributes:
-            for rel_attr in relation_attributes:
-                if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
-                    continue
-
-                display_attr_id = rel_attr.display_attribute.id
-
-                source_ids = set()
-                raw_value = pivoted_result.get(rel_attr.name)
-
-                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
-                    source_ids.update(raw_value)
-                elif not rel_attr.allow_multiple_selection and isinstance(raw_value, int):
-                    source_ids.add(raw_value)
-
-                if not source_ids:
-                    continue
-
-                display_values_query = self.db.query(
-                    models.AttributeValue.entity_id,
-                    models.AttributeValue.value_string,
-                    models.AttributeValue.value_integer,
-                    models.AttributeValue.value_float
-                ).filter(
-                    models.AttributeValue.entity_id.in_(source_ids),
-                    models.AttributeValue.attribute_id == display_attr_id
-                ).all()
-
-                lookup_map = {
-                    entity_id: str(val_str or val_int or val_float or '')
-                    for entity_id, val_str, val_int, val_float in display_values_query
-                }
-
-                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
-                    pivoted_result[rel_attr.name] = [
-                        {"id": sid, "value": lookup_map.get(sid, "N/A")}
-                        for sid in raw_value
-                    ]
-                elif not rel_attr.allow_multiple_selection and raw_value in lookup_map:
-                    pivoted_result[rel_attr.name] = lookup_map[raw_value]
-
-        return pivoted_result
 
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task

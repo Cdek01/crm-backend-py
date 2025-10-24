@@ -42,6 +42,7 @@ class AttributeCreate(BaseModel):
     # ---------------------------
     # --- НАЧАЛО ИЗМЕНЕНИЙ ---
     # Поля для основной (прямой) связи. Теперь они могут приходить сразу при создании.
+
     target_entity_type_id: Optional[int] = None
     source_attribute_id: Optional[int] = None  # Это поле нам пока не нужно для двусторонней связи
     target_attribute_id: Optional[int] = None  # И это
