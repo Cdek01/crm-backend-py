@@ -919,6 +919,14 @@ class EAVService:
                 continue
 
             attribute = attributes_map[key]
+            # <-- НАЧАЛО ГЛАВНОГО ИСПРАВЛЕНИЯ
+            # Определяем, является ли это операцией со связью.
+            # Это истина, если тип 'relation' ИЛИ если тип 'integer' и пришел список.
+            is_relation_operation = (
+                    attribute.value_type == 'relation' or
+                    (attribute.value_type == 'integer' and isinstance(value, list))
+            )
+            # --> КОНЕЦ ГЛАВНОГО ИСПРАВЛЕНИЯ
 
             if attribute.value_type == 'relation':
                 existing_value_container = self.db.query(models.AttributeValue).options(
@@ -975,8 +983,14 @@ class EAVService:
                     existing_value_container.many_to_many_links.clear()
                     # <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
                     # Корректно извлекаем ID, даже если пришел объект {"id": 123}
+                    # <-- ИСПРАВЛЕНИЕ: если пришел список для одиночной связи, берем первый элемент
                     if isinstance(value, dict) and 'id' in value:
                         new_linked_id_raw = value.get('id')
+                    elif isinstance(value, list) and len(value) > 0:
+                        new_linked_id_raw = value[0]
+                    elif isinstance(value, list) and len(value) == 0:
+                        new_linked_id_raw = None
+                # --> КОНЕЦ ИСПРАВЛЕНИЯ
                     else:
                         new_linked_id_raw = value
 
@@ -1057,7 +1071,7 @@ class EAVService:
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
-    # ... (остальной код класса EAVService)
+
 
 
 
