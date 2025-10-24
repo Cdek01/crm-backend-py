@@ -434,7 +434,7 @@ def main():
 
     finally:
         print_header("Шаг 4: Очистка тестовых данных")
-        cleanup(headers, table_ids)
+        # cleanup(headers, table_ids)
 
         print_header("Итоги тестирования")
         if test_failed:

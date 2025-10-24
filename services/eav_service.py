@@ -762,22 +762,20 @@ class EAVService:
             self.db.add(main_attr)
 
             # 2. Обрабатываем ОБРАТНУЮ связь
+            # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
-                logger.info("--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Обнаружен флаг create_back_relation.")
                 back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
                 back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
 
-                back_display_attr_id = attribute_in.back_relation_display_attribute_id
-                logger.info(
-                    f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id из запроса = {back_display_attr_id}")
-                if not back_display_attr_id:
-                    primary_attr_back = self._find_primary_display_attribute(source_entity_type_obj.id)
-                    if not primary_attr_back:
-                        raise HTTPException(status_code=400,
-                                            detail=f"Не удалось найти главную колонку в '{source_entity_type_obj.display_name}'.")
-                    back_display_attr_id = primary_attr_back.id
-                    logger.info(
-                        f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id определен автоматически = {back_display_attr_id}")
+                # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+                # Ищем главную колонку для отображения в ИСХОДНОЙ таблице ("Задачи")
+                # Это значение будет использоваться для `value` в `linked_tasks`
+                primary_attr_for_back_relation = self._find_primary_display_attribute(source_entity_type_obj.id)
+                if not primary_attr_for_back_relation:
+                    raise HTTPException(status_code=400,
+                                        detail=f"Не удалось найти главную колонку в исходной таблице '{source_entity_type_obj.display_name}' для создания обратной связи.")
+                back_display_attr_id = primary_attr_for_back_relation.id
+                # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
                 back_relation_attr_data = {
                     "name": back_name, "display_name": back_display_name,
