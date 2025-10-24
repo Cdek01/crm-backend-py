@@ -973,8 +973,15 @@ class EAVService:
                 else:
                     old_linked_id = existing_value_container.value_integer
                     existing_value_container.many_to_many_links.clear()
+                    # <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
+                    # Корректно извлекаем ID, даже если пришел объект {"id": 123}
+                    if isinstance(value, dict) and 'id' in value:
+                        new_linked_id_raw = value.get('id')
+                    else:
+                        new_linked_id_raw = value
 
-                    new_linked_id = self._process_value(value, attribute)
+                    new_linked_id = self._process_value(new_linked_id_raw, attribute)
+                    # --> КОНЕЦ ИСПРАВЛЕНИЯ
                     existing_value_container.value_integer = new_linked_id
 
                     if attribute.reciprocal_attribute_id and old_linked_id != new_linked_id:
