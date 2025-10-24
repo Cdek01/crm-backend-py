@@ -986,13 +986,15 @@ class EAVService:
 
                     if attribute.reciprocal_attribute_id and old_linked_id != new_linked_id:
                         reciprocal_attr_id = attribute.reciprocal_attribute_id
-                        if old_linked_id:
+                        # <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
+                        # Убеждаемся, что работаем только с одним ID, а не с массивом
+                        if old_linked_id and isinstance(old_linked_id, int):
                             reciprocal_value_to_remove = self.db.query(models.AttributeValue).filter_by(
                                 entity_id=old_linked_id, attribute_id=reciprocal_attr_id).first()
                             if reciprocal_value_to_remove:
                                 reciprocal_value_to_remove.value_integer = None
 
-                        if new_linked_id:
+                        if new_linked_id and isinstance(new_linked_id, int):
                             reciprocal_value_to_add = self.db.query(models.AttributeValue).filter_by(
                                 entity_id=new_linked_id, attribute_id=reciprocal_attr_id).first()
                             if not reciprocal_value_to_add:
@@ -1000,6 +1002,7 @@ class EAVService:
                                                                                 attribute_id=reciprocal_attr_id)
                                 self.db.add(reciprocal_value_to_add)
                             reciprocal_value_to_add.value_integer = entity_id
+                        # --> КОНЕЦ ИСПРАВЛЕНИЯ
             # --- Сценарий 2: Обработка Multiselect (без изменений) ---
             elif attribute.value_type == 'multiselect':
                 existing_value_container = self.db.query(models.AttributeValue).options(
