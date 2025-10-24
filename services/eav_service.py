@@ -917,16 +917,13 @@ class EAVService:
                 continue
 
             attribute = attributes_map[key]
-            # <-- НАЧАЛО ГЛАВНОГО ИСПРАВЛЕНИЯ
-            # Определяем, является ли это операцией со связью.
-            # Это истина, если тип 'relation' ИЛИ если тип 'integer' и пришел список.
+
             is_relation_operation = (
                     attribute.value_type == 'relation' or
                     (attribute.value_type == 'integer' and isinstance(value, list))
             )
-            # --> КОНЕЦ ГЛАВНОГО ИСПРАВЛЕНИЯ
 
-            if attribute.value_type == 'relation':
+            if is_relation_operation:
                 existing_value_container = self.db.query(models.AttributeValue).options(
                     joinedload(models.AttributeValue.many_to_many_links)
                 ).filter_by(entity_id=entity_id, attribute_id=attribute.id).first()
@@ -940,7 +937,7 @@ class EAVService:
                     existing_value_container.value_integer = None
 
                     new_linked_ids = set()
-                    if isinstance(value, list) and value:
+                    if isinstance(value, list):
                         new_linked_ids = set(
                             filter(None, [item.get('id') if isinstance(item, dict) else item for item in value]))
                         if new_linked_ids:
@@ -979,27 +976,23 @@ class EAVService:
                 else:
                     old_linked_id = existing_value_container.value_integer
                     existing_value_container.many_to_many_links.clear()
-                    # <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
-                    # Корректно извлекаем ID, даже если пришел объект {"id": 123}
-                    # <-- ИСПРАВЛЕНИЕ: если пришел список для одиночной связи, берем первый элемент
+
                     if isinstance(value, dict) and 'id' in value:
                         new_linked_id_raw = value.get('id')
                     elif isinstance(value, list) and len(value) > 0:
                         new_linked_id_raw = value[0]
                     elif isinstance(value, list) and len(value) == 0:
                         new_linked_id_raw = None
-                # --> КОНЕЦ ИСПРАВЛЕНИЯ
                     else:
                         new_linked_id_raw = value
 
                     new_linked_id = self._process_value(new_linked_id_raw, attribute)
-                    # --> КОНЕЦ ИСПРАВЛЕНИЯ
+
                     existing_value_container.value_integer = new_linked_id
 
                     if attribute.reciprocal_attribute_id and old_linked_id != new_linked_id:
                         reciprocal_attr_id = attribute.reciprocal_attribute_id
-                        # <-- ИСПРАВЛЕНИЕ ЗДЕСЬ
-                        # Убеждаемся, что работаем только с одним ID, а не с массивом
+
                         if old_linked_id and isinstance(old_linked_id, int):
                             reciprocal_value_to_remove = self.db.query(models.AttributeValue).filter_by(
                                 entity_id=old_linked_id, attribute_id=reciprocal_attr_id).first()
@@ -1014,7 +1007,6 @@ class EAVService:
                                                                                 attribute_id=reciprocal_attr_id)
                                 self.db.add(reciprocal_value_to_add)
                             reciprocal_value_to_add.value_integer = entity_id
-                        # --> КОНЕЦ ИСПРАВЛЕНИЯ
             # --- Сценарий 2: Обработка Multiselect (без изменений) ---
             elif attribute.value_type == 'multiselect':
                 existing_value_container = self.db.query(models.AttributeValue).options(

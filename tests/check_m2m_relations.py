@@ -143,7 +143,31 @@ def create_tables(headers: Dict[str, str]) -> Optional[Dict[str, int]]:
         pretty_print_response(r_link)
         r_link.raise_for_status()
         print_status(True, "Колонка-связь 'многие-ко-многим' успешно создана")
+        # --- НОВЫЙ БЛОК ПРОВЕРКИ ---
+        print("\n-> Проверяем метаданные обратной связи...")
+        time.sleep(1)  # Небольшая пауза, чтобы сервер успел все обработать
+        url_get_project_table = f"{BASE_URL}/api/meta/entity-types/{table_ids['project_id']}"
+        r_check = requests.get(url_get_project_table, headers=headers)
+        project_meta = r_check.json()
 
+        back_relation_attr = next((attr for attr in project_meta['attributes'] if attr['name'] == 'linked_tasks'), None)
+
+        if back_relation_attr:
+            display_attr_id = back_relation_attr.get('display_attribute_id')
+            # Находим, какой колонке соответствует этот ID в таблице Задач
+            url_get_task_table = f"{BASE_URL}/api/meta/entity-types/{table_ids['task_id']}"
+            r_task_meta = requests.get(url_get_task_table, headers=headers)
+            task_meta = r_task_meta.json()
+            display_attr = next((attr for attr in task_meta['attributes'] if attr['id'] == display_attr_id), None)
+
+            if display_attr:
+                print_status(True,
+                             f"Обратная связь 'linked_tasks' будет использовать колонку '{display_attr['name']}' для отображения.")
+            else:
+                print_status(False, f"Не удалось найти отображаемую колонку для ID: {display_attr_id}")
+        else:
+            print_status(False, "Не удалось найти метаданные обратной колонки 'linked_tasks'")
+        # --- КОНЕЦ НОВОГО БЛОКА ПРОВЕРКИ ---
         return table_ids
     except Exception as e:
         print_status(False, "Ошибка на этапе создания таблиц", getattr(e, 'response', 'N/A').text)
