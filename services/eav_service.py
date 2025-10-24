@@ -1012,7 +1012,10 @@ class EAVService:
                 if not existing_value_container:
                     existing_value_container = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id)
                     self.db.add(existing_value_container)
-                options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(value)).all()
+
+                # Извлекаем ID из списка словарей или просто чисел
+                option_ids = [item.get('id') if isinstance(item, dict) else item for item in value]
+                options = self.db.query(models.SelectOption).filter(models.SelectOption.id.in_(option_ids)).all()
                 existing_value_container.multiselect_values = options
 
             # --- Сценарий 3: Обработка всех остальных типов полей ---
