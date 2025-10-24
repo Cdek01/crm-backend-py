@@ -831,6 +831,65 @@ class EAVService:
             self.db.refresh(db_attribute)
             return db_attribute
 
+    def get_entity_by_id(self, entity_id: int, current_user: models.User) -> Dict[str, Any]:
+        entity = self.db.query(models.Entity).options(
+            joinedload(models.Entity.values).joinedload(models.AttributeValue.attribute),
+            joinedload(models.Entity.values).joinedload(models.AttributeValue.many_to_many_links),  # <-- Добавлено
+            joinedload(models.Entity.entity_type).joinedload(models.EntityType.attributes).joinedload(
+                models.Attribute.display_attribute)
+        ).filter(models.Entity.id == entity_id).first()
+
+        if not entity:
+            raise HTTPException(status_code=404, detail="Сущность не найдена")
+        if not current_user.is_superuser and entity.entity_type.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail="Доступ запрещен")
+
+        pivoted_result = self._pivot_data(entity)
+
+        relation_attributes = [attr for attr in entity.entity_type.attributes if attr.value_type == 'relation']
+        if relation_attributes:
+            for rel_attr in relation_attributes:
+                if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
+                    continue
+
+                display_attr_id = rel_attr.display_attribute.id
+
+                source_ids = set()
+                raw_value = pivoted_result.get(rel_attr.name)
+
+                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
+                    source_ids.update(raw_value)
+                elif not rel_attr.allow_multiple_selection and isinstance(raw_value, int):
+                    source_ids.add(raw_value)
+
+                if not source_ids:
+                    continue
+
+                display_values_query = self.db.query(
+                    models.AttributeValue.entity_id,
+                    models.AttributeValue.value_string,
+                    models.AttributeValue.value_integer,
+                    models.AttributeValue.value_float
+                ).filter(
+                    models.AttributeValue.entity_id.in_(source_ids),
+                    models.AttributeValue.attribute_id == display_attr_id
+                ).all()
+
+                lookup_map = {
+                    entity_id: str(val_str or val_int or val_float or '')
+                    for entity_id, val_str, val_int, val_float in display_values_query
+                }
+
+                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
+                    pivoted_result[rel_attr.name] = [
+                        {"id": sid, "value": lookup_map.get(sid, "N/A")}
+                        for sid in raw_value
+                    ]
+                elif not rel_attr.allow_multiple_selection and raw_value in lookup_map:
+                    pivoted_result[rel_attr.name] = lookup_map[raw_value]
+
+        return pivoted_result
+
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
         logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
