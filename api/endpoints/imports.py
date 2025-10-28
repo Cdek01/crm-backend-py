@@ -99,10 +99,9 @@ async def upload_file_for_import(
         # Читаем сэмпл файла для анализа (например, 200 строк)
         # dtype=str гарантирует, что pandas не будет угадывать типы сам на этом этапе
         if file_extension.lower() == '.csv':
-            df_sample = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=200, dtype=str,
-                                    keep_default_na=False)
+            df_sample = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=200, keep_default_na=False)
         elif file_extension.lower() in ['.xlsx', '.xls']:
-            df_sample = pd.read_excel(file_path, nrows=200, dtype=str, keep_default_na=False)
+            df_sample = pd.read_excel(file_path, nrows=200, keep_default_na=False)
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
