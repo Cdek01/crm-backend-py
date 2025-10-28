@@ -38,15 +38,15 @@ class ImportProcessRequest(BaseModel):
 
 @router.post("/upload")
 async def upload_file_for_import(
-    file: UploadFile = File(...),
-    delimiter: str = ',',
-    current_user: models.User = Depends(get_current_user)
+        file: UploadFile = File(...),
+        delimiter: str = ',',
+        current_user: models.User = Depends(get_current_user)
 ):
     """
     Шаг 1: Загрузка файла.
     Сохраняет файл, анализирует заголовки и первые 5 строк.
     """
-    file_path = None  # Инициализируем переменную
+    file_path = None
     try:
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{current_user.id}_{uuid.uuid4().hex}{file_extension}"
@@ -62,10 +62,23 @@ async def upload_file_for_import(
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
-        # --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
-        # Заменяем все значения NaN на None, который корректно преобразуется в JSON 'null'
+        # --- НАЧАЛО ОТЛАДОЧНОГО БЛОКА ---
+        print("\n" + "=" * 20 + " DEBUG INFO " + "=" * 20)
+        print("--- DataFrame ДО очистки ---")
+        print(df_preview)
+        print("--- Типы данных ДО очистки ---")
+        print(df_preview.dtypes)
+        print("-" * 52)
+
+        # Заменяем все значения NaN на None
         df_preview_cleaned = df_preview.where(pd.notna(df_preview), None)
-        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
+        print("--- DataFrame ПОСЛЕ очистки ---")
+        print(df_preview_cleaned)
+        print("--- Типы данных ПОСЛЕ очистки ---")
+        print(df_preview_cleaned.dtypes)
+        print("=" * 52 + "\n")
+        # --- КОНЕЦ ОТЛАДОЧНОГО БЛОКА ---
 
         headers = df_preview_cleaned.columns.tolist()
         preview_data = df_preview_cleaned.to_dict(orient='records')
@@ -78,7 +91,7 @@ async def upload_file_for_import(
     except Exception as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-        # Улучшаем вывод ошибок для отладки
+
         logger.error(f"Ошибка при загрузке файла: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка при обработке файла: {str(e)}")
 
