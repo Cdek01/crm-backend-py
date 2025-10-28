@@ -7,6 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 from sqladmin import BaseView, expose
 import os
+from fastapi.staticfiles import StaticFiles # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 # --- ШАГ 2: ИМПОРТЫ ИЗ ВАШЕГО ПРОЕКТА ---
 # Модули для работы с БД и конфигурацией
@@ -31,7 +32,7 @@ from admin import (
     RoleAdmin, PermissionAdmin,
     AssignRoleView
 )
-from api.endpoints import roles, shared, imports
+from api.endpoints import roles, shared, imports, files, ai
 
 setup_logging()
 
@@ -41,6 +42,13 @@ setup_logging()
 
 # Создаем таблицы в БД при первом запуске (если их нет)
 base.Base.metadata.create_all(bind=session.engine)
+
+# --- ДОБАВЬТЕ ЭТОТ БЛОК ---
+# Создаем директорию для хранения загруженных файлов, если ее нет
+STATIC_DIR = "static"
+UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+# ---------------------------
 
 # Создаем главный экземпляр FastAPI ОДИН РАЗ
 app = FastAPI(title="CRM API")
@@ -146,6 +154,8 @@ app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
 app.include_router(shared.router, prefix="/api/shares", tags=["Shares"])
 app.include_router(select_lists.router, prefix="/api/meta/select-lists", tags=["Meta (Select Lists)"])
 app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
+app.include_router(files.router, prefix="/api/files", tags=["Files"])
+app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---

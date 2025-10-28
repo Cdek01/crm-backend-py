@@ -21,6 +21,7 @@ class ValueTypeEnum(str, Enum):
     multiselect = "multiselect"
     formula = "formula"
     relation = "relation"
+    audio = "audio"
 
 
 

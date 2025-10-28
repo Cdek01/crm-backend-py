@@ -1170,6 +1170,12 @@ class EAVService:
                     raise ValueError("Некорректный URL")
                 return value
 
+            # Для аудио мы просто проверяем, что это строка (путь к файлу)
+            if value_type == 'audio':
+                if isinstance(value, str) and value.startswith('/static/uploads/audio/'):
+                    return value
+                return None  # Если пришло что-то другое, считаем значение некорректным
+            # -----------------------------
 
             # --- НОВАЯ ЛОГИКА ДЛЯ SELECT ---
             if value_type == 'select':

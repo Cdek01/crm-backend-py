@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     REGISTRATION_SECRET_TOKEN: str
     EXTERNAL_API_URL: Optional[str] = None
-
+    DEEPSEEK_API_KEY: str # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+    DEEPSEEK_BASE_URL: str # <-- И ЭТУ
     class Config:
         env_file = ".env"
 
