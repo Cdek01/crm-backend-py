@@ -1,5 +1,7 @@
 # tasks/enrichment.py
 import logging
+from datetime import datetime
+
 from dadata import Dadata
 from celery_worker import celery_app
 from core.config import settings
