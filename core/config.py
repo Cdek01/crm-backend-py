@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     EXTERNAL_API_URL: Optional[str] = None
     DEEPSEEK_API_KEY: str # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
     DEEPSEEK_BASE_URL: str # <-- И ЭТУ
+    DADATA_API_KEY: Optional[str] = None
+    DADATA_SECRET_KEY: Optional[str] = None
+    
     class Config:
         env_file = ".env"
 

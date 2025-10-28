@@ -24,7 +24,9 @@ celery_app = Celery(
     'celery_worker',
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=['tasks.messaging', 'tasks.imports']
+    # include=['tasks.messaging', 'tasks.imports']
+    include = ['tasks.messaging', 'tasks.imports', 'tasks.enrichment']  # <-- Добавьте 'tasks.enrichment'
+
 )
 
 # Можно добавить дополнительные настройки, если потребуется

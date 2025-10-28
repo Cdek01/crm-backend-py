@@ -17,6 +17,9 @@ import re
 # from tasks.messaging import send_webhook_task
 from sqlalchemy import or_, cast, Text
 import logging # <-- ШАГ 1: Добавьте этот импорт
+from tasks.enrichment import enrich_data_by_inn_task # <-- ДОБАВЬТЕ ЭТО
+
+
 logger = logging.getLogger(__name__)
 
 VALUE_FIELD_MAP = {
@@ -1093,6 +1096,18 @@ class EAVService:
         entity.updated_at = datetime.utcnow()
         self.db.commit()
 
+        # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
+        # # Запускаем, только если поле 'inn' было в запросе на обновление и оно не пустое
+        if 'inn' in data and data['inn']:
+            enrich_data_by_inn_task.delay(
+                entity_id=entity_id,
+                inn=str(data['inn']),
+                user_id=current_user.id
+            )
+        # # --- КОНЕЦ ТРИГГЕРА ---
+
+
+
         if not is_external_update:
             send_webhook_task.delay(
                 event_type="update",
@@ -1297,6 +1312,16 @@ class EAVService:
             # ---------------------------
 
         self.db.commit()
+
+        # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
+        if 'inn' in data and data['inn']:
+            enrich_data_by_inn_task.delay(
+                entity_id=new_entity.id,
+                inn=str(data['inn']),
+                user_id=current_user.id
+            )
+        # # --- КОНЕЦ ТРИГГЕРА ---
+
 
         # --- ЛОГИКА ОТПРАВКИ УВЕДОМЛЕНИЯ ---
         if not is_external_update:
