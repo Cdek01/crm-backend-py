@@ -13,7 +13,8 @@ from api.deps import get_current_user
 from tasks.imports import process_file_import_task # Мы создадим это в следующем шаге
 
 router = APIRouter()
-
+import logging # <-- ШАГ 1: Добавьте этот импорт
+logger = logging.getLogger(__name__)
 # Создаем папку для временного хранения файлов
 UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -35,35 +36,37 @@ class ImportProcessRequest(BaseModel):
 @router.post("/upload")
 async def upload_file_for_import(
     file: UploadFile = File(...),
-    delimiter: str = ',', # Позволяем фронтенду указать разделитель
+    delimiter: str = ',',
     current_user: models.User = Depends(get_current_user)
 ):
     """
     Шаг 1: Загрузка файла.
     Сохраняет файл, анализирует заголовки и первые 5 строк.
     """
+    file_path = None # Инициализируем переменную
     try:
-        # Генерируем уникальное имя файла, чтобы избежать конфликтов
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{current_user.id}_{uuid.uuid4().hex}{file_extension}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-        # Сохраняем файл на диск
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Используем pandas для анализа
         if file_extension.lower() == '.csv':
-            # sep=None и engine='python' для автоопределения разделителя, если он не указан
-            df_preview = pd.read_csv(file_path, sep=delimiter if delimiter else None, engine='python', nrows=5)
+            # pandas отлично справляется с кодировкой, но можно указать явно, если будут проблемы
+            df_preview = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=5)
         elif file_extension.lower() in ['.xlsx', '.xls']:
             df_preview = pd.read_excel(file_path, nrows=5)
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
-        headers = df_preview.columns.tolist()
-        # Преобразуем preview DataFrame в формат JSON
-        preview_data = df_preview.head().to_dict(orient='records')
+        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        # Заменяем все значения NaN на None, который корректно преобразуется в JSON 'null'
+        df_preview_cleaned = df_preview.where(pd.notna(df_preview), None)
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
+        headers = df_preview_cleaned.columns.tolist()
+        preview_data = df_preview_cleaned.to_dict(orient='records')
 
         return {
             "file_id": unique_filename,
@@ -71,9 +74,10 @@ async def upload_file_for_import(
             "preview_data": preview_data
         }
     except Exception as e:
-        # В случае ошибки удаляем файл, если он был создан
-        if 'file_path' in locals() and os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             os.remove(file_path)
+        # Улучшаем вывод ошибок для отладки
+        logger.error(f"Ошибка при загрузке файла: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка при обработке файла: {str(e)}")
 
 
