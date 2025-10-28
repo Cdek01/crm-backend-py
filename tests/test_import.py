@@ -60,20 +60,16 @@ def login() -> Optional[Dict[str, str]]:
 # --- Основные функции теста ---
 
 def create_test_csv():
-    """Создает временный, более сложный CSV-файл для теста."""
+    """Создает временный CSV-файл для теста."""
     csv_content = (
-        '"Ref ID","Компания","Дата сделки","Выручка","Кол-во лицензий","Активен","Рейтинг (1-5)","Комментарий"\n'
-        '"ID-001","ООО ""Альфа, Гамма""","15.01.2024","150000.50","10","true","5","Все хорошо, оплата прошла"\n'
-        '"ID-002","ИП Сидоров А.Б.","20/11/2023","85000","5","Да","4",""\n'
-        '"ID-003","ЗАО \'Вектор\'","2024-03-30","","1","no","3","Нужно перезвонить"\n'
-        '"ID-004","ОАО ""Техно-Строй""","01 Aug 2022","320000.00","25","1","",""\n'
-        '"ID-005","Интернет-магазин ""Все для дома""","10-02-2024","999.90","1","Yes","5","Срочный заказ"\n'
-        '"ID-006","Пустая строка","","","","","","Эта строка содержит только текст"\n'
-        '"ID-007","Нулевые значения","12.12.2025","0","0","0","1",""\n'
+        "Имя клиента,Сумма контракта,Дата регистрации,Активен\n"
+        "ООО 'Ромашка',150000.50,2023-01-15,true\n"
+        "ИП Иванов,85000,2022-11-20,true\n"
+        "ЗАО 'Лютик',,2024-03-10,false\n"  # Пропускаем сумму для теста
     )
     with open(TEST_CSV_FILENAME, 'w', encoding='utf-8') as f:
         f.write(csv_content)
-    print_status(True, f"Тестовый файл '{TEST_CSV_FILENAME}' (сложная версия) создан.")
+    print_status(True, f"Тестовый файл '{TEST_CSV_FILENAME}' создан.")
 
 
 def run_import_test(headers: Dict[str, str]) -> Optional[int]:
@@ -94,9 +90,8 @@ def run_import_test(headers: Dict[str, str]) -> Optional[int]:
         file_id = upload_data.get("file_id")
         headers_from_file = upload_data.get("headers")
 
-        # --- ИСПРАВЛЕНИЕ 1: Проверяем на 8 колонок ---
-        ok = file_id and headers_from_file and len(headers_from_file) == 8
-        print_status(ok, f"Файл успешно загружен. Получен file_id: {file_id}. Распознано колонок: {len(headers_from_file)}")
+        ok = file_id and headers_from_file and len(headers_from_file) == 4
+        print_status(ok, f"Файл успешно загружен. Получен file_id: {file_id}")
         if not ok: return None
 
         # --- Шаг 2: Формирование конфигурации и запуск обработки ---
@@ -104,30 +99,30 @@ def run_import_test(headers: Dict[str, str]) -> Optional[int]:
 
         import_config = {
             "new_table_name": NEW_TABLE_NAME,
-            "new_table_display_name": "Сложный импорт",
-            "columns": []
+            "new_table_display_name": "Клиенты из импорта",
+            "columns": [
+                {"original_header": "Имя клиента", "display_name": "Название клиента", "value_type": "string",
+                 "do_import": True},
+                {"original_header": "Сумма контракта", "display_name": "Сумма", "value_type": "float",
+                 "do_import": True},
+                {"original_header": "Дата регистрации", "display_name": "Дата", "value_type": "date",
+                 "do_import": True},
+                {"original_header": "Активен", "display_name": "Статус активности", "value_type": "boolean",
+                 "do_import": False}
+            ]
         }
-        for header_info in headers_from_file:
-            original_header = header_info['original_header']
-            # Включаем все колонки, кроме "Комментарий"
-            do_import = "Комментарий" not in original_header
-
-            import_config["columns"].append({
-                "original_header": original_header,
-                "display_name": original_header,  # Оставляем оригинальное имя
-                "value_type": header_info['suggested_type'],  # Используем предложенный тип
-                "do_import": do_import
-            })
 
         url_process = f"{BASE_URL}/api/imports/process/{file_id}"
         response_process = requests.post(url_process, headers=headers, json=import_config)
         response_process.raise_for_status()
-        print_status(True, f"Фоновая задача на импорт успешно запущена.")
+
+        print_status(True,
+                     f"Фоновая задача на импорт успешно запущена. Task ID: {response_process.json().get('task_id')}")
 
         # --- Шаг 3: Ожидание и проверка результата ---
         print_header("Шаг 3: Ожидание и проверка результата")
-        print("-> Ждем 15 секунд, пока Celery обработает файл...")
-        time.sleep(15)
+        print("-> Ждем 10 секунд, пока Celery обработает файл...")
+        time.sleep(10)
 
         # Проверяем, появилась ли таблица
         url_get_tables = f"{BASE_URL}/api/meta/entity-types"

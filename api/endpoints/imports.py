@@ -37,45 +37,6 @@ class ImportProcessRequest(BaseModel):
     columns: List[ColumnMapping]
 
 
-def infer_column_type(series: pd.Series) -> str:
-    """
-    "Умная" функция, которая пытается определить тип данных для колонки (серии pandas).
-    """
-    # 1. Убираем пустые значения, они не должны влиять на определение типа
-    series = series.dropna()
-    if series.empty:
-        return "string"  # Если все значения пустые, считаем строкой
-
-    # 2. Попытка преобразования в число
-    try:
-        numeric_series = pd.to_numeric(series)
-        # Если все числа целые, то это integer
-        if (numeric_series == numeric_series.astype(int)).all():
-            return "integer"
-        else:
-            return "float"  # Иначе - float
-    except (ValueError, TypeError):
-        pass  # Не получилось, идем дальше
-
-    # 3. Попытка преобразования в дату
-    try:
-        # errors='coerce' превратит не-даты в NaT (Not a Time)
-        date_series = pd.to_datetime(series, errors='coerce')
-        # Если после преобразования не осталось пустых значений, значит все было датами
-        if date_series.notna().all():
-            return "date"
-    except (ValueError, TypeError):
-        pass
-
-    # 4. Попытка преобразования в boolean
-    # Проверяем, похожи ли все значения на True/False
-    bool_values = {'true', 'false', '1', '0', 'yes', 'no', 'да', 'нет'}
-    if series.str.lower().isin(bool_values).all():
-        return "boolean"
-
-    # 5. Если ничего не подошло - это строка
-    return "string"
-
 
 @router.post("/upload")
 async def upload_file_for_import(
@@ -85,10 +46,11 @@ async def upload_file_for_import(
 ):
     """
     Шаг 1: Загрузка файла.
-    Сохраняет файл, "умно" анализирует заголовки и типы, возвращает превью.
+    Сохраняет файл, анализирует заголовки и первые 5 строк.
     """
     file_path = None
     try:
+        # ... (код сохранения файла без изменений)
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{current_user.id}_{uuid.uuid4().hex}{file_extension}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
@@ -96,39 +58,40 @@ async def upload_file_for_import(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Читаем сэмпл файла для анализа (например, 200 строк)
-        # dtype=str гарантирует, что pandas не будет угадывать типы сам на этом этапе
         if file_extension.lower() == '.csv':
-            df_sample = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=200, keep_default_na=False)
+            df_preview = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=5)
         elif file_extension.lower() in ['.xlsx', '.xls']:
-            df_sample = pd.read_excel(file_path, nrows=200, keep_default_na=False)
+            df_preview = pd.read_excel(file_path, nrows=5)
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
-        # --- НОВАЯ ЛОГИКА АНАЛИЗА ---
-        headers_with_types = []
-        for header in df_sample.columns:
-            inferred_type = infer_column_type(df_sample[header])
-            headers_with_types.append({
-                "original_header": header,
-                "suggested_type": inferred_type
-            })
+        # --- НАЧАЛО НОВОГО, БОЛЕЕ НАДЕЖНОГО ИСПРАВЛЕНИЯ ---
+        # Метод .replace() более явно заменяет конкретное значение (np.nan) на другое (None).
+        # Это должно сработать даже в старых версиях pandas.
+        df_preview_cleaned = df_preview.replace({np.nan: None})
+        # --- КОНЕЦ НОВОГО ИСПРАВЛЕНИЯ ---
 
-        # Готовим превью данных
-        df_preview = df_sample.head(5).replace({np.nan: None})
-        preview_data = df_preview.to_dict(orient='records')
+        # Отладочный вывод оставляем, чтобы проверить результат
+        print("\n" + "=" * 20 + " DEBUG INFO (v2) " + "=" * 20)
+        print("--- DataFrame ПОСЛЕ очистки (метод .replace()) ---")
+        print(df_preview_cleaned)
+        print("=" * 52 + "\n")
+
+        headers = df_preview_cleaned.columns.tolist()
+        preview_data = df_preview_cleaned.to_dict(orient='records')
 
         return {
             "file_id": unique_filename,
-            "headers": headers_with_types,  # <-- Теперь возвращаем список объектов
+            "headers": headers,
             "preview_data": preview_data
         }
     except Exception as e:
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
-        logger.error(f"Ошибка при загрузке и анализе файла: {e}", exc_info=True)
+        logger.error(f"Ошибка при загрузке файла: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка при обработке файла: {str(e)}")
+
 
 @router.post("/process/{file_id}")
 def process_import(
