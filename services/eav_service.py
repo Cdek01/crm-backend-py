@@ -587,10 +587,20 @@ class EAVService:
                     continue
                 display_attr_id = rel_attr.display_attribute.id
                 source_ids = set()
-                if rel_attr.allow_multiple_selection:
-                    for row in pivoted_results:
-                        if isinstance(row.get(rel_attr.name), list):
-                            source_ids.update(row.get(rel_attr.name))
+                if rel_attr.allow_multiple_selection:                    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+                    # Проверяем, что в ячейке список (а не уже преобразованный dict)
+                    # и извлекаем из него ID
+                    cell_value = row.get(rel_attr.name)
+                    if isinstance(cell_value, list):
+                        for item in cell_value:
+                            if isinstance(item, dict):
+                                source_ids.add(item.get('id'))
+                            elif isinstance(item, int):
+                                source_ids.add(item)
+                    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+                    # for row in pivoted_results:
+                    #     if isinstance(row.get(rel_attr.name), list):
+                    #         source_ids.update(row.get(rel_attr.name))
                 else:
                     source_ids.update(
                         row.get(rel_attr.name) for row in pivoted_results if isinstance(row.get(rel_attr.name), int)
