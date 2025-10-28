@@ -17,7 +17,7 @@ import re
 # from tasks.messaging import send_webhook_task
 from sqlalchemy import or_, cast, Text
 import logging # <-- ШАГ 1: Добавьте этот импорт
-from tasks.enrichment import enrich_data_by_inn_task # <-- ДОБАВЬТЕ ЭТО
+# from tasks.enrichment import enrich_data_by_inn_task # <-- ДОБАВЬТЕ ЭТО
 
 
 logger = logging.getLogger(__name__)
@@ -1099,6 +1099,7 @@ class EAVService:
         # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
         # # Запускаем, только если поле 'inn' было в запросе на обновление и оно не пустое
         if 'inn' in data and data['inn']:
+            from tasks.enrichment import enrich_data_by_inn_task  # <-- И СЮДА ТОЖЕ
             enrich_data_by_inn_task.delay(
                 entity_id=entity_id,
                 inn=str(data['inn']),
@@ -1315,6 +1316,7 @@ class EAVService:
 
         # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
         if 'inn' in data and data['inn']:
+            from tasks.enrichment import enrich_data_by_inn_task  # <-- ПЕРЕНЕСИТЕ ИМПОРТ СЮДА
             enrich_data_by_inn_task.delay(
                 entity_id=new_entity.id,
                 inn=str(data['inn']),
