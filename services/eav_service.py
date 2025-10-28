@@ -585,45 +585,56 @@ class EAVService:
             for rel_attr in relation_attributes:
                 if not (rel_attr.target_entity_type_id and rel_attr.display_attribute):
                     continue
+
                 display_attr_id = rel_attr.display_attribute.id
                 source_ids = set()
-                if rel_attr.allow_multiple_selection:
-                    for row in pivoted_results:
-                        if isinstance(row.get(rel_attr.name), list):
-                            source_ids.update(row.get(rel_attr.name))
-                else:
-                    source_ids.update(
-                        row.get(rel_attr.name) for row in pivoted_results if isinstance(row.get(rel_attr.name), int)
-                    )
+
+                for row in pivoted_results:
+                    cell_value = row.get(rel_attr.name)
+                    if isinstance(cell_value, list):
+                        source_ids.update(
+                            item if isinstance(item, int) else item.get('id') for item in cell_value if item)
+                    elif isinstance(cell_value, int):
+                        source_ids.add(cell_value)
+
                 if not source_ids:
                     continue
+
                 display_values_query = self.db.query(
                     models.AttributeValue.entity_id,
                     models.AttributeValue.value_string,
                     models.AttributeValue.value_integer,
                     models.AttributeValue.value_float
                 ).filter(
-                    and_(
-                        models.AttributeValue.entity_id.in_(source_ids),
-                        models.AttributeValue.attribute_id == display_attr_id
-                    )
+                    models.AttributeValue.entity_id.in_(source_ids),
+                    models.AttributeValue.attribute_id == display_attr_id
                 ).all()
+
                 lookup_map = {
                     entity_id: str(val_str or val_int or val_float or '')
                     for entity_id, val_str, val_int, val_float in display_values_query
                 }
+
+                # --- НАЧАЛО ФИНАЛЬНОГО ИСПРАВЛЕНИЯ ---
                 for row in pivoted_results:
+                    cell_value = row.get(rel_attr.name)
+
                     if rel_attr.allow_multiple_selection:
-                        source_id_list = row.get(rel_attr.name)
-                        if isinstance(source_id_list, list):
+                        # Для множественной связи, как и раньше, формируем массив объектов
+                        if isinstance(cell_value, list):
                             row[rel_attr.name] = [
-                                {"id": sid, "value": lookup_map.get(sid, "N/A")}
-                                for sid in source_id_list
+                                {"id": sid, "value": lookup_map.get(sid)}
+                                for sid in cell_value if sid in lookup_map
                             ]
+                        else:
+                            row[rel_attr.name] = []  # Если не список, возвращаем пустой массив
                     else:
-                        source_id = row.get(rel_attr.name)
-                        if source_id in lookup_map:
-                            row[rel_attr.name] = lookup_map[source_id]
+                        # Для одиночной связи ТЕПЕРЬ ТОЖЕ формируем массив, но с одним элементом
+                        if isinstance(cell_value, int) and cell_value in lookup_map:
+                            row[rel_attr.name] = [{"id": cell_value, "value": lookup_map.get(cell_value)}]
+                        else:
+                            row[rel_attr.name] = []  # Если ID нет или он не найден, возвращаем пустой массив
+                # --- КОНЕЦ ФИНАЛЬНОГО ИСПРАВЛЕНИЯ ---
 
         return {"total": total_count, "data": pivoted_results}
 
@@ -875,14 +886,15 @@ class EAVService:
                 display_attr_id = rel_attr.display_attribute.id
 
                 source_ids = set()
-                raw_value = pivoted_result.get(rel_attr.name)
-
-                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
-                    source_ids.update(raw_value)
-                elif not rel_attr.allow_multiple_selection and isinstance(raw_value, int):
-                    source_ids.add(raw_value)
+                cell_value = pivoted_result.get(rel_attr.name)
+                if isinstance(cell_value, list):
+                    source_ids.update(item if isinstance(item, int) else item.get('id') for item in cell_value if item)
+                elif isinstance(cell_value, int):
+                    source_ids.add(cell_value)
 
                 if not source_ids:
+                    if rel_attr.name in pivoted_result:
+                        pivoted_result[rel_attr.name] = []
                     continue
 
                 display_values_query = self.db.query(
@@ -900,13 +912,21 @@ class EAVService:
                     for entity_id, val_str, val_int, val_float in display_values_query
                 }
 
-                if rel_attr.allow_multiple_selection and isinstance(raw_value, list):
-                    pivoted_result[rel_attr.name] = [
-                        {"id": sid, "value": lookup_map.get(sid, "N/A")}
-                        for sid in raw_value
-                    ]
-                elif not rel_attr.allow_multiple_selection and raw_value in lookup_map:
-                    pivoted_result[rel_attr.name] = lookup_map[raw_value]
+                # --- ПРИМЕНЯЕМ ТУ ЖЕ САМУЮ ЛОГИКУ УНИФИКАЦИИ ---
+                if rel_attr.allow_multiple_selection:
+                    if isinstance(cell_value, list):
+                        pivoted_result[rel_attr.name] = [
+                            {"id": sid, "value": lookup_map.get(sid)}
+                            for sid in cell_value if sid in lookup_map
+                        ]
+                    else:
+                        pivoted_result[rel_attr.name] = []
+                else:
+                    if isinstance(cell_value, int) and cell_value in lookup_map:
+                        pivoted_result[rel_attr.name] = [{"id": cell_value, "value": lookup_map.get(cell_value)}]
+                    else:
+                        pivoted_result[rel_attr.name] = []
+                # --- КОНЕЦ ЛОГИКИ УНИФИКАЦИИ ---
 
         return pivoted_result
 
