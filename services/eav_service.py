@@ -805,8 +805,10 @@ class EAVService:
                 # --- КОНЕЦ ИСПРАВЛЕНИЙ ---
 
                 back_relation_attr_data = {
-                    "name": back_name, "display_name": back_display_name,
-                    "value_type": "relation", "entity_type_id": target_entity_type_obj.id,
+                    "name": final_back_name,  # <-- Использовать final_back_name
+                    "display_name": final_back_display_name,  # <-- Использовать final_back_display_name
+                    "value_type": "relation",
+                    "entity_type_id": target_entity_type_obj.id,
                     "target_entity_type_id": source_entity_type_obj.id,
                     "display_attribute_id": back_display_attr_id,
                     "allow_multiple_selection": attribute_in.allow_multiple_selection
