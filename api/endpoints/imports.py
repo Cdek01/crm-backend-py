@@ -8,7 +8,7 @@ import logging
 
 import pandas as pd
 from pydantic import BaseModel
-
+import numpy as np
 from db import models
 from api.deps import get_current_user
 from tasks.imports import process_file_import_task
@@ -71,7 +71,7 @@ async def upload_file_for_import(
         print("-" * 52)
 
         # Заменяем все значения NaN на None
-        df_preview_cleaned = df_preview.where(pd.notna(df_preview), None)
+        df_preview_cleaned = df_preview.replace({np.nan: None})
 
         print("--- DataFrame ПОСЛЕ очистки ---")
         print(df_preview_cleaned)
