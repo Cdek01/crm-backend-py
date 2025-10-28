@@ -2,19 +2,22 @@
 import os
 import shutil
 import uuid
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Body
-from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from typing import List
+import logging
 
 import pandas as pd
 from pydantic import BaseModel
 
 from db import models
 from api.deps import get_current_user
-from tasks.imports import process_file_import_task # Мы создадим это в следующем шаге
+from tasks.imports import process_file_import_task
+
+# Получаем логгер
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-import logging # <-- ШАГ 1: Добавьте этот импорт
-logger = logging.getLogger(__name__)
+
 # Создаем папку для временного хранения файлов
 UPLOAD_DIR = "temp_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -23,7 +26,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 class ColumnMapping(BaseModel):
     original_header: str
     display_name: str
-    value_type: str # 'string', 'integer', 'float', 'date', etc.
+    value_type: str
     do_import: bool
 
 
@@ -43,7 +46,7 @@ async def upload_file_for_import(
     Шаг 1: Загрузка файла.
     Сохраняет файл, анализирует заголовки и первые 5 строк.
     """
-    file_path = None # Инициализируем переменную
+    file_path = None  # Инициализируем переменную
     try:
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{current_user.id}_{uuid.uuid4().hex}{file_extension}"
@@ -53,14 +56,13 @@ async def upload_file_for_import(
             shutil.copyfileobj(file.file, buffer)
 
         if file_extension.lower() == '.csv':
-            # pandas отлично справляется с кодировкой, но можно указать явно, если будут проблемы
             df_preview = pd.read_csv(file_path, sep=delimiter or None, engine='python', nrows=5)
         elif file_extension.lower() in ['.xlsx', '.xls']:
             df_preview = pd.read_excel(file_path, nrows=5)
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
-        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        # --- КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ---
         # Заменяем все значения NaN на None, который корректно преобразуется в JSON 'null'
         df_preview_cleaned = df_preview.where(pd.notna(df_preview), None)
         # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
@@ -95,12 +97,11 @@ def process_import(
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Файл для импорта не найден. Возможно, сессия истекла.")
 
-    # Запускаем фоновую задачу Celery
     task = process_file_import_task.delay(
         file_path=file_path,
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
-        import_config=config.model_dump() # Передаем конфигурацию как словарь
+        import_config=config.model_dump()
     )
 
     return {"message": "Импорт запущен в фоновом режиме.", "task_id": task.id}
