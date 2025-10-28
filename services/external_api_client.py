@@ -3,23 +3,32 @@ import requests
 from typing import Dict, Any
 import logging
 from core.config import settings
+import json # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+from datetime import date, datetime # <-- И ЭТОТ
 
 # Настраиваем простой логгер
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- НОВЫЙ ВСПОМОГАТЕЛЬНЫЙ КЛАСС ---
+class DateTimeEncoder(json.JSONEncoder):
+    """
+    Кастомный JSON-кодировщик, который умеет преобразовывать
+    объекты datetime и date в строки формата ISO 8601.
+    """
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+# --- КОНЕЦ НОВОГО КЛАССА ---
 
 def send_update_to_colleague(event_type: str, table_name: str, entity_id: Any, data: Dict[str, Any]):
     """
     Отправляет уведомление об изменении во внешнее API.
-    Безопасно обрабатывает ошибки, не прерывая работу основного приложения.
+    Безопасно обрабатывает ошибки и корректно сериализует даты.
     """
-    # 1. Проверяем, настроен ли URL. Если нет - тихо выходим.
     if not settings.EXTERNAL_API_URL:
-        # Это не ошибка, а штатная ситуация, если интеграция не настроена.
-        # Поэтому здесь можно ничего не логировать или использовать logging.DEBUG.
         return
 
-    # 2. Формируем тело запроса
     payload = {
         "event_type": event_type,
         "table_name": table_name,
@@ -29,26 +38,28 @@ def send_update_to_colleague(event_type: str, table_name: str, entity_id: Any, d
     }
 
     try:
-        # 3. Отправляем POST-запрос с таймаутом
-        logging.info(f"Отправка уведомления на {settings.EXTERNAL_API_URL} с данными: {payload}")
+        logging.info(f"Отправка уведомления на {settings.EXTERNAL_API_URL} с данными...")
 
-        # Устанавливаем таймаут (например, 5 секунд), чтобы не ждать вечно
-        response = requests.post(settings.EXTERNAL_API_URL, json=payload, timeout=30)
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        # Вместо того чтобы полагаться на requests, мы сами кодируем payload в JSON,
+        # используя наш кастомный кодировщик DateTimeEncoder.
+        # Это превратит все объекты datetime в строки.
+        json_payload = json.dumps(payload, cls=DateTimeEncoder)
 
-        # Проверяем, что API коллеги ответило успехом (статус 2xx).
-        # Если статус 4xx или 5xx, будет выброшено исключение HTTPError.
+        # Устанавливаем заголовок Content-Type вручную
+        headers = {'Content-Type': 'application/json'}
+
+        response = requests.post(
+            settings.EXTERNAL_API_URL,
+            data=json_payload,  # <-- Отправляем как data, а не json
+            headers=headers,
+            timeout=30
+        )
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
         response.raise_for_status()
 
         logging.info(f"Уведомление для {event_type} в {table_name} успешно доставлено.")
 
     except requests.exceptions.RequestException as e:
-        # --- БЛОК ПЕРЕХВАТА ОШИБОК ---
-        # Этот блок `except` сработает для ЛЮБОЙ проблемы с запросом:
-        # - ConnectionError: Сервер коллеги не запущен или недоступен.
-        # - Timeout: Сервер коллеги не ответил за 5 секунд.
-        # - HTTPError: Сервер коллеги ответил с ошибкой (например, 404, 500).
-
-        # Мы логируем ошибку, но НЕ пробрасываем ее дальше.
-        # Работа основного приложения продолжится без сбоев.
         logging.error(f"ОШИБКА: Не удалось отправить уведомление во внешнее API. Причина: {e}")
-        # -----------------------------
