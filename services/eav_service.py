@@ -1140,7 +1140,25 @@ class EAVService:
                 # Проверяем, что это валидный email. Если нет, email_validator выбросит исключение.
                 validate_email(value, check_deliverability=False)  # check_deliverability=False для скорости
                 return value  # Возвращаем исходную строку, если она валидна
+            # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+            if value_type == 'boolean':
+                # Если уже пришел boolean, просто возвращаем его
+                if isinstance(value, bool):
+                    return value
+                # Если пришла строка, пытаемся ее распознать
+                if isinstance(value, str):
+                    val_lower = value.lower().strip()
+                    if val_lower in ('true', 'yes', '1', 'да', 'on'):
+                        return True
+                    if val_lower in ('false', 'no', '0', 'нет', 'off'):
+                        return False
+                # Если пришло число 1 или 0
+                if isinstance(value, int) and value in (0, 1):
+                    return bool(value)
 
+                # Если не смогли распознать, считаем значение некорректным/пустым
+                return None
+            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
             if value_type == 'phone':
                 # Здесь может быть более сложная валидация, но пока просто оставляем как есть.
                 # Можно использовать, например, библиотеку phonenumbers.
