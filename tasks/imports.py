@@ -53,11 +53,16 @@ def process_file_import_task(file_path: str, user_id: int, tenant_id: int, impor
                 column_mappings[col_config['original_header']] = new_attribute.name
 
         # 3. Читаем весь файл и импортируем данные
-        if file_path.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+                # Убираем dtype=str и добавляем parse_dates для колонок, которые пользователь отметил как 'date'
+        date_columns = [
+            col['original_header'] for col in import_config['columns']
+            if col['do_import'] and col['value_type'] == 'date'
+        ]
 
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path, parse_dates=date_columns)
+        else:
+            df = pd.read_excel(file_path, parse_dates=date_columns)
         df.rename(columns=column_mappings, inplace=True)
 
         # Заменяем NaN на None во всем DataFrame перед итерацией
