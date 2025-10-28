@@ -58,8 +58,7 @@ def infer_column_type(series: pd.Series) -> str:
 
     # 3. Попытка преобразования в дату
     try:
-        # errors='coerce' превратит не-даты в NaT (Not a Time)
-        date_series = pd.to_datetime(series_cleaned, errors='coerce')
+        date_series = pd.to_datetime(series_cleaned, errors='coerce', dayfirst=True) # <-- ДОБАВИТЬ dayfirst=True
         if date_series.notna().all():
             return "date"
     except (ValueError, TypeError):

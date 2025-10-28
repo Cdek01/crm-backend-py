@@ -346,8 +346,8 @@ def run_import_test(headers: Dict[str, str]) -> Optional[int]:
 
         # --- Шаг 3: Ожидание и проверка результата ---
         print_header("Шаг 3: Ожидание и проверка результата")
-        print("-> Ждем 15 секунд, пока Celery обработает файл...")
-        time.sleep(15)
+        print("-> Ждем 50 секунд, пока Celery обработает файл...")
+        time.sleep(50)
 
         url_get_tables = f"{BASE_URL}/api/meta/entity-types"
         response_tables = requests.get(url_get_tables, headers=headers)
