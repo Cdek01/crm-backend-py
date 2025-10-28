@@ -1,4 +1,5 @@
 #services/eav_service.py
+import pandas as pd
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
@@ -1092,32 +1093,55 @@ class EAVService:
 
         # 3. Конвертируем типы, если значение не None
         try:
-            if value_type == 'date' and isinstance(value, str):
-                return datetime.fromisoformat(value)
+            if value_type == 'date':
+                try:
+                    # pandas уже мог преобразовать значение в datetime
+                    if isinstance(value, (datetime, date)):
+                        return value
+                    return pd.to_datetime(value).to_pydatetime()
+                except (ValueError, TypeError):
+                    return None
             if value_type == 'time' and isinstance(value, str):
                 # Преобразуем строку "HH:MM:SS" в объект time
                 from datetime import time
                 return time.fromisoformat(value)
-            if value_type == 'integer' and not isinstance(value, int):
-                return int(value)
-            if value_type == 'float' and not isinstance(value, float):
-                return float(value)
-            # --- НОВАЯ ЛОГИКА ВАЛИДАЦИИ ---
-            if value_type == 'email':
-                # Проверяем, что это валидный email. Если нет, email_validator выбросит исключение.
-                validate_email(value, check_deliverability=False)  # check_deliverability=False для скорости
-                return value  # Возвращаем исходную строку, если она валидна
+            if value_type == 'integer':
+                try:
+                    return int(float(value))  # float() для обработки "10.0"
+                except (ValueError, TypeError):
+                    return None
 
+            if value_type == 'boolean':
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    val_lower = value.lower()
+                    if val_lower in ('true', 'yes', '1', 'да'):
+                        return True
+                    if val_lower in ('false', 'no', '0', 'нет'):
+                        return False
+                return None  # Если не распознали, считаем значение пустым
+
+            if value_type == 'float':
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return None
+            if value_type == 'email':
+                try:
+                    validate_email(value, check_deliverability=False)
+                    return str(value)
+                except (EmailNotValidError, ValueError):
+                    return None
             if value_type == 'phone':
                 # Здесь может быть более сложная валидация, но пока просто оставляем как есть.
                 # Можно использовать, например, библиотеку phonenumbers.
                 return value
 
             if value_type == 'url':
-                # Проверяем, что это валидный URL. Если нет, validators.url вернет False.
-                if not validators.url(value):
-                    raise ValueError("Некорректный URL")
-                return value
+                if validators.url(str(value)):
+                    return str(value)
+                return None
 
 
             # --- НОВАЯ ЛОГИКА ДЛЯ SELECT ---
