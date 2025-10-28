@@ -15,6 +15,8 @@ def process_file_import_task(file_path: str, user_id: int, tenant_id: int, impor
     """
     Фоновая задача, которая выполняет всю тяжелую работу по импорту.
     """
+    print("!!! ЗАПУСК ЗАДАЧИ process_file_import_task !!!")
+
     db = None
     try:
         db = SessionLocal()
