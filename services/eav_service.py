@@ -764,8 +764,29 @@ class EAVService:
 
             # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
-                back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
-                back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
+                # back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
+                # back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
+                # --- НАЧАЛО НОВОЙ ЛОГИКИ УНИКАЛЬНОСТИ ИМЕН ---
+                base_back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
+                base_back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
+
+                final_back_name = base_back_name
+                final_back_display_name = base_back_display_name
+                counter = 1
+
+                # Проверяем, существует ли уже колонка с таким системным именем в целевой таблице
+                while self.db.query(models.Attribute).filter(
+                        models.Attribute.entity_type_id == target_entity_type_obj.id,
+                        models.Attribute.name == final_back_name
+                ).first():
+                    # Если имя занято, добавляем суффикс
+                    final_back_name = f"{base_back_name}_{counter}"
+                    final_back_display_name = f"{base_back_display_name} ({counter})"
+                    counter += 1
+
+                logger.info(f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Финальное системное имя = {final_back_name}")
+                # --- КОНЕЦ НОВОЙ ЛОГИКИ УНИКАЛЬНОСТИ ИМЕН ---
+
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
 
                 if not back_display_attr_id:

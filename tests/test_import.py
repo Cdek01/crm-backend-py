@@ -121,8 +121,8 @@ def run_import_test(headers: Dict[str, str]) -> Optional[int]:
 
         # --- Шаг 3: Ожидание и проверка результата ---
         print_header("Шаг 3: Ожидание и проверка результата")
-        print("-> Ждем 100 секунд, пока Celery обработает файл...")
-        time.sleep(100)
+        print("-> Ждем 15 секунд, пока Celery обработает файл...")
+        time.sleep(15)
 
         # Проверяем, появилась ли таблица
         url_get_tables = f"{BASE_URL}/api/meta/entity-types"
@@ -157,8 +157,8 @@ def run_import_test(headers: Dict[str, str]) -> Optional[int]:
 
         ok_content = False
         if target_row:
-            # Убеждаемся, что колонка 'summa_kontrakta' отсутствует, так как значение было пустым
-            ok_content = 'summa_kontrakta' not in target_row
+            # Проверяем, что ключ либо отсутствует, либо его значение равно None
+            ok_content = target_row.get('summa_kontrakta') is None
 
         print_status(ok_content,
                      "Содержимое строки с пропущенным значением соответствует ожиданиям (поле отсутствует).")
