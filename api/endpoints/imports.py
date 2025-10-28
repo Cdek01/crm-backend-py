@@ -5,7 +5,6 @@ import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from typing import List
 import logging
-import numpy as np # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ В НАЧАЛЕ ФАЙЛА
 
 import pandas as pd
 from pydantic import BaseModel
@@ -37,7 +36,6 @@ class ImportProcessRequest(BaseModel):
     columns: List[ColumnMapping]
 
 
-
 @router.post("/upload")
 async def upload_file_for_import(
         file: UploadFile = File(...),
@@ -50,7 +48,6 @@ async def upload_file_for_import(
     """
     file_path = None
     try:
-        # ... (код сохранения файла без изменений)
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{current_user.id}_{uuid.uuid4().hex}{file_extension}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
@@ -65,17 +62,23 @@ async def upload_file_for_import(
         else:
             raise HTTPException(status_code=400, detail="Неподдерживаемый тип файла. Используйте CSV или Excel.")
 
-        # --- НАЧАЛО НОВОГО, БОЛЕЕ НАДЕЖНОГО ИСПРАВЛЕНИЯ ---
-        # Метод .replace() более явно заменяет конкретное значение (np.nan) на другое (None).
-        # Это должно сработать даже в старых версиях pandas.
-        df_preview_cleaned = df_preview.replace({np.nan: None})
-        # --- КОНЕЦ НОВОГО ИСПРАВЛЕНИЯ ---
+        # --- НАЧАЛО ОТЛАДОЧНОГО БЛОКА ---
+        print("\n" + "=" * 20 + " DEBUG INFO " + "=" * 20)
+        print("--- DataFrame ДО очистки ---")
+        print(df_preview)
+        print("--- Типы данных ДО очистки ---")
+        print(df_preview.dtypes)
+        print("-" * 52)
 
-        # Отладочный вывод оставляем, чтобы проверить результат
-        print("\n" + "=" * 20 + " DEBUG INFO (v2) " + "=" * 20)
-        print("--- DataFrame ПОСЛЕ очистки (метод .replace()) ---")
+        # Заменяем все значения NaN на None
+        df_preview_cleaned = df_preview.where(pd.notna(df_preview), None)
+
+        print("--- DataFrame ПОСЛЕ очистки ---")
         print(df_preview_cleaned)
+        print("--- Типы данных ПОСЛЕ очистки ---")
+        print(df_preview_cleaned.dtypes)
         print("=" * 52 + "\n")
+        # --- КОНЕЦ ОТЛАДОЧНОГО БЛОКА ---
 
         headers = df_preview_cleaned.columns.tolist()
         preview_data = df_preview_cleaned.to_dict(orient='records')
