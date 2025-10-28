@@ -4,7 +4,8 @@ from core.config import settings
 from db import models
 from typing import List, Dict, Any
 import json
-
+import logging # <-- ШАГ 1: Добавьте этот импорт
+logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self, current_user: models.User):
@@ -22,52 +23,54 @@ class AIService:
         Преобразует текстовый запрос в JSON-фильтр для API с помощью DeepSeek.
         """
 
-        # --- ПРОМПТ ОСТАЕТСЯ ПОЧТИ ТАКИМ ЖЕ ---
-        # Мы просто делаем его более формальным для чат-модели
+        # --- НАЧАЛО ИЗМЕНЕНИЙ В ПРОМПТЕ ---
         system_prompt = f"""
-        Ты — AI-ассистент, встроенный в CRM. Твоя задача — преобразовать запрос пользователя на естественном языке в JSON-массив фильтров.
+          Ты — AI-ассистент, встроенный в CRM. Твоя задача — преобразовать запрос пользователя на естественном языке в JSON-массив фильтров.
 
-        Вот схема колонок таблицы, с которой работает пользователь:
-        {json.dumps(table_schema, indent=2, ensure_ascii=False)}
+          Вот схема колонок таблицы, с которой работает пользователь:
+          {json.dumps(table_schema, indent=2, ensure_ascii=False)}
 
-        Правила:
-        1. Используй системные имена (`name`) для поля "field".
-        2. Для текстового поиска используй оператор "contains".
-        3. Для точного совпадения (например, статус "новый") используй оператор "eq".
-        4. Для дат используй специальные значения: 'today', 'yesterday', 'one_week_ago'.
-        5. Если пользователь говорит "за последнюю неделю", используй оператор "is_on_or_after" и значение "one_week_ago".
-        6. Твой ответ должен быть ТОЛЬКО JSON-массивом в одну строку, без ```json и других пояснений. Если не можешь разобрать запрос, верни пустой массив [].
-        """
+          Правила:
+          1. Для поля "field" всегда используй системные имена (`name`) из схемы.
+          2. Для текстовых полей (`string`) используй оператор "contains".
+          3. Для точного совпадения (статус, категория) используй "eq".
+          4. Для числовых полей (`integer`, `float`) используй операторы "gt" (больше), "lt" (меньше), "gte" (больше или равно), "lte" (меньше или равно).
+          5. Для дат используй специальные значения: 'today', 'yesterday', 'one_week_ago'.
+          6. Если пользователь говорит "за последнюю неделю" или "за прошлую неделю", используй оператор "is_on_or_after" и значение "one_week_ago".
+          7. Если не можешь разобрать часть запроса, проигнорируй ее. Если не можешь разобрать весь запрос, верни пустой массив [].
+          8. Твой ответ должен быть ТОЛЬКО JSON-массивом в одну строку, без ```json и других пояснений.
 
-        user_prompt = f"""
-        Преобразуй этот запрос: "{query}"
+          Пример запроса: "новые сделки ивана на сумму больше 10000 за последнюю неделю"
+          Пример твоего ответа:
+          [
+            {{"field": "status", "op": "eq", "value": "Новая"}},
+            {{"field": "manager", "op": "contains", "value": "иван"}},
+            {{"field": "amount", "op": "gt", "value": 10000}},
+            {{"field": "creation_date", "op": "is_on_or_after", "value": "one_week_ago"}}
+          ]
+          """
 
-        Пример ответа для запроса "новые лиды ивана за последнюю неделю":
-        [
-          {{"field": "lead_status", "op": "eq", "value": "Новый"}},
-          {{"field": "responsible_manager", "op": "contains", "value": "иван"}},
-          {{"field": "created_at", "op": "is_on_or_after", "value": "one_week_ago"}}
-        ]
-        """
+        user_prompt = f'Преобразуй этот запрос: "{query}"'
+        # --- КОНЕЦ ИЗМЕНЕНИЙ В ПРОМПТЕ ---
 
         try:
-            # --- ИЗМЕНЕНИЯ ЗДЕСЬ: Новый способ вызова ---
             response = self.client.chat.completions.create(
-                model="deepseek-chat",  # Указываем модель DeepSeek
+                model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                # Просим модель вернуть ответ строго в формате JSON
-                response_format={"type": "json_object"}
+                # response_format={"type": "json_object"} # Уберем это, чтобы получить сырой текст
             )
 
-            # Извлекаем и парсим JSON из ответа
             json_response_text = response.choices.message.content
+            # Более надежное извлечение JSON из ответа
+            json_start = json_response_text.find('[')
+            json_end = json_response_text.rfind(']') + 1
+            if json_start != -1 and json_end != -1:
+                json_response_text = json_response_text[json_start:json_end]
 
-            # DeepSeek может вернуть JSON в виде {"result": [...]}. Извлекаем массив.
-            parsed_data = json.loads(json_response_text)
-            filters = parsed_data.get("result", parsed_data)  # Пытаемся взять ключ 'result', иначе берем как есть
+            filters = json.loads(json_response_text)
 
             if isinstance(filters, list):
                 return filters
