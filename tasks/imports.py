@@ -2,6 +2,7 @@
 import os
 import pandas as pd
 from celery_worker import celery_app
+from db import models
 from db.session import SessionLocal
 from services.eav_service import EAVService
 from schemas.eav import EntityTypeCreate, AttributeCreate
