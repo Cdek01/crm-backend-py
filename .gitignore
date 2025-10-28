@@ -3,6 +3,6 @@ venv/
 .env
 __pycache__/
 *.pyc
-
+temp_uploads/
 # Файл базы данных SQLite
 crm.db

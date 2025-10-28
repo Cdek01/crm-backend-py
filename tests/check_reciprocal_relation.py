@@ -314,6 +314,3 @@ def run_reciprocal_delete_test():
 
 if __name__ == "__main__":
     run_reciprocal_delete_test()
-
-
-

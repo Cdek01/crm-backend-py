@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 from sqladmin import BaseView, expose
-import os # <-- Убедитесь, что этот импорт есть вверху файла
+import os
 
 # --- ШАГ 2: ИМПОРТЫ ИЗ ВАШЕГО ПРОЕКТА ---
 # Модули для работы с БД и конфигурацией
@@ -15,13 +15,12 @@ from db import models, base, session
 # Схемы и зависимости для API
 from schemas.user import User, UserWithPermissions
 from api.deps import get_current_user
-from sqlalchemy.orm import joinedload # <-- Добавьте импорт
-from fastapi.responses import RedirectResponse, HTMLResponse # <-- Добавьте HTMLResponse
+from sqlalchemy.orm import joinedload
 
 # Роутеры для всех ваших API эндпоинтов
 from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases, select_lists
-from starlette.templating import Jinja2Templates # <-- Убедитесь, что этот импорт есть
-from core.logging_config import setup_logging # <-- Добавьте импорт
+from starlette.templating import Jinja2Templates
+from core.logging_config import setup_logging
 
 # Модули для админ-панели
 from sqladmin import Admin
@@ -32,7 +31,7 @@ from admin import (
     RoleAdmin, PermissionAdmin,
     AssignRoleView
 )
-from api.endpoints import roles, shared # <-- добавьте roles
+from api.endpoints import roles, shared, imports
 
 setup_logging()
 
@@ -146,6 +145,7 @@ app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
 app.include_router(shared.router, prefix="/api/shares", tags=["Shares"])
 app.include_router(select_lists.router, prefix="/api/meta/select-lists", tags=["Meta (Select Lists)"])
+app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
 
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---
