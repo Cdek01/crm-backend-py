@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from typing import List
 import logging
+import numpy as np # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ В НАЧАЛЕ ФАЙЛА
 
 import pandas as pd
 from pydantic import BaseModel
