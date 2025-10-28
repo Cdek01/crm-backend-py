@@ -1098,13 +1098,13 @@ class EAVService:
 
         # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
         # # Запускаем, только если поле 'inn' было в запросе на обновление и оно не пустое
-        if 'inn' in data and data['inn']:
-            from tasks.enrichment import enrich_data_by_inn_task  # <-- И СЮДА ТОЖЕ
-            enrich_data_by_inn_task.delay(
-                entity_id=entity_id,
-                inn=str(data['inn']),
-                user_id=current_user.id
-            )
+        # if 'inn' in data and data['inn']:
+        #     from tasks.enrichment import enrich_data_by_inn_task  # <-- И СЮДА ТОЖЕ
+        #     enrich_data_by_inn_task.delay(
+        #         entity_id=entity_id,
+        #         inn=str(data['inn']),
+        #         user_id=current_user.id
+        #     )
         # # --- КОНЕЦ ТРИГГЕРА ---
 
 
@@ -1315,13 +1315,13 @@ class EAVService:
         self.db.commit()
 
         # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
-        if 'inn' in data and data['inn']:
-            from tasks.enrichment import enrich_data_by_inn_task  # <-- ПЕРЕНЕСИТЕ ИМПОРТ СЮДА
-            enrich_data_by_inn_task.delay(
-                entity_id=new_entity.id,
-                inn=str(data['inn']),
-                user_id=current_user.id
-            )
+        # if 'inn' in data and data['inn']:
+        #     from tasks.enrichment import enrich_data_by_inn_task  # <-- ПЕРЕНЕСИТЕ ИМПОРТ СЮДА
+        #     enrich_data_by_inn_task.delay(
+        #         entity_id=new_entity.id,
+        #         inn=str(data['inn']),
+        #         user_id=current_user.id
+        #     )
         # # --- КОНЕЦ ТРИГГЕРА ---
 
 

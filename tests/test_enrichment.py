@@ -134,6 +134,7 @@ def run_enrichment_test(headers: Dict[str, str]):
         r_get = requests.get(url_get, headers=headers)
         r_get.raise_for_status()
         enriched_data = r_get.json()
+        print(enriched_data = r_get.json())
 
         # 4. Проводим проверки
         print("-> Проверяем результат обогащения:")
