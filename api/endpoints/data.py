@@ -172,7 +172,7 @@ def get_all_entities(
         sort_by: Optional[str] = Query(default='position', description="Поле для сортировки"),
         sort_order: str = Query(default='asc', description="Порядок сортировки: asc или desc"),
         skip: int = Query(0, ge=0, description="Сколько записей пропустить (смещение)"),
-        limit: int = Query(100, ge=1, le=1000, description="Максимальное количество записей для возврата"),
+        limit: int = Query(100, ge=1, le=100000, description="Максимальное количество записей для возврата"),
 
         service: EAVService = Depends(),
         current_user: models.User = Depends(get_current_user)
