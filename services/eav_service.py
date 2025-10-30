@@ -778,9 +778,7 @@ class EAVService:
 
             # 2. Обрабатываем ОБРАТНУЮ связь
             if attribute_in.create_back_relation:
-                # back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
-                # back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
-                # --- НАЧАЛО НОВОЙ ЛОГИКИ УНИКАЛЬНОСТИ ИМЕН ---
+
                 base_back_name = attribute_in.back_relation_name or f"link_from_{source_entity_type_obj.name.lower()}"
                 base_back_display_name = attribute_in.back_relation_display_name or f"Связь из '{source_entity_type_obj.display_name}'"
 
@@ -799,7 +797,6 @@ class EAVService:
                     counter += 1
 
                 logger.info(f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: Финальное системное имя = {final_back_name}")
-                # --- КОНЕЦ НОВОЙ ЛОГИКИ УНИКАЛЬНОСТИ ИМЕН ---
 
                 back_display_attr_id = attribute_in.back_relation_display_attribute_id
 
@@ -816,11 +813,11 @@ class EAVService:
                 else:
                     logger.info(
                         f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id передан явно = {back_display_attr_id}")
-                # --- КОНЕЦ ИСПРАВЛЕНИЙ ---
+
 
                 back_relation_attr_data = {
-                    "name": final_back_name,  # <-- Использовать final_back_name
-                    "display_name": final_back_display_name,  # <-- Использовать final_back_display_name
+                    "name": final_back_name,
+                    "display_name": final_back_display_name,
                     "value_type": "relation",
                     "entity_type_id": target_entity_type_obj.id,
                     "target_entity_type_id": source_entity_type_obj.id,
@@ -862,6 +859,46 @@ class EAVService:
             db_attribute = models.Attribute(**attr_data_for_db)
             self.db.add(db_attribute)
             self.db.commit()
+            # --- НАЧАЛО ИЗМЕНЕНИЯ: Автоматическое заполнение значения по умолчанию для чекбоксов ---
+            if db_attribute.value_type == 'boolean':
+                logger.info(f"Создана новая колонка типа 'boolean' (ID: {db_attribute.id}). Запускаем заполнение по умолчанию (False)...")
+
+                # 1. Находим все ID существующих строк в этой таблице.
+                entity_ids_in_table = [
+                    id for (id,) in self.db.query(models.Entity.id).filter(
+                        models.Entity.entity_type_id == entity_type_id
+                    )
+                ]
+
+                if entity_ids_in_table:
+                    # 2. Находим строки, у которых УЖЕ есть значение для этой новой колонки (защита от дублей).
+                    entities_with_value = [
+                        id for (id,) in self.db.query(models.AttributeValue.entity_id).filter(
+                            models.AttributeValue.attribute_id == db_attribute.id,
+                            models.AttributeValue.entity_id.in_(entity_ids_in_table)
+                        )
+                    ]
+
+                    # 3. Вычисляем ID строк, которым нужно добавить значение по умолчанию.
+                    entities_to_update_ids = list(set(entity_ids_in_table) - set(entities_with_value))
+
+                    # 4. Готовим новые объекты AttributeValue для массовой вставки.
+                    new_values = [
+                        models.AttributeValue(
+                            entity_id=entity_id,
+                            attribute_id=db_attribute.id,
+                            value_boolean=False  # Значение по умолчанию
+                        )
+                        for entity_id in entities_to_update_ids
+                    ]
+
+                    # 5. Если есть что добавлять, делаем это одной транзакцией.
+                    if new_values:
+                        self.db.bulk_save_objects(new_values)
+                        self.db.commit()
+                        logger.info(f"Успешно заполнено {len(new_values)} строк значением 'False' для колонки ID {db_attribute.id}.")
+            # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+
             self.db.refresh(db_attribute)
             return db_attribute
 
