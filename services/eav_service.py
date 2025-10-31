@@ -1239,11 +1239,19 @@ class EAVService:
         # 1. Сразу отсекаем None
         value_type = attribute.value_type # Получаем тип из атрибута
 
-        if value is None or (isinstance(value, str) and value.strip() == ''):
+        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        # 1. Проверяем ТОЛЬКО на None. Пустая строка теперь будет обрабатываться дальше.
+        if value is None:
             return None
-        # 2. Пустые строки для всех типов считаем как None
-        if isinstance(value, str) and value.strip() == '':
-            return None
+
+        # 2. Если для не-строковых полей приходит пустая строка, считаем это как None,
+        # чтобы избежать ошибок конвертации `int('')`.
+        if isinstance(value, str) and value.strip() == '' and value_type not in ['string', 'select', 'email', 'phone', 'url', 'audio']:
+             return None
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+        # # 2. Пустые строки для всех типов считаем как None
+        # if isinstance(value, str) and value.strip() == '':
+        #     return None
 
         # 3. Конвертируем типы, если значение не None
         try:
