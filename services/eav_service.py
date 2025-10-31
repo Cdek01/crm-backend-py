@@ -117,41 +117,125 @@ class EAVService:
             sorted([a for a in attributes if a.id not in saved_order_ids], key=lambda a: a.id)
         )
         return sorted_attrs
+
+
+
+
+    # def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
+    #     db_user = self.db.query(models.User).options(
+    #         joinedload(models.User.roles).joinedload(models.Role.permissions)
+    #     ).filter(models.User.id == current_user.id).one()
+    #     user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+    #     accessible_table_names = {p.split(':')[2] for p in user_permissions if
+    #                               p.startswith("data:") and len(p.split(':')) == 3}
+    #     query = self.db.query(models.EntityType).options(
+    #         joinedload(models.EntityType.attributes)
+    #     ).order_by(models.EntityType.id)
+    #     if not current_user.is_superuser:
+    #         query = query.filter(
+    #             or_(
+    #                 models.EntityType.tenant_id == current_user.tenant_id,
+    #                 models.EntityType.name.in_(accessible_table_names)
+    #             )
+    #         )
+    #     db_entity_types = query.all()
+    #     attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+    #     table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+    #     response_list = []
+    #     for db_entity_type in db_entity_types:
+    #         sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
+    #                                                    current_user)
+    #         response_entity = EntityType.model_validate(db_entity_type)
+    #         response_entity.attributes = sorted_attrs
+    #         if response_entity.name in table_aliases:
+    #             response_entity.display_name = table_aliases[response_entity.name]
+    #         table_attr_aliases = attr_aliases.get(response_entity.name, {})
+    #         for attribute in response_entity.attributes:
+    #             if attribute.name in table_attr_aliases:
+    #                 attribute.display_name = table_attr_aliases[attribute.name]
+    #         response_list.append(response_entity)
+    #     return response_list
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
-        db_user = self.db.query(models.User).options(
-            joinedload(models.User.roles).joinedload(models.Role.permissions)
-        ).filter(models.User.id == current_user.id).one()
-        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
-        accessible_table_names = {p.split(':')[2] for p in user_permissions if
-                                  p.startswith("data:") and len(p.split(':')) == 3}
-        query = self.db.query(models.EntityType).options(
+        """
+        Возвращает список всех типов сущностей, доступных пользователю.
+        Включает в себя:
+        1. Все таблицы, принадлежащие собственному тенанту пользователя.
+        2. Таблицы из других тенантов, к которым пользователю предоставлен доступ через права (permissions).
+        Логика разделена на два запроса для обеспечения безопасности и консистентности данных.
+        """
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+        response_list = []
+        processed_ids = set()  # Сет для отслеживания уже обработанных таблиц, чтобы избежать дублей
+
+        # 1. ПОТОК А: Загружаем все "свои" таблицы, принадлежащие тенанту пользователя
+        own_entity_types_query = self.db.query(models.EntityType).options(
             joinedload(models.EntityType.attributes)
-        ).order_by(models.EntityType.id)
-        if not current_user.is_superuser:
-            query = query.filter(
-                or_(
-                    models.EntityType.tenant_id == current_user.tenant_id,
-                    models.EntityType.name.in_(accessible_table_names)
-                )
-            )
-        db_entity_types = query.all()
+        ).filter(models.EntityType.tenant_id == current_user.tenant_id).order_by(models.EntityType.id)
+
+        own_entity_types = own_entity_types_query.all()
+
+        # Получаем алиасы один раз для всего тенанта
         attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
         table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-        response_list = []
-        for db_entity_type in db_entity_types:
+
+        for db_entity_type in own_entity_types:
+            # Применяем пользовательский порядок сортировки атрибутов
             sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
                                                        current_user)
+
+            # Преобразуем в Pydantic-схему и применяем алиасы
             response_entity = EntityType.model_validate(db_entity_type)
             response_entity.attributes = sorted_attrs
+
             if response_entity.name in table_aliases:
                 response_entity.display_name = table_aliases[response_entity.name]
+
             table_attr_aliases = attr_aliases.get(response_entity.name, {})
             for attribute in response_entity.attributes:
                 if attribute.name in table_attr_aliases:
                     attribute.display_name = table_attr_aliases[attribute.name]
-            response_list.append(response_entity)
-        return response_list
 
+            response_list.append(response_entity)
+            processed_ids.add(db_entity_type.id)
+
+        # 2. ПОТОК Б: Загружаем "расшаренные" таблицы из других тенантов
+        if not current_user.is_superuser:
+            # Получаем права пользователя, чтобы найти доступные ему таблицы
+            db_user = self.db.query(models.User).options(
+                joinedload(models.User.roles).joinedload(models.Role.permissions)
+            ).filter(models.User.id == current_user.id).one()
+            user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+
+            accessible_table_names = {p.split(':')[2] for p in user_permissions if
+                                      p.startswith("data:") and len(p.split(':')) == 3}
+
+            if accessible_table_names:
+                # Ищем ID таблиц, которые доступны по правам, но НЕ принадлежат текущему тенанту
+                shared_entity_type_ids_query = self.db.query(models.EntityType.id).filter(
+                    models.EntityType.name.in_(accessible_table_names),
+                    models.EntityType.tenant_id != current_user.tenant_id
+                )
+                shared_entity_type_ids = [id for id, in shared_entity_type_ids_query]
+
+                for entity_type_id in shared_entity_type_ids:
+                    if entity_type_id not in processed_ids:
+                        try:
+                            # Используем уже существующий безопасный метод для получения полной информации о чужой таблице
+                            # Важно, чтобы get_entity_type_by_id корректно проверял права доступа
+                            shared_entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
+                            response_list.append(shared_entity_type)
+                            processed_ids.add(entity_type_id)
+                        except HTTPException as e:
+                            # Если по какой-то причине доступ к метаданным получить не удалось,
+                            # логируем ошибку и пропускаем эту таблицу, чтобы не сломать фронтенд.
+                            logger.error(
+                                f"Could not fetch shared entity type {entity_type_id} for user {current_user.id}: {e.detail}")
+
+        # Финальная сортировка списка по ID, чтобы порядок был консистентным
+        response_list.sort(key=lambda x: x.id)
+
+        return response_list
 
 
 
