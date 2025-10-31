@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, asc, desc, func
 from sqlalchemy.orm import aliased
 from db import models, session
-from schemas.eav import EntityType, EntityTypeCreate, AttributeCreate, EntityTypeUpdate, AttributeUpdate
+from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeUpdate
 from .alias_service import AliasService
 from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
@@ -117,116 +117,41 @@ class EAVService:
             sorted([a for a in attributes if a.id not in saved_order_ids], key=lambda a: a.id)
         )
         return sorted_attrs
-
-
-
-
-    # def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
-    #     db_user = self.db.query(models.User).options(
-    #         joinedload(models.User.roles).joinedload(models.Role.permissions)
-    #     ).filter(models.User.id == current_user.id).one()
-    #     user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
-    #     accessible_table_names = {p.split(':')[2] for p in user_permissions if
-    #                               p.startswith("data:") and len(p.split(':')) == 3}
-    #     query = self.db.query(models.EntityType).options(
-    #         joinedload(models.EntityType.attributes)
-    #     ).order_by(models.EntityType.id)
-    #     if not current_user.is_superuser:
-    #         query = query.filter(
-    #             or_(
-    #                 models.EntityType.tenant_id == current_user.tenant_id,
-    #                 models.EntityType.name.in_(accessible_table_names)
-    #             )
-    #         )
-    #     db_entity_types = query.all()
-    #     attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
-    #     table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-    #     response_list = []
-    #     for db_entity_type in db_entity_types:
-    #         sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
-    #                                                    current_user)
-    #         response_entity = EntityType.model_validate(db_entity_type)
-    #         response_entity.attributes = sorted_attrs
-    #         if response_entity.name in table_aliases:
-    #             response_entity.display_name = table_aliases[response_entity.name]
-    #         table_attr_aliases = attr_aliases.get(response_entity.name, {})
-    #         for attribute in response_entity.attributes:
-    #             if attribute.name in table_attr_aliases:
-    #                 attribute.display_name = table_attr_aliases[attribute.name]
-    #         response_list.append(response_entity)
-    #     return response_list
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
-        """
-        Возвращает список всех типов сущностей, доступных пользователю.
-        Включает в себя:
-        1. Все таблицы, принадлежащие собственному тенанту пользователя.
-        2. Таблицы из других тенантов, к которым пользователю предоставлен доступ через права (permissions).
-        Логика разделена на два запроса для обеспечения безопасности и консистентности данных.
-        """
-        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-
-        response_list = []
-        processed_ids = set()  # Сет для отслеживания уже обработанных таблиц, чтобы избежать дублей
-
-        # 1. ПОТОК А: Загружаем все "свои" таблицы, принадлежащие тенанту пользователя
-        own_entity_types_query = self.db.query(models.EntityType).options(
+        db_user = self.db.query(models.User).options(
+            joinedload(models.User.roles).joinedload(models.Role.permissions)
+        ).filter(models.User.id == current_user.id).one()
+        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+        accessible_table_names = {p.split(':')[2] for p in user_permissions if
+                                  p.startswith("data:") and len(p.split(':')) == 3}
+        query = self.db.query(models.EntityType).options(
             joinedload(models.EntityType.attributes)
-        ).filter(models.EntityType.tenant_id == current_user.tenant_id).order_by(models.EntityType.id)
-
-        own_entity_types = own_entity_types_query.all()
-
-        # Получаем алиасы один раз для всего тенанта
+        ).order_by(models.EntityType.id)
+        if not current_user.is_superuser:
+            query = query.filter(
+                or_(
+                    models.EntityType.tenant_id == current_user.tenant_id,
+                    models.EntityType.name.in_(accessible_table_names)
+                )
+            )
+        db_entity_types = query.all()
         attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
         table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-
-        for db_entity_type in own_entity_types:
-            # Применяем пользовательский порядок сортировки атрибутов
+        response_list = []
+        for db_entity_type in db_entity_types:
             sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
                                                        current_user)
-
-            # Преобразуем в Pydantic-схему и применяем алиасы
             response_entity = EntityType.model_validate(db_entity_type)
             response_entity.attributes = sorted_attrs
-
             if response_entity.name in table_aliases:
                 response_entity.display_name = table_aliases[response_entity.name]
-
             table_attr_aliases = attr_aliases.get(response_entity.name, {})
             for attribute in response_entity.attributes:
                 if attribute.name in table_attr_aliases:
                     attribute.display_name = table_attr_aliases[attribute.name]
-
             response_list.append(response_entity)
-            processed_ids.add(db_entity_type.id)
+        return response_list
 
-            # 2. ПОТОК Б: Загружаем "расшаренные" таблицы
-            if not current_user.is_superuser:
-                # --- ИЗМЕНЕНИЕ: Убираем лишний запрос к БД ---
-                # Теперь мы доверяем объекту current_user, который "жадно" загружается в deps.py
-                user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
-
-                accessible_table_names = {p.split(':')[2] for p in user_permissions if
-                                          p.startswith("data:") and len(p.split(':')) == 3}
-
-                if accessible_table_names:
-                    shared_entity_type_ids_query = self.db.query(models.EntityType.id).filter(
-                        models.EntityType.name.in_(accessible_table_names),
-                        models.EntityType.tenant_id != current_user.tenant_id
-                    )
-                    shared_entity_type_ids = [id for id, in shared_entity_type_ids_query]
-
-                    for entity_type_id in shared_entity_type_ids:
-                        if entity_type_id not in processed_ids:
-                            try:
-                                shared_entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
-                                response_list.append(shared_entity_type)
-                                processed_ids.add(entity_type_id)
-                            except HTTPException as e:
-                                logger.error(
-                                    f"Could not fetch shared entity type {entity_type_id} for user {current_user.id}: {e.detail}")
-
-            response_list.sort(key=lambda x: x.id)
-            return response_list
 
 
 
@@ -297,64 +222,36 @@ class EAVService:
         return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(result.id)
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
-        # Используем основную сессию self.db вместо создания новой временной
-        db = self.db
+        db = session.SessionLocal()
+        try:
+            query = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id)
+            if not current_user.is_superuser:
+                query = query.filter(models.EntityType.tenant_id == current_user.tenant_id)
+            db_entity_type = query.first()
+            if not db_entity_type:
+                raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+            all_attributes = db.query(models.Attribute).filter(
+                models.Attribute.entity_type_id == entity_type_id
+            ).all()
 
-        # 1. Сначала получаем сам объект EntityType
-        db_entity_type = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id).first()
+            sorted_attributes = self._apply_attribute_order(db, entity_type_id, all_attributes, current_user)
 
-        if not db_entity_type:
-            raise HTTPException(status_code=404, detail="Тип сущности не найден")
+            response_entity_type = EntityType.model_validate(db_entity_type)
+            response_entity_type.attributes = sorted_attributes
 
-        # 2. Проверяем права доступа
-        if not current_user.is_superuser:
-            is_owner = db_entity_type.tenant_id == current_user.tenant_id
-
-            # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-            # Проверяем, есть ли у пользователя ЛЮБОЕ право на доступ к данным этой таблицы
-            user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
-
-            # Ищем любое разрешение, которое соответствует шаблону "data:*:имя_таблицы"
-            has_any_data_permission = any(
-                p.startswith(f"data:") and p.endswith(f":{db_entity_type.name}")
-                for p in user_permissions
-            )
-
-            # Доступ разрешен, если пользователь является владельцем ИЛИ у него есть хоть какое-то право на эту таблицу
-            if not (is_owner or has_any_data_permission):
-                raise HTTPException(status_code=404, detail="Тип сущности не найден или доступ запрещен")
-            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
-
-        # 3. Если доступ разрешен, загружаем и обрабатываем все остальное
-        all_attributes = db.query(models.Attribute).filter(
-            models.Attribute.entity_type_id == entity_type_id
-        ).all()
-
-        # Убираем дубликаты атрибутов, которые могли появиться из-за сложных связей
-        unique_attributes = {attr.id: attr for attr in all_attributes}.values()
-
-        sorted_attributes = self._apply_attribute_order(db, entity_type_id, list(unique_attributes), current_user)
-
-        response_entity_type = EntityType.model_validate(db_entity_type)
-        response_entity_type.attributes = sorted_attributes
-
-        # Применяем алиасы
-        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
-        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-
-        table_name = response_entity_type.name
-        if table_name in table_aliases:
-            response_entity_type.display_name = table_aliases[table_name]
-
-        table_attr_aliases = attr_aliases.get(table_name, {})
-        for attribute in response_entity_type.attributes:
-            if attribute.name in table_attr_aliases:
-                attribute.display_name = table_attr_aliases[attribute.name]
-
-        return response_entity_type
+            attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+            table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+            table_name = response_entity_type.name
+            if table_name in table_aliases:
+                response_entity_type.display_name = table_aliases[table_name]
+            table_attr_aliases = attr_aliases.get(table_name, {})
+            for attribute in response_entity_type.attributes:
+                if attribute.name in table_attr_aliases:
+                    attribute.display_name = table_attr_aliases[attribute.name]
+            return response_entity_type
+        finally:
+            db.close()
 
 
 
@@ -365,40 +262,42 @@ class EAVService:
             current_user: models.User
     ):
         """Сохраняет новый порядок колонок для пользователя."""
+        # Открываем новую сессию для чистоты операции
+        db = session.SessionLocal()
+        try:
+            # 1. Проверяем, что таблица существует и доступна пользователю
+            # Важно! Вызываем get_entity_type_by_id с той же сессией `db`
+            # (Для этого его нужно немного доработать или просто проверить существование)
+            entity_type = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id).first()
+            if not entity_type or (not current_user.is_superuser and entity_type.tenant_id != current_user.tenant_id):
+                raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
-        # ВАЖНЫЙ ФИКС: Убираем дубликаты из входящего списка ID.
-        # Это немедленно предотвратит ошибку UniqueViolation.
-        unique_attribute_ids = list(dict.fromkeys(attribute_ids))
-        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+            # 2. Удаляем старый порядок для этого пользователя и этой таблицы
+            db.query(models.AttributeOrder).filter(
+                models.AttributeOrder.user_id == current_user.id,
+                models.AttributeOrder.entity_type_id == entity_type_id
+            ).delete(synchronize_session=False)
 
-        # Проверяем, что таблица существует и доступна пользователю
-        # Теперь этот вызов будет работать корректно и для "своих", и для "общих" таблиц
-        self.get_entity_type_by_id(entity_type_id, current_user)
-
-        # 1. Удаляем старый порядок для этого пользователя и этой таблицы
-        self.db.query(models.AttributeOrder).filter(
-            models.AttributeOrder.user_id == current_user.id,
-            models.AttributeOrder.entity_type_id == entity_type_id
-        ).delete(synchronize_session=False)
-
-        # 2. Создаем новые записи с новым порядком, используя уже уникальный список
-        new_order_entries = []
-        for position, attr_id in enumerate(unique_attribute_ids): # Используем unique_attribute_ids
-            new_order_entries.append(
-                models.AttributeOrder(
-                    user_id=current_user.id,
-                    entity_type_id=entity_type_id,
-                    attribute_id=attr_id,
-                    position=position
+            # 3. Создаем новые записи с новым порядком
+            new_order_entries = []
+            for position, attr_id in enumerate(attribute_ids):
+                new_order_entries.append(
+                    models.AttributeOrder(
+                        user_id=current_user.id,
+                        entity_type_id=entity_type_id,
+                        attribute_id=attr_id,
+                        position=position
+                    )
                 )
-            )
 
-        if new_order_entries:
-            self.db.add_all(new_order_entries)
+            if new_order_entries:
+                db.add_all(new_order_entries)
 
-        self.db.commit()
-        return {"status": "ok", "ordered_ids": unique_attribute_ids}
+            db.commit()
+        finally:
+            db.close()
+
+        return {"status": "ok", "ordered_ids": attribute_ids}
 
     # Методы create/delete для метаданных остаются без изменений,
     # так как они либо создают сущность в текущем тенанте,
@@ -451,8 +350,6 @@ class EAVService:
                 result[attribute.name] = formula_value
 
         return result
-
-
 
 
 
@@ -1749,6 +1646,40 @@ class EAVService:
 
 
 
+
+    def set_attribute_order(
+            self,
+            entity_type_id: int,
+            attribute_ids: List[int],
+            current_user: models.User
+    ):
+        """Сохраняет новый порядок колонок для пользователя."""
+        # Проверяем, что таблица существует и доступна пользователю
+        self.get_entity_type_by_id(entity_type_id, current_user)
+
+        # 1. Удаляем старый порядок для этого пользователя и этой таблицы
+        self.db.query(models.AttributeOrder).filter(
+            models.AttributeOrder.user_id == current_user.id,
+            models.AttributeOrder.entity_type_id == entity_type_id
+        ).delete(synchronize_session=False)
+
+        # 2. Создаем новые записи с новым порядком
+        new_order_entries = []
+        for position, attr_id in enumerate(attribute_ids):
+            new_order_entries.append(
+                models.AttributeOrder(
+                    user_id=current_user.id,
+                    entity_type_id=entity_type_id,
+                    attribute_id=attr_id,
+                    position=position
+                )
+            )
+
+        if new_order_entries:
+            self.db.add_all(new_order_entries)
+
+        self.db.commit()
+        return {"status": "ok", "ordered_ids": attribute_ids}
 
     def set_entity_order(
             self,
