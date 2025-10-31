@@ -117,16 +117,24 @@ class EAVService:
             sorted([a for a in attributes if a.id not in saved_order_ids], key=lambda a: a.id)
         )
         return sorted_attrs
+
+
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         db_user = self.db.query(models.User).options(
             joinedload(models.User.roles).joinedload(models.Role.permissions)
         ).filter(models.User.id == current_user.id).one()
+        if not db_user:
+            # На случай, если пользователь был удален во время сессии
+            raise HTTPException(status_code=401, detail="Пользователь не найден")
         user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+
         accessible_table_names = {p.split(':')[2] for p in user_permissions if
                                   p.startswith("data:") and len(p.split(':')) == 3}
+
         query = self.db.query(models.EntityType).options(
             joinedload(models.EntityType.attributes)
         ).order_by(models.EntityType.id)
+
         if not current_user.is_superuser:
             query = query.filter(
                 or_(
@@ -138,15 +146,19 @@ class EAVService:
         attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
         table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
         response_list = []
+
         for db_entity_type in db_entity_types:
             sorted_attrs = self._apply_attribute_order(self.db, db_entity_type.id, db_entity_type.attributes,
                                                        current_user)
             response_entity = EntityType.model_validate(db_entity_type)
             response_entity.attributes = sorted_attrs
+
             if response_entity.name in table_aliases:
                 response_entity.display_name = table_aliases[response_entity.name]
             table_attr_aliases = attr_aliases.get(response_entity.name, {})
+
             for attribute in response_entity.attributes:
+
                 if attribute.name in table_attr_aliases:
                     attribute.display_name = table_attr_aliases[attribute.name]
             response_list.append(response_entity)
@@ -674,21 +686,28 @@ class EAVService:
 
         value_column = getattr(models.AttributeValue, value_column_name)
 
-        # Строим агрегирующий запрос
+        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        # Строим агрегирующий запрос с использованием LEFT OUTER JOIN,
+        # чтобы включить в подсчет записи, у которых нет значения (NULL).
         query = self.db.query(
             value_column.label("group_key"),
             func.count(models.Entity.id).label("count")
-        ).join(
-            models.AttributeValue, models.Entity.id == models.AttributeValue.entity_id
+        ).outerjoin(
+            models.AttributeValue,
+            # Условие для LEFT JOIN должно быть составным
+            and_(
+                models.Entity.id == models.AttributeValue.entity_id,
+                models.AttributeValue.attribute_id == group_by_attribute.id
+            )
         ).filter(
-            models.Entity.entity_type_id == entity_type.id,
-            models.AttributeValue.attribute_id == group_by_attribute.id
+            # Фильтруем сами сущности (строки) по типу таблицы
+            models.Entity.entity_type_id == entity_type.id
         ).group_by(
             "group_key"
         ).order_by(
             desc("count")
         )
-
+        # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         results = query.all()
 
         # Преобразуем результат в список словарей
