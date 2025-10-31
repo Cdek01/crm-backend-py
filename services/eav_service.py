@@ -199,43 +199,34 @@ class EAVService:
             response_list.append(response_entity)
             processed_ids.add(db_entity_type.id)
 
-        # 2. ПОТОК Б: Загружаем "расшаренные" таблицы из других тенантов
-        if not current_user.is_superuser:
-            # Получаем права пользователя, чтобы найти доступные ему таблицы
-            db_user = self.db.query(models.User).options(
-                joinedload(models.User.roles).joinedload(models.Role.permissions)
-            ).filter(models.User.id == current_user.id).one()
-            user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+            # 2. ПОТОК Б: Загружаем "расшаренные" таблицы
+            if not current_user.is_superuser:
+                # --- ИЗМЕНЕНИЕ: Убираем лишний запрос к БД ---
+                # Теперь мы доверяем объекту current_user, который "жадно" загружается в deps.py
+                user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
 
-            accessible_table_names = {p.split(':')[2] for p in user_permissions if
-                                      p.startswith("data:") and len(p.split(':')) == 3}
+                accessible_table_names = {p.split(':')[2] for p in user_permissions if
+                                          p.startswith("data:") and len(p.split(':')) == 3}
 
-            if accessible_table_names:
-                # Ищем ID таблиц, которые доступны по правам, но НЕ принадлежат текущему тенанту
-                shared_entity_type_ids_query = self.db.query(models.EntityType.id).filter(
-                    models.EntityType.name.in_(accessible_table_names),
-                    models.EntityType.tenant_id != current_user.tenant_id
-                )
-                shared_entity_type_ids = [id for id, in shared_entity_type_ids_query]
+                if accessible_table_names:
+                    shared_entity_type_ids_query = self.db.query(models.EntityType.id).filter(
+                        models.EntityType.name.in_(accessible_table_names),
+                        models.EntityType.tenant_id != current_user.tenant_id
+                    )
+                    shared_entity_type_ids = [id for id, in shared_entity_type_ids_query]
 
-                for entity_type_id in shared_entity_type_ids:
-                    if entity_type_id not in processed_ids:
-                        try:
-                            # Используем уже существующий безопасный метод для получения полной информации о чужой таблице
-                            # Важно, чтобы get_entity_type_by_id корректно проверял права доступа
-                            shared_entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
-                            response_list.append(shared_entity_type)
-                            processed_ids.add(entity_type_id)
-                        except HTTPException as e:
-                            # Если по какой-то причине доступ к метаданным получить не удалось,
-                            # логируем ошибку и пропускаем эту таблицу, чтобы не сломать фронтенд.
-                            logger.error(
-                                f"Could not fetch shared entity type {entity_type_id} for user {current_user.id}: {e.detail}")
+                    for entity_type_id in shared_entity_type_ids:
+                        if entity_type_id not in processed_ids:
+                            try:
+                                shared_entity_type = self.get_entity_type_by_id(entity_type_id, current_user)
+                                response_list.append(shared_entity_type)
+                                processed_ids.add(entity_type_id)
+                            except HTTPException as e:
+                                logger.error(
+                                    f"Could not fetch shared entity type {entity_type_id} for user {current_user.id}: {e.detail}")
 
-        # Финальная сортировка списка по ID, чтобы порядок был консистентным
-        response_list.sort(key=lambda x: x.id)
-
-        return response_list
+            response_list.sort(key=lambda x: x.id)
+            return response_list
 
 
 
