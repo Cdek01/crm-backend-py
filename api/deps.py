@@ -32,7 +32,10 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(models.User).filter(models.User.email == username).first()
+    # user = db.query(models.User).filter(models.User.email == username).first()
+    user = db.query(models.User).options(
+        joinedload(models.User.roles).joinedload(models.Role.permissions)
+    ).filter(models.User.email == username).first()
     if user is None:
         raise credentials_exception
     return user
