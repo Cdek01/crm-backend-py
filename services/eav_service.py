@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import and_, asc, desc, func
 from sqlalchemy.orm import aliased
 from db import models, session
-from schemas.eav import EntityType, EntityTypeCreate, Attribute, AttributeCreate, EntityTypeUpdate, AttributeUpdate
+from schemas.eav import EntityType, EntityTypeCreate, AttributeCreate, EntityTypeUpdate, AttributeUpdate
 from .alias_service import AliasService
 from datetime import datetime, date, time, timedelta
 from dateutil.relativedelta import relativedelta
@@ -306,36 +306,58 @@ class EAVService:
         return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(result.id)
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
-        db = session.SessionLocal()
-        try:
-            query = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id)
-            if not current_user.is_superuser:
-                query = query.filter(models.EntityType.tenant_id == current_user.tenant_id)
-            db_entity_type = query.first()
-            if not db_entity_type:
-                raise HTTPException(status_code=404, detail="Тип сущности не найден")
+        # Используем основную сессию self.db вместо создания новой временной
+        db = self.db
 
-            all_attributes = db.query(models.Attribute).filter(
-                models.Attribute.entity_type_id == entity_type_id
-            ).all()
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
 
-            sorted_attributes = self._apply_attribute_order(db, entity_type_id, all_attributes, current_user)
+        # 1. Сначала получаем сам объект EntityType
+        db_entity_type = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id).first()
 
-            response_entity_type = EntityType.model_validate(db_entity_type)
-            response_entity_type.attributes = sorted_attributes
+        if not db_entity_type:
+            raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-            attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
-            table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
-            table_name = response_entity_type.name
-            if table_name in table_aliases:
-                response_entity_type.display_name = table_aliases[table_name]
-            table_attr_aliases = attr_aliases.get(table_name, {})
-            for attribute in response_entity_type.attributes:
-                if attribute.name in table_attr_aliases:
-                    attribute.display_name = table_attr_aliases[attribute.name]
-            return response_entity_type
-        finally:
-            db.close()
+        # 2. Проверяем права доступа
+        if not current_user.is_superuser:
+            is_owner = db_entity_type.tenant_id == current_user.tenant_id
+
+            # Проверяем, есть ли у пользователя явное право на просмотр этой таблицы
+            user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
+            has_view_permission = f"data:view:{db_entity_type.name}" in user_permissions
+
+            # Доступ разрешен, если пользователь является владельцем ИЛИ у него есть право на просмотр
+            if not (is_owner or has_view_permission):
+                raise HTTPException(status_code=404, detail="Тип сущности не найден или доступ запрещен")
+
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+        # 3. Если доступ разрешен, загружаем и обрабатываем все остальное
+        all_attributes = db.query(models.Attribute).filter(
+            models.Attribute.entity_type_id == entity_type_id
+        ).all()
+
+        # Убираем дубликаты атрибутов, которые могли появиться из-за сложных связей
+        unique_attributes = {attr.id: attr for attr in all_attributes}.values()
+
+        sorted_attributes = self._apply_attribute_order(db, entity_type_id, list(unique_attributes), current_user)
+
+        response_entity_type = EntityType.model_validate(db_entity_type)
+        response_entity_type.attributes = sorted_attributes
+
+        # Применяем алиасы
+        attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
+        table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
+
+        table_name = response_entity_type.name
+        if table_name in table_aliases:
+            response_entity_type.display_name = table_aliases[table_name]
+
+        table_attr_aliases = attr_aliases.get(table_name, {})
+        for attribute in response_entity_type.attributes:
+            if attribute.name in table_attr_aliases:
+                attribute.display_name = table_attr_aliases[attribute.name]
+
+        return response_entity_type
 
 
 
@@ -346,42 +368,40 @@ class EAVService:
             current_user: models.User
     ):
         """Сохраняет новый порядок колонок для пользователя."""
-        # Открываем новую сессию для чистоты операции
-        db = session.SessionLocal()
-        try:
-            # 1. Проверяем, что таблица существует и доступна пользователю
-            # Важно! Вызываем get_entity_type_by_id с той же сессией `db`
-            # (Для этого его нужно немного доработать или просто проверить существование)
-            entity_type = db.query(models.EntityType).filter(models.EntityType.id == entity_type_id).first()
-            if not entity_type or (not current_user.is_superuser and entity_type.tenant_id != current_user.tenant_id):
-                raise HTTPException(status_code=404, detail="Тип сущности не найден")
 
-            # 2. Удаляем старый порядок для этого пользователя и этой таблицы
-            db.query(models.AttributeOrder).filter(
-                models.AttributeOrder.user_id == current_user.id,
-                models.AttributeOrder.entity_type_id == entity_type_id
-            ).delete(synchronize_session=False)
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        # ВАЖНЫЙ ФИКС: Убираем дубликаты из входящего списка ID.
+        # Это немедленно предотвратит ошибку UniqueViolation.
+        unique_attribute_ids = list(dict.fromkeys(attribute_ids))
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-            # 3. Создаем новые записи с новым порядком
-            new_order_entries = []
-            for position, attr_id in enumerate(attribute_ids):
-                new_order_entries.append(
-                    models.AttributeOrder(
-                        user_id=current_user.id,
-                        entity_type_id=entity_type_id,
-                        attribute_id=attr_id,
-                        position=position
-                    )
+        # Проверяем, что таблица существует и доступна пользователю
+        # Теперь этот вызов будет работать корректно и для "своих", и для "общих" таблиц
+        self.get_entity_type_by_id(entity_type_id, current_user)
+
+        # 1. Удаляем старый порядок для этого пользователя и этой таблицы
+        self.db.query(models.AttributeOrder).filter(
+            models.AttributeOrder.user_id == current_user.id,
+            models.AttributeOrder.entity_type_id == entity_type_id
+        ).delete(synchronize_session=False)
+
+        # 2. Создаем новые записи с новым порядком, используя уже уникальный список
+        new_order_entries = []
+        for position, attr_id in enumerate(unique_attribute_ids): # Используем unique_attribute_ids
+            new_order_entries.append(
+                models.AttributeOrder(
+                    user_id=current_user.id,
+                    entity_type_id=entity_type_id,
+                    attribute_id=attr_id,
+                    position=position
                 )
+            )
 
-            if new_order_entries:
-                db.add_all(new_order_entries)
+        if new_order_entries:
+            self.db.add_all(new_order_entries)
 
-            db.commit()
-        finally:
-            db.close()
-
-        return {"status": "ok", "ordered_ids": attribute_ids}
+        self.db.commit()
+        return {"status": "ok", "ordered_ids": unique_attribute_ids}
 
     # Методы create/delete для метаданных остаются без изменений,
     # так как они либо создают сущность в текущем тенанте,
@@ -434,6 +454,8 @@ class EAVService:
                 result[attribute.name] = formula_value
 
         return result
+
+
 
 
 
@@ -1730,40 +1752,6 @@ class EAVService:
 
 
 
-
-    def set_attribute_order(
-            self,
-            entity_type_id: int,
-            attribute_ids: List[int],
-            current_user: models.User
-    ):
-        """Сохраняет новый порядок колонок для пользователя."""
-        # Проверяем, что таблица существует и доступна пользователю
-        self.get_entity_type_by_id(entity_type_id, current_user)
-
-        # 1. Удаляем старый порядок для этого пользователя и этой таблицы
-        self.db.query(models.AttributeOrder).filter(
-            models.AttributeOrder.user_id == current_user.id,
-            models.AttributeOrder.entity_type_id == entity_type_id
-        ).delete(synchronize_session=False)
-
-        # 2. Создаем новые записи с новым порядком
-        new_order_entries = []
-        for position, attr_id in enumerate(attribute_ids):
-            new_order_entries.append(
-                models.AttributeOrder(
-                    user_id=current_user.id,
-                    entity_type_id=entity_type_id,
-                    attribute_id=attr_id,
-                    position=position
-                )
-            )
-
-        if new_order_entries:
-            self.db.add_all(new_order_entries)
-
-        self.db.commit()
-        return {"status": "ok", "ordered_ids": attribute_ids}
 
     def set_entity_order(
             self,
