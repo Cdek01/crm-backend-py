@@ -321,14 +321,20 @@ class EAVService:
         if not current_user.is_superuser:
             is_owner = db_entity_type.tenant_id == current_user.tenant_id
 
-            # Проверяем, есть ли у пользователя явное право на просмотр этой таблицы
+            # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+            # Проверяем, есть ли у пользователя ЛЮБОЕ право на доступ к данным этой таблицы
             user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
-            has_view_permission = f"data:view:{db_entity_type.name}" in user_permissions
 
-            # Доступ разрешен, если пользователь является владельцем ИЛИ у него есть право на просмотр
-            if not (is_owner or has_view_permission):
+            # Ищем любое разрешение, которое соответствует шаблону "data:*:имя_таблицы"
+            has_any_data_permission = any(
+                p.startswith(f"data:") and p.endswith(f":{db_entity_type.name}")
+                for p in user_permissions
+            )
+
+            # Доступ разрешен, если пользователь является владельцем ИЛИ у него есть хоть какое-то право на эту таблицу
+            if not (is_owner or has_any_data_permission):
                 raise HTTPException(status_code=404, detail="Тип сущности не найден или доступ запрещен")
-
+            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
         # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
         # 3. Если доступ разрешен, загружаем и обрабатываем все остальное
