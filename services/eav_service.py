@@ -641,8 +641,58 @@ class EAVService:
 
         return {"total": total_count, "data": pivoted_results}
 
+    def group_by_attribute(
+            self,
+            entity_type_name: str,
+            group_by_attribute_name: str,
+            current_user: models.User,
+            tenant_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Группирует записи по значению в указанном атрибуте и возвращает
+        количество записей для каждого значения.
+        """
+        if not current_user.is_superuser:
+            tenant_id = None
 
+        entity_type = self._get_entity_type_by_name(entity_type_name, current_user, tenant_id)
 
+        group_by_attribute = self.db.query(models.Attribute).filter(
+            models.Attribute.entity_type_id == entity_type.id,
+            models.Attribute.name == group_by_attribute_name
+        ).first()
+
+        if not group_by_attribute:
+            raise HTTPException(status_code=404,
+                                detail=f"Атрибут '{group_by_attribute_name}' не найден в таблице '{entity_type_name}'.")
+
+        # Определяем, из какой колонки брать значения (value_string, value_integer и т.д.)
+        value_column_name = VALUE_FIELD_MAP.get(group_by_attribute.value_type)
+        if not value_column_name:
+            raise HTTPException(status_code=400,
+                                detail=f"Группировка по типу данных '{group_by_attribute.value_type}' не поддерживается.")
+
+        value_column = getattr(models.AttributeValue, value_column_name)
+
+        # Строим агрегирующий запрос
+        query = self.db.query(
+            value_column.label("group_key"),
+            func.count(models.Entity.id).label("count")
+        ).join(
+            models.AttributeValue, models.Entity.id == models.AttributeValue.entity_id
+        ).filter(
+            models.Entity.entity_type_id == entity_type.id,
+            models.AttributeValue.attribute_id == group_by_attribute.id
+        ).group_by(
+            "group_key"
+        ).order_by(
+            desc("count")
+        )
+
+        results = query.all()
+
+        # Преобразуем результат в список словарей
+        return [{"group_key": row.group_key, "count": row.count} for row in results]
 
 
     def update_attribute(

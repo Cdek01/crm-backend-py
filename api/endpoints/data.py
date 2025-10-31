@@ -95,68 +95,6 @@ def delete_entity(
     """Удалить запись."""
     return service.delete_entity(entity_id, current_user, source=_source)
 
-# --- ЕДИНСТВЕННОЕ И ПРАВИЛЬНОЕ ОПРЕДЕЛЕНИЕ ЭНДПОИНТА ДЛЯ ПОЛУЧЕНИЯ СПИСКА ---
-# @router.get("/{entity_type_name}", response_model=List[Dict[str, Any]])
-# def get_all_entities(
-#         entity_type_name: str,
-#
-#         # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-#         # Заменяем `Query(...)` на `Query(None, ...)`
-#         tenant_id: Optional[int] = Query(
-#             None,  # <-- `None` в качестве первого аргумента делает параметр необязательным
-#             description="ID клиента (тенанта). Доступно только для суперадминистраторов."
-#         ),
-#         filters: Optional[str] = None,
-#         # sort_by: Optional[str] = Query('position', ...),  # Устанавливаем 'position' по умолчанию
-#         # sort_order: str = 'desc',
-#         sort_by: Optional[str] = Query(default='position', description="Поле для сортировки"),
-#         sort_order: str = Query(default='asc', description="Порядок сортировки: asc или desc"),
-#         # --- ДОБАВЬТЕ ЭТИ ДВА ПАРАМЕТРА ---
-#         skip: int = Query(0, ge=0, description="Сколько записей пропустить (смещение)"),
-#         limit: int = Query(100, ge=1, le=1000, description="Максимальное количество записей для возврата"),
-#         # ---------------------------------
-#
-#         service: EAVService = Depends(),
-#         current_user: models.User = Depends(get_current_user)
-# ):
-#
-#     """
-#     Получить все записи для указанного типа сущности с фильтрацией и сортировкой.
-#     """
-#
-#     # --- ДОБАВЬТЕ ЭТУ ПРОВЕРКУ ---
-#     final_tenant_id = tenant_id
-#     if not current_user.is_superuser:
-#         # Если пользователь не суперадмин, принудительно обнуляем tenant_id,
-#         # даже если фронтенд его передал.
-#         final_tenant_id = None
-#     # ---------------------------
-#
-#
-#     parsed_filters = []
-#     if filters:
-#         try:
-#             parsed_filters = json.loads(filters)
-#             if not isinstance(parsed_filters, list):
-#                 parsed_filters = []
-#         except json.JSONDecodeError:
-#             pass
-#
-#     # --- ИСПРАВЛЕНИЕ: Передаем ВСЕ необходимые аргументы в сервис ---
-#     return service.get_all_entities_for_type(
-#         entity_type_name=entity_type_name,
-#         current_user=current_user,
-#         tenant_id=final_tenant_id,
-#         filters=parsed_filters,
-#         sort_by=sort_by,
-#         sort_order=sort_order,
-#         # --- ПЕРЕДАЕМ НОВЫЕ ПАРАМЕТРЫ В СЕРВИС ---
-#         skip=skip,
-#         limit=limit
-#         # -----------------------------------------
-#     )
-
-
 
 @router.get("/{entity_type_name}", response_model=PaginatedEntityResponse)
 def get_all_entities(
@@ -210,15 +148,6 @@ def get_all_entities(
 
 
 
-
-
-
-
-
-
-
-
-
 @router.post("/{entity_type_name}/order", status_code=status.HTTP_200_OK)
 def set_entity_order(
     entity_type_name: str,
@@ -254,4 +183,29 @@ def update_entity_position(
         after_pos=update_in.after_position,
         before_pos=update_in.before_position,
         current_user=current_user
+    )
+
+
+@router.get("/{entity_type_name}/group-by/{attribute_name}", response_model=List[Dict[str, Any]])
+def group_entities_by_attribute(
+        entity_type_name: str,
+        attribute_name: str,
+        tenant_id: Optional[int] = Query(None,
+                                         description="ID клиента (тенанта). Доступно только для суперадминистраторов."),
+        service: EAVService = Depends(),
+        current_user: models.User = Depends(get_current_user)
+):
+    """
+    Группирует данные по значению в колонке и возвращает количество записей для каждой группы.
+    Например, можно сгруппировать лиды по статусу.
+    """
+    final_tenant_id = tenant_id
+    if not current_user.is_superuser:
+        final_tenant_id = None
+
+    return service.group_by_attribute(
+        entity_type_name=entity_type_name,
+        group_by_attribute_name=attribute_name,
+        current_user=current_user,
+        tenant_id=final_tenant_id
     )
