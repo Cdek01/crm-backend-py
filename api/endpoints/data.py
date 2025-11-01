@@ -67,7 +67,86 @@ def create_entity(
     return service.create_entity_and_get_list(entity_type_name, data, current_user)
 
 
+# =============================================================================
+# === ВАЖНОЕ ИЗМЕНЕНИЕ: Эндпоинт экспорта ПЕРЕМЕЩЕН СЮДА ===
+# Он должен быть до любого маршрута, который содержит /.../{entity_id}
+# =============================================================================
+@router.get("/{entity_type_name}/export")
+def export_entities(
+        entity_type_name: str,
+        format: ExportFormat,
+        q: Optional[str] = Query(None),
+        tenant_id: Optional[int] = Query(None),
+        search_fields: Optional[str] = Query(None),
+        filters: Optional[str] = None,
+        sort_by: Optional[str] = Query('position'),
+        sort_order: str = Query('asc'),
+        service: EAVService = Depends(),
+        current_user: models.User = Depends(get_current_user)
+):
+    entity_type = service._get_entity_type_by_name(entity_type_name, current_user)
 
+    search_fields_list = search_fields.split(',') if search_fields else []
+
+    parsed_filters = []
+    if filters:
+        try:
+            parsed_filters = json.loads(filters)
+            if not isinstance(parsed_filters, list):
+                parsed_filters = []
+        except json.JSONDecodeError:
+            pass
+
+    result_data = service.get_all_entities_for_type(
+        entity_type_name=entity_type_name,
+        current_user=current_user,
+        q=q,
+        search_fields=search_fields_list,
+        tenant_id=tenant_id,
+        filters=parsed_filters,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        skip=0,
+        limit=100000
+    )
+
+    data_to_export = result_data['data']
+    if not data_to_export:
+        raise HTTPException(status_code=404, detail="Нет данных для экспорта по заданным фильтрам.")
+
+    df = pd.DataFrame(data_to_export)
+
+    column_mapping = {attr.name: attr.display_name for attr in entity_type.attributes}
+    column_mapping.update({
+        'id': 'ID', 'created_at': 'Дата создания',
+        'updated_at': 'Дата изменения', 'position': 'Позиция'
+    })
+
+    df = df.rename(columns=column_mapping)
+
+    final_columns = [name for name in column_mapping.values() if name in df.columns]
+    df = df[final_columns]
+
+    for col in df.columns:
+        if df[col].apply(lambda x: isinstance(x, (list, dict))).any():
+            df[col] = df[col].apply(lambda x: str(x) if isinstance(x, (list, dict)) else x)
+
+    stream = io.BytesIO()
+    filename = f"{entity_type_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    if format == ExportFormat.csv:
+        df.to_csv(stream, index=False, encoding='utf-8-sig')
+        media_type = "text/csv"
+        filename += ".csv"
+    else:
+        df.to_excel(stream, index=False, engine='openpyxl')
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename += ".xlsx"
+
+    stream.seek(0)
+
+    headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
+    return StreamingResponse(stream, media_type=media_type, headers=headers)
 
 @router.get("/{entity_type_name}/{entity_id}", response_model=Dict[str, Any])
 def get_entity(
@@ -225,94 +304,3 @@ def group_entities_by_attribute(
 
 
 
-# --- НОВЫЙ ЭНДПОИНТ ДЛЯ ЭКСПОРТА ---
-@router.get("/{entity_type_name}/export")
-def export_entities(
-        entity_type_name: str,
-        format: ExportFormat,  # <-- Требуем указать формат: csv или xlsx
-        # --- Копируем все параметры фильтрации из get_all_entities ---
-        q: Optional[str] = Query(None),
-        tenant_id: Optional[int] = Query(None),
-        search_fields: Optional[str] = Query(None),
-        filters: Optional[str] = None,
-        sort_by: Optional[str] = Query('position'),
-        sort_order: str = Query('asc'),
-        # --- Зависимости ---
-        service: EAVService = Depends(),
-        current_user: models.User = Depends(get_current_user)
-):
-    """
-    Экспортировать данные таблицы в CSV или Excel с учетом всех фильтров.
-    """
-    # 1. Получаем метаданные таблицы, чтобы знать названия колонок
-    entity_type = service._get_entity_type_by_name(entity_type_name, current_user)
-
-    # 2. Получаем ВСЕ отфильтрованные данные (без пагинации)
-    # Мы используем тот же метод, что и для отображения, но с большим лимитом.
-    search_fields_list = search_fields.split(',') if search_fields else []
-    parsed_filters = json.loads(filters) if filters else []
-
-    result_data = service.get_all_entities_for_type(
-        entity_type_name=entity_type_name,
-        current_user=current_user,
-        q=q,
-        search_fields=search_fields_list,
-        tenant_id=tenant_id,
-        filters=parsed_filters,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        skip=0,
-        limit=100000  # Устанавливаем большой лимит для выгрузки всех данных
-    )
-
-    data_to_export = result_data['data']
-
-    if not data_to_export:
-        return {"message": "Нет данных для экспорта"}
-
-    # 3. Преобразуем данные в DataFrame (таблицу) с помощью Pandas
-    df = pd.DataFrame(data_to_export)
-
-    # 4. Готовим красивые заголовки для колонок (display_name вместо системного name)
-    column_mapping = {attr.name: attr.display_name for attr in entity_type.attributes}
-    # Добавляем системные колонки, которые тоже могут быть в выгрузке
-    column_mapping.update({
-        'id': 'ID',
-        'created_at': 'Дата создания',
-        'updated_at': 'Дата изменения',
-        'position': 'Позиция'
-    })
-
-    # Оставляем в DataFrame только те колонки, которые есть в нашей таблице, и переименовываем их
-    df = df.rename(columns=column_mapping)
-    df = df[list(c for c in column_mapping.values() if c in df.columns)]
-
-    # 5. Упрощаем сложные данные (списки, словари) для плоского файла
-    for col in df.columns:
-        if df[col].apply(lambda x: isinstance(x, (list, dict))).any():
-            df[col] = df[col].apply(lambda x: str(x) if isinstance(x, (list, dict)) else x)
-
-    # 6. Создаем файл в памяти в зависимости от запрошенного формата
-    stream = io.BytesIO()
-    filename = f"{entity_type_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-    if format == ExportFormat.csv:
-        df.to_csv(stream, index=False, encoding='utf-8')
-        media_type = "text/csv"
-        filename += ".csv"
-    else:  # xlsx
-        df.to_excel(stream, index=False, engine='openpyxl')
-        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        filename += ".xlsx"
-
-    stream.seek(0)  # Перемещаем курсор в начало "файла"
-
-    # 7. Отдаем файл пользователю
-    headers = {
-        'Content-Disposition': f'attachment; filename="{filename}"'
-    }
-
-    return StreamingResponse(stream, media_type=media_type, headers=headers)
-
-
-# --- КОНЕЦ НОВОГО ЭНДПОИНТА ---
