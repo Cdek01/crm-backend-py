@@ -32,7 +32,7 @@ from admin import (
     RoleAdmin, PermissionAdmin,
     AssignRoleView
 )
-from api.endpoints import roles, shared, imports, files, ai
+from api.endpoints import roles, shared, imports, files, ai, users
 
 setup_logging()
 
@@ -46,12 +46,20 @@ base.Base.metadata.create_all(bind=session.engine)
 # --- ДОБАВЬТЕ ЭТОТ БЛОК ---
 # Создаем директорию для хранения загруженных файлов, если ее нет
 STATIC_DIR = "static"
+AVATAR_DIR = os.path.join(STATIC_DIR, "avatars")
+
 UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 # ---------------------------
 
 # Создаем главный экземпляр FastAPI ОДИН РАЗ
 app = FastAPI(title="CRM API")
+
+# --- ИЗМЕНЕНИЕ: Настройка раздачи статических файлов ---
+# Эта строка делает файлы из папки 'static' доступными по URL /static/...
+# Например, файл static/avatars/user_1.jpg будет доступен по адресу http://.../static/avatars/user_1.jpg
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# --------------------------------------------------------
 
 templates = Jinja2Templates(directory="templates")
 
@@ -145,6 +153,7 @@ admin.add_view(AssignRoleView) # <-- ДОБАВЬТЕ ЭТО
 # --------------------------------------------------------------------------
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
 app.include_router(legal_entities.router, prefix="/api/legal-entities", tags=["Legal Entities"])
 app.include_router(individuals.router, prefix="/api/individuals", tags=["Individuals"])
@@ -166,37 +175,37 @@ def read_root():
     return {"message": "Welcome to CRM API"}
 
 
-@app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
-def read_users_me(
-        current_user: models.User = Depends(get_current_user),
-        db: Session = Depends(session.get_db)
-):
-    """
-    Получить информацию о текущем пользователе и его разрешениях.
-    """
-    # Загружаем пользователя со всеми его ролями и правами этих ролей
-    user_with_roles = (
-        db.query(models.User)
-        .options(
-            joinedload(models.User.roles).
-            joinedload(models.Role.permissions)
-        )
-        .filter(models.User.id == current_user.id)
-        .first()
-    )
-
-    if not user_with_roles:
-        response_user = UserWithPermissions.model_validate(current_user)
-        response_user.permissions = []
-        return response_user
-
-    # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
-    user_permissions = set()
-    for role in user_with_roles.roles:
-        for perm in role.permissions:
-            user_permissions.add(perm.name)
-
-    response_user = UserWithPermissions.model_validate(user_with_roles)
-    response_user.permissions = sorted(list(user_permissions))
-
-    return response_user
+# @app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
+# def read_users_me(
+#         current_user: models.User = Depends(get_current_user),
+#         db: Session = Depends(session.get_db)
+# ):
+#     """
+#     Получить информацию о текущем пользователе и его разрешениях.
+#     """
+#     # Загружаем пользователя со всеми его ролями и правами этих ролей
+#     user_with_roles = (
+#         db.query(models.User)
+#         .options(
+#             joinedload(models.User.roles).
+#             joinedload(models.Role.permissions)
+#         )
+#         .filter(models.User.id == current_user.id)
+#         .first()
+#     )
+#
+#     if not user_with_roles:
+#         response_user = UserWithPermissions.model_validate(current_user)
+#         response_user.permissions = []
+#         return response_user
+#
+#     # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
+#     user_permissions = set()
+#     for role in user_with_roles.roles:
+#         for perm in role.permissions:
+#             user_permissions.add(perm.name)
+#
+#     response_user = UserWithPermissions.model_validate(user_with_roles)
+#     response_user.permissions = sorted(list(user_permissions))
+#
+#     return response_user

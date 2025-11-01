@@ -495,6 +495,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
 
     full_name = Column(String, index=True)
+    avatar_url = Column(String, nullable=True)
 
     is_superuser = Column(Boolean, default=False, nullable=False)
 
