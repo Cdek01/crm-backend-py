@@ -155,6 +155,76 @@ def get_all_entities(
     )
 
 
+
+
+
+
+@router.post("/{entity_type_name}/order", status_code=status.HTTP_200_OK)
+def set_entity_order(
+    entity_type_name: str,
+    order_in: EntityOrderSetRequest,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Установить и сохранить новый порядок отображения строк для таблицы.
+    """
+    return service.set_entity_order(
+        entity_type_name=entity_type_name,
+        entity_ids=order_in.entity_ids,
+        current_user=current_user
+    )
+
+
+
+
+@router.post("/{entity_type_name}/position", status_code=status.HTTP_200_OK)
+def update_entity_position(
+    entity_type_name: str,
+    update_in: EntityOrderUpdateSmartRequest,
+    service: EAVService = Depends(),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Обновить позицию одной строки.
+    """
+    return service.update_entity_position(
+        entity_type_name=entity_type_name,
+        entity_id=update_in.entity_id,
+        after_pos=update_in.after_position,
+        before_pos=update_in.before_position,
+        current_user=current_user
+    )
+
+
+@router.get("/{entity_type_name}/group-by/{attribute_name}", response_model=List[Dict[str, Any]])
+def group_entities_by_attribute(
+        entity_type_name: str,
+        attribute_name: str,
+        tenant_id: Optional[int] = Query(None,
+                                         description="ID клиента (тенанта). Доступно только для суперадминистраторов."),
+        service: EAVService = Depends(),
+        current_user: models.User = Depends(get_current_user)
+):
+    """
+    Группирует данные по значению в колонке и возвращает количество записей для каждой группы.
+    Например, можно сгруппировать лиды по статусу.
+    """
+    final_tenant_id = tenant_id
+    if not current_user.is_superuser:
+        final_tenant_id = None
+
+    return service.group_by_attribute(
+        entity_type_name=entity_type_name,
+        group_by_attribute_name=attribute_name,
+        current_user=current_user,
+        tenant_id=final_tenant_id
+    )
+
+
+
+
+
 # --- НОВЫЙ ЭНДПОИНТ ДЛЯ ЭКСПОРТА ---
 @router.get("/{entity_type_name}/export")
 def export_entities(
@@ -246,67 +316,3 @@ def export_entities(
 
 
 # --- КОНЕЦ НОВОГО ЭНДПОИНТА ---
-
-
-
-@router.post("/{entity_type_name}/order", status_code=status.HTTP_200_OK)
-def set_entity_order(
-    entity_type_name: str,
-    order_in: EntityOrderSetRequest,
-    service: EAVService = Depends(),
-    current_user: models.User = Depends(get_current_user)
-):
-    """
-    Установить и сохранить новый порядок отображения строк для таблицы.
-    """
-    return service.set_entity_order(
-        entity_type_name=entity_type_name,
-        entity_ids=order_in.entity_ids,
-        current_user=current_user
-    )
-
-
-
-
-@router.post("/{entity_type_name}/position", status_code=status.HTTP_200_OK)
-def update_entity_position(
-    entity_type_name: str,
-    update_in: EntityOrderUpdateSmartRequest,
-    service: EAVService = Depends(),
-    current_user: models.User = Depends(get_current_user)
-):
-    """
-    Обновить позицию одной строки.
-    """
-    return service.update_entity_position(
-        entity_type_name=entity_type_name,
-        entity_id=update_in.entity_id,
-        after_pos=update_in.after_position,
-        before_pos=update_in.before_position,
-        current_user=current_user
-    )
-
-
-@router.get("/{entity_type_name}/group-by/{attribute_name}", response_model=List[Dict[str, Any]])
-def group_entities_by_attribute(
-        entity_type_name: str,
-        attribute_name: str,
-        tenant_id: Optional[int] = Query(None,
-                                         description="ID клиента (тенанта). Доступно только для суперадминистраторов."),
-        service: EAVService = Depends(),
-        current_user: models.User = Depends(get_current_user)
-):
-    """
-    Группирует данные по значению в колонке и возвращает количество записей для каждой группы.
-    Например, можно сгруппировать лиды по статусу.
-    """
-    final_tenant_id = tenant_id
-    if not current_user.is_superuser:
-        final_tenant_id = None
-
-    return service.group_by_attribute(
-        entity_type_name=entity_type_name,
-        group_by_attribute_name=attribute_name,
-        current_user=current_user,
-        tenant_id=final_tenant_id
-    )
