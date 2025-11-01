@@ -133,6 +133,7 @@ def run_ai_test(headers: Dict[str, str]):
         response.raise_for_status()
 
         data = response.json()
+        print(data)
         filters = data.get("filters")
 
         ok_format = isinstance(filters, list) and len(filters) == 3
@@ -166,8 +167,9 @@ def main():
             # Запускаем тест только если окружение было создано успешно
             run_ai_test(headers)
     finally:
-        # Удаляем тестовую таблицу в любом случае
-        cleanup(headers, table_id)
+       # Удаляем тестовую таблицу в любом случае
+        print("должно быть cleanup(headers, table_id)")
+        # cleanup(headers, table_id)
 
     print_header("Итоги тестирования")
     if test_failed:
@@ -179,3 +181,20 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+order_cost = int(input())
+if order_cost >= 2000:
+    print("Доставка бесплатная")
+    print(order_cost)
+else:
+    print("1. Самовывоз 2. Доставка курьером")
+    choice = int(input())
+
+    if choice == 1:
+        print("Выбран самовывоз")
+        total = order_cost + 100
+        print(total)
+    elif choice == 2:
+        print("Выбрана доставка курьером")
+        total = order_cost + 300
+print(total)
