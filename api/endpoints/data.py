@@ -1,20 +1,21 @@
 # api/endpoints/data.py
 from fastapi import APIRouter, Depends, status, Body, Query
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 import json
+import io
+import pandas as pd
+from enum import Enum
+from datetime import datetime
+from fastapi import HTTPException
+
 from db import models
 from services.eav_service import EAVService
 from api.deps import get_current_user
 from schemas.data import BulkDeleteRequest
-from schemas.eav import EntityOrderSetRequest
-from schemas.eav import EntityOrderUpdateSmartRequest
-import io # <-- ШАГ 2: Добавьте этот импорт
-import pandas as pd # <-- ШАГ 3: Добавьте этот импорт
-from enum import Enum # <-- ШАГ 4: Добавьте этот импорт
-from datetime import datetime # <-- ШАГ 5: Добавьте этот импорт
-from fastapi.responses import StreamingResponse # <-- ШАГ 1: Добавьте этот импорт
-from fastapi import HTTPException
-from db import models
+from schemas.eav import EntityOrderSetRequest, EntityOrderUpdateSmartRequest
+from pydantic import BaseModel
+
 
 
 
@@ -53,7 +54,7 @@ def delete_multiple_entities(
 
 
 
-from pydantic import BaseModel
+
 class PaginatedEntityResponse(BaseModel):
     total: int
     data: List[Dict[str, Any]]
@@ -73,10 +74,6 @@ def create_entity(
     return service.create_entity_and_get_list(entity_type_name, data, current_user)
 
 
-# =============================================================================
-# === ВАЖНОЕ ИЗМЕНЕНИЕ: Эндпоинт экспорта ПЕРЕМЕЩЕН СЮДА ===
-# Он должен быть до любого маршрута, который содержит /.../{entity_id}
-# =============================================================================
 @router.get("/{entity_type_name}/export")
 def export_entities(
         entity_type_name: str,
@@ -122,6 +119,13 @@ def export_entities(
 
     df = pd.DataFrame(data_to_export)
 
+    # --- НАЧАЛО НОВОГО БЛОКА: УБИРАЕМ ТАЙМЗОНЫ ИЗ ДАТ ---
+    # Pandas автоматически определяет колонки с датами, включая те, что с таймзоной (datetimetz)
+    for col in df.select_dtypes(include=['datetimetz']).columns:
+        # .dt.tz_localize(None) - это стандартный способ в pandas сделать дату "наивной" (без таймзоны)
+        df[col] = df[col].dt.tz_localize(None)
+    # --- КОНЕЦ НОВОГО БЛОКА ---
+
     column_mapping = {attr.name: attr.display_name for attr in entity_type.attributes}
     column_mapping.update({
         'id': 'ID', 'created_at': 'Дата создания',
@@ -153,6 +157,10 @@ def export_entities(
 
     headers = {'Content-Disposition': f'attachment; filename="{filename}"'}
     return StreamingResponse(stream, media_type=media_type, headers=headers)
+
+
+
+
 
 @router.get("/{entity_type_name}/{entity_id}", response_model=Dict[str, Any])
 def get_entity(
