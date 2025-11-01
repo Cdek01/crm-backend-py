@@ -126,8 +126,15 @@ def export_entities(
         df[col] = df[col].dt.tz_localize(None)
     # --- КОНЕЦ НОВОГО БЛОКА ---
 
-    column_mapping = {attr.name: attr.display_name for attr in entity_type.attributes}
-    column_mapping.update({
+        # --- НАЧАЛО ИЗМЕНЕНИЯ: Игнорируем EAV-атрибуты, которые дублируют системные поля ---
+        system_fields_to_ignore = {"creation_date", "modification_date"}
+        column_mapping = {
+            attr.name: attr.display_name
+            for attr in entity_type.attributes
+            if attr.name not in system_fields_to_ignore
+        }
+        # --- КОНЕЦ ИЗМЕНЕНИЯ ---
+        column_mapping.update({
         'id': 'ID', 'created_at': 'Дата создания',
         'updated_at': 'Дата изменения', 'position': 'Позиция'
     })
