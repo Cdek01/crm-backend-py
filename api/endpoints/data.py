@@ -13,6 +13,8 @@ import pandas as pd # <-- ШАГ 3: Добавьте этот импорт
 from enum import Enum # <-- ШАГ 4: Добавьте этот импорт
 from datetime import datetime # <-- ШАГ 5: Добавьте этот импорт
 from fastapi.responses import StreamingResponse # <-- ШАГ 1: Добавьте этот импорт
+from fastapi import HTTPException
+from db import models
 
 
 
@@ -22,6 +24,10 @@ router = APIRouter()
 class ExportFormat(str, Enum):
     csv = "csv"
     xlsx = "xlsx"
+
+
+
+
 
 @router.post("/{entity_type_name}/bulk-delete", status_code=status.HTTP_200_OK)
 def delete_multiple_entities(
