@@ -446,14 +446,32 @@ class EAVService:
                     models.AttributeValue.entity_id == models.Entity.id,
                     models.AttributeValue.attribute_id == attribute.id
                 )
+                if op in ('blank', 'not_blank'):
+                    # Подзапрос, который ищет записи, где значение СУЩЕСТВУЕТ, но оно НЕ ПУСТОЕ
+                    # (не NULL и не пустая строка)
+                    subquery_for_not_blank = self.db.query(models.AttributeValue.id).filter(
+                        models.AttributeValue.entity_id == models.Entity.id,
+                        models.AttributeValue.attribute_id == attribute.id,
+                        value_column.isnot(None),  # Проверяем, что не NULL
+                        value_column != ''  # Проверяем, что не пустая строка
+                    ).exists()
 
-                # 1. Сначала обрабатываем универсальные операторы
-                if op == 'blank':
-                    query = query.filter(~subquery.exists())
-                    continue
-                elif op == 'not_blank':
-                    query = query.filter(subquery.exists())
-                    continue
+                    if op == 'blank':
+                        # 'blank' - это когда НЕ существует НЕ ПУСТОГО значения.
+                        # Это покрывает случаи, когда записи нет, или она есть, но NULL, или она есть, но ''.
+                        query = query.filter(~subquery_for_not_blank)
+                    else:  # op == 'not_blank'
+                        # 'not_blank' - это когда СУЩЕСТВУЕТ НЕ ПУСТОЕ значение.
+                        query = query.filter(subquery_for_not_blank)
+
+                    continue  # Переходим к следующему фильтру
+                # # 1. Сначала обрабатываем универсальные операторы
+                # if op == 'blank':
+                #     query = query.filter(~subquery.exists())
+                #     continue
+                # elif op == 'not_blank':
+                #     query = query.filter(subquery.exists())
+                #     continue
 
                 # 2. Теперь обрабатываем по типам
                 if attribute.value_type in ['string', 'email', 'phone', 'url'] and isinstance(value, str):
