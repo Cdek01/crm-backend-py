@@ -1187,12 +1187,14 @@ class EAVService:
                 ).first()
 
                 if existing_value:
-                    if processed_value is None:
-                        self.db.delete(existing_value)
-                    else:
-                        for field in VALUE_FIELD_MAP.values():
-                            setattr(existing_value, field, None)
-                        setattr(existing_value, value_field_name, processed_value)
+                    # if processed_value is None:
+                    #     self.db.delete(existing_value)
+                    setattr(existing_value, value_field_name, processed_value)
+                    #
+                    # else:
+                    #     for field in VALUE_FIELD_MAP.values():
+                    #         setattr(existing_value, field, None)
+                    #     setattr(existing_value, value_field_name, processed_value)
                 elif processed_value is not None:
                     new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
                                                       **{value_field_name: processed_value})
