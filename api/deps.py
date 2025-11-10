@@ -108,22 +108,43 @@ def get_current_admin_user(request: Request, db: Session = Depends(session.get_d
 
 def require_data_permission(action: str):
     """
-    Фабрика зависимостей для проверки прав доступа к данным в кастомных таблицах.
-    Проверяет право динамически, на основе имени таблицы из URL.
-    Например: data:view:projects, data:edit:tasks
+    Универсальная фабрика зависимостей для проверки прав доступа к данным.
+    Реализует полную логику: суперадмин -> владелец -> общий доступ + роль.
     """
-    async def _check_permission(
-        entity_type_name: str = Path(...), # Получаем имя таблицы из пути URL
-        current_user: models.User = Depends(get_current_user),
-        db: Session = Depends(session.get_db)
-    ):
-        if current_user.is_superuser:
-            return True # Суперадмину можно все
 
-        # 1. Формируем имя необходимого разрешения
+    async def _check_permission(
+            entity_type_name: str = Path(...),
+            current_user: models.User = Depends(get_current_user),
+            db: Session = Depends(session.get_db)
+    ):
+        # 1. СУПЕРАДМИН: имеет доступ ко всему
+        if current_user.is_superuser:
+            return True
+
+        # 2. Загружаем информацию о таблице, к которой идет обращение
+        entity_type = db.query(models.EntityType).filter(models.EntityType.name == entity_type_name).first()
+        if not entity_type:
+            raise HTTPException(status_code=404, detail=f"Таблица '{entity_type_name}' не найдена")
+
+        # 3. ВЛАДЕЛЕЦ: если tenant_id совпадает, доступ разрешен немедленно
+        if entity_type.tenant_id == current_user.tenant_id:
+            return True
+
+        # 4. ОБЩИЙ ДОСТУП: если пользователь не владелец, проверяем два "ключа"
+
+        # Ключ №1: Есть ли запись в SharedAccess?
+        share_access = db.query(models.SharedAccess).filter_by(
+            entity_type_id=entity_type.id,
+            grantee_user_id=current_user.id
+        ).first()
+
+        if not share_access:
+            # Если нет ни владения, ни общего доступа - доступ запрещен
+            raise HTTPException(status_code=403, detail="Доступ к этой таблице запрещен")
+
+        # Ключ №2: Если запись о доступе есть, есть ли у пользователя нужная РОЛЬ?
         required_permission = f"data:{action}:{entity_type_name}"
 
-        # 2. Загружаем пользователя с его ролями и правами
         user_with_perms = (
             db.query(models.User)
             .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
@@ -131,15 +152,15 @@ def require_data_permission(action: str):
             .one()
         )
 
-        # 3. Собираем все уникальные права пользователя
         user_permissions = {perm.name for role in user_with_perms.roles for perm in role.permissions}
 
-        # 4. Проверяем наличие нужного права
         if required_permission not in user_permissions:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Недостаточно прав для выполнения действия '{action}' над таблицей '{entity_type_name}'",
             )
+
+        # Если оба "ключа" на месте, доступ разрешен
         return True
 
     return Depends(_check_permission)

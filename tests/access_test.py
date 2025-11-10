@@ -6,148 +6,147 @@ import json
 # Замените на URL вашего API
 BASE_URL = "http://89.111.169.47:8005"
 
-# Учетные данные пользователей
-USER_A_EMAIL = "AntonShlips@example.com"
+USER_A_EMAIL = "AntonShlips@example.com"  # Владелец
 USER_A_PASSWORD = "AntonShlips(1985)"
 
-USER_B_EMAIL = "1@example.com"
+USER_B_EMAIL = "1@example.com"  # Редактор
 USER_B_PASSWORD = "string"
-# ВАЖНО: Вставьте сюда ID пользователя 1@example.com из админ-панели
-USER_B_ID = 2  # <-- ЗАМЕНИТЕ ЭТО ЧИСЛО
+USER_B_ID = 24  # <-- ЗАМЕНИТЕ НА ID пользователя 1@example.com
 
-# --- КОНЕЦ КОНФИГУРАЦИИ ---
+USER_C_EMAIL = "danikbelavin2006@gmail.com"  # Наблюдатель
+USER_C_PASSWORD = "daniil157!?"
+USER_C_ID = 21  # <-- ЗАМЕНИТЕ НА ID пользователя viewer@example.com
 
-# Уникальное имя для нашей тестовой таблицы, чтобы не пересекаться с другими
-TEST_TABLE_SYSTEM_NAME = f"test_projects_{int(time.time())}"
-TEST_TABLE_DISPLAY_NAME = "Тестовые проекты для проверки доступа"
+# Уникальные имена для таблиц
+TIMESTAMP = int(time.time())
+PROJECTS_TABLE_NAME = f"test_projects_{TIMESTAMP}"
+TASKS_TABLE_NAME = f"test_tasks_{TIMESTAMP}"
 
 
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений) ---
 def login(email, password):
-    """Логинится и возвращает JWT токен."""
     try:
-        response = requests.post(
-            f"{BASE_URL}/api/auth/token",
-            data={"username": email, "password": password}
-        )
+        response = requests.post(f"{BASE_URL}/api/auth/token", data={"username": email, "password": password})
         response.raise_for_status()
         return response.json()["access_token"]
     except requests.exceptions.RequestException as e:
-        print(f"\n[!!!] Ошибка входа для пользователя {email}: {e}")
-        if e.response is not None:
-            print(f"    Ответ сервера: {e.response.text}")
+        print(f"\n[!!!] Ошибка входа для {email}: {e.response.text}")
         return None
 
 
 def print_status(message, response, expected_status):
-    """Красиво выводит результат проверки статуса ответа."""
-    if response.status_code == expected_status:
-        print(f"[OK] {message} (Статус: {response.status_code})")
-        return True
-    else:
-        print(f"[FAIL] {message} (Ожидался: {expected_status}, Получен: {response.status_code})")
-        print(f"       Ответ сервера: {response.text[:200]}")
-        return False
+    is_ok = response.status_code == expected_status
+    status_char = "[OK]" if is_ok else "[FAIL]"
+    print(f"{status_char} {message} (Статус: {response.status_code}, Ожидался: {expected_status})")
+    if not is_ok:
+        print(f"       Ответ: {response.text[:200]}")
+    return is_ok
 
 
-def main():
-    """Основной сценарий тестирования."""
-    print(">>> НАЧАЛО ТЕСТИРОВАНИЯ ДОСТУПОВ <<<")
+# --- ОСНОВНОЙ СЦЕНАРИЙ ---
+def run_test():
+    print(">>> НАЧАЛО РАСШИРЕННОГО ТЕСТИРОВАНИЯ ДОСТУПОВ <<<")
 
-    # --- Фаза 1: Настройка ---
-    print("\n--- [ФАЗА 1] Пользователь А (Владелец) создает таблицу и данные ---")
+    # --- ФАЗА 1: Вход и настройка ---
     token_a = login(USER_A_EMAIL, USER_A_PASSWORD)
-    if not token_a: return
+    token_b = login(USER_B_EMAIL, USER_B_PASSWORD)
+    token_c = login(USER_C_EMAIL, USER_C_PASSWORD)
+    if not all([token_a, token_b, token_c]): return
 
     headers_a = {"Authorization": f"Bearer {token_a}"}
-
-    # 1.1 Создаем таблицу
-    table_response = requests.post(
-        f"{BASE_URL}/api/meta/entity-types",
-        headers=headers_a,
-        json={"name": TEST_TABLE_SYSTEM_NAME, "display_name": TEST_TABLE_DISPLAY_NAME}
-    )
-    if not print_status("Создание тестовой таблицы", table_response, 201): return
-    table_id = table_response.json()["id"]
-
-    # 1.2 Создаем запись в таблице
-    data_response = requests.post(
-        f"{BASE_URL}/api/data/{TEST_TABLE_SYSTEM_NAME}",
-        headers=headers_a,
-        json={"name": "Секретный проект"}
-    )
-    if not print_status("Создание тестовой записи", data_response, 201): return
-
-    # --- Фаза 2: Проверка доступов для Пользователя Б ---
-    print("\n--- [ФАЗА 2] Проверки от имени Пользователя Б (без прав и доступов) ---")
-    token_b = login(USER_B_EMAIL, USER_B_PASSWORD)
-    if not token_b: return
     headers_b = {"Authorization": f"Bearer {token_b}"}
+    headers_c = {"Authorization": f"Bearer {token_c}"}
 
-    # 2.1 Пытаемся получить список таблиц
-    tables_list_resp = requests.get(f"{BASE_URL}/api/meta/entity-types", headers=headers_b)
-    if print_status("Получение списка таблиц", tables_list_resp, 200):
-        tables = tables_list_resp.json()
-        if any(t['name'] == TEST_TABLE_SYSTEM_NAME for t in tables):
-            print(f"[FAIL] Пользователь Б видит таблицу '{TEST_TABLE_DISPLAY_NAME}', хотя не должен!")
-        else:
-            print(f"[OK] Пользователь Б НЕ видит чужую таблицу в списке.")
+    print("\n--- [ФАЗА 1] Пользователь А (Владелец) создает 2 таблицы ---")
 
-    # 2.2 Пытаемся получить данные напрямую (самая важная проверка)
-    data_access_resp = requests.get(f"{BASE_URL}/api/data/{TEST_TABLE_SYSTEM_NAME}", headers=headers_b)
-    print_status("Попытка прямого доступа к данным чужой таблицы", data_access_resp, 403)  # Ожидаем ошибку "Forbidden"
+    # Создаем таблицу Проекты
+    resp_proj = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers_a,
+                              json={"name": PROJECTS_TABLE_NAME, "display_name": "Проекты"})
+    if not print_status("Создание таблицы 'Проекты'", resp_proj, 201): return
+    projects_table_id = resp_proj.json()["id"]
 
-    # --- Фаза 3: Владелец делится доступом (но у пользователя Б все еще НЕТ РОЛИ) ---
-    print(f"\n--- [ФАЗА 3] Пользователь А делится таблицей с Пользователем Б (у которого нет ролей) ---")
-    share_response = requests.post(
-        f"{BASE_URL}/api/shares",
-        headers=headers_a,
-        json={
-            "entity_type_id": table_id,
-            "grantee_user_id": USER_B_ID,
-            "permission_level": "view"
-        }
-    )
-    if not print_status("Предоставление доступа (sharing)", share_response, 201): return
-    share_id = share_response.json()["id"]
+    # Создаем таблицу Задачи
+    resp_tasks = requests.post(f"{BASE_URL}/api/meta/entity-types", headers=headers_a,
+                               json={"name": TASKS_TABLE_NAME, "display_name": "Задачи"})
+    if not print_status("Создание таблицы 'Задачи'", resp_tasks, 201): return
+    tasks_table_id = resp_tasks.json()["id"]
 
-    # 3.1 Повторная проверка от имени Пользователя Б
-    print("\n--- [ПРОВЕРКА УЯЗВИМОСТИ] Пользователь Б пытается получить доступ, имея 'share', но не имея роли ---")
-    data_access_resp_2 = requests.get(f"{BASE_URL}/api/data/{TEST_TABLE_SYSTEM_NAME}", headers=headers_b)
-    print_status("Попытка доступа к данным (только 'share', без роли)", data_access_resp_2, 403)
+    # --- ФАЗА 2: Владелец делится доступом к 'Проектам' ---
+    print("\n--- [ФАЗА 2] Владелец делится доступом к 'Проектам' ---")
+    share_b_resp = requests.post(f"{BASE_URL}/api/shares", headers=headers_a,
+                                 json={"entity_type_id": projects_table_id, "grantee_user_id": USER_B_ID,
+                                       "permission_level": "edit"})
+    if not print_status("Предоставление доступа EDIT Пользователю Б", share_b_resp, 201): return
 
-    # --- Фаза 4: Администратор выдает роль Пользователю Б ---
+    share_c_resp = requests.post(f"{BASE_URL}/api/shares", headers=headers_a,
+                                 json={"entity_type_id": projects_table_id, "grantee_user_id": USER_C_ID,
+                                       "permission_level": "view"})
+    if not print_status("Предоставление доступа VIEW Пользователю В", share_c_resp, 201): return
+
+    # --- Фаза 3: Настройка ролей в Админке ---
     print("\n" + "=" * 70)
-    print("!!! ВНИМАНИЕ: ТРЕБУЕТСЯ РУЧНОЕ ДЕЙСТВИЕ !!!")
-    print("1. Зайдите в Админ-панель.")
-    print("2. Перейдите в 'Разрешения' и создайте новое разрешение с именем:")
-    print(f"   data:view:{TEST_TABLE_SYSTEM_NAME}")
-    print("3. Перейдите в 'Роли', выберите роль 'Test Viewer' и добавьте ей это новое разрешение.")
-    print(
-        "4. Перейдите в 'Назначение Ролей', выберите пользователя '1@example.com' и назначьте ему роль 'Test Viewer'.")
-    input("После выполнения этих действий, нажмите Enter для продолжения теста...")
+    print("!!! ВНИМАНИЕ: ТРЕБУЕТСЯ РУЧНОЕ ДЕЙСТВИЕ В АДМИН-ПАНЕЛИ !!!")
+    print("1. Создайте 2 разрешения (Permissions):")
+    print(f"   - data:view:{PROJECTS_TABLE_NAME}")
+    print(f"   - data:edit:{PROJECTS_TABLE_NAME}")
+    print("2. Настройте Роли:")
+    print("   - Роли 'Test Viewer' дайте право 'data:view:...'")
+    print("   - Роли 'Test Editor' дайте ОБА права: 'data:view:...' и 'data:edit:...'")
+    print("3. Назначьте Роли Пользователям:")
+    print(f"   - Пользователю {USER_B_EMAIL} назначьте роль 'Test Editor'.")
+    print(f"   - Пользователю {USER_C_EMAIL} назначьте роль 'Test Viewer'.")
+    input("После выполнения этих действий, нажмите Enter для продолжения...")
     print("=" * 70 + "\n")
 
-    # --- Фаза 5: Финальная проверка (есть и share, и роль) ---
-    print("\n--- [ФАЗА 5] Финальная проверка. У Пользователя Б есть и 'share', и роль ---")
-    data_access_resp_3 = requests.get(f"{BASE_URL}/api/data/{TEST_TABLE_SYSTEM_NAME}", headers=headers_b)
-    print_status("Попытка доступа к данным (есть 'share' И роль)", data_access_resp_3, 200)
+    # --- ФАЗА 4: Проверки ---
+    print("\n--- [ФАЗА 4] Проверка доступов для всех пользователей ---")
 
-    # --- Фаза 6: Отзыв доступа ---
-    print("\n--- [ФАЗА 6] Пользователь А отзывает доступ ---")
-    revoke_response = requests.delete(f"{BASE_URL}/api/shares/{share_id}", headers=headers_a)
-    print_status("Отзыв доступа (sharing)", revoke_response, 204)
+    # Проверки для Пользователя Б (Редактор)
+    print("\n--- Проверки для Пользователя Б (Редактор) ---")
+    resp_b_view = requests.get(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}", headers=headers_b)
+    print_status("[Б] Может просматривать 'Проекты'", resp_b_view, 200)
 
-    # 6.1 Проверка, что доступ снова пропал
-    data_access_resp_4 = requests.get(f"{BASE_URL}/api/data/{TEST_TABLE_SYSTEM_NAME}", headers=headers_b)
-    print_status("Попытка доступа к данным после отзыва 'share' (роль осталась)", data_access_resp_4, 403)
+    resp_b_create = requests.post(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}", headers=headers_b,
+                                  json={"name": "Новый проект от Б"})
+    print_status("[Б] НЕ может создавать записи в 'Проектах' (нужно право 'create')", resp_b_create, 403)
 
-    # --- Фаза 7: Очистка ---
-    print("\n--- [ФАЗА 7] Очистка тестовых данных ---")
-    delete_response = requests.delete(f"{BASE_URL}/api/meta/entity-types/{table_id}", headers=headers_a)
-    print_status("Удаление тестовой таблицы", delete_response, 204)
+    # Сначала Владелец А создаст запись, чтобы Б мог ее отредактировать
+    resp_a_create = requests.post(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}", headers=headers_a,
+                                  json={"name": "Проект для редактирования"})
+    entity_id = resp_a_create.json()["data"][0]["id"]
 
-    print("\n>>> ТЕСТИРОВАНИЕ ЗАВЕРШЕНО <<<")
+    resp_b_edit = requests.put(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}/{entity_id}", headers=headers_b,
+                               json={"name": "Отредактировано Б"})
+    print_status("[Б] Может редактировать записи в 'Проектах'", resp_b_edit, 200)
+
+    resp_b_delete = requests.delete(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}/{entity_id}", headers=headers_b)
+    print_status("[Б] НЕ может удалять записи из 'Проектов' (нужно право 'delete')", resp_b_delete, 403)
+
+    resp_b_tasks = requests.get(f"{BASE_URL}/api/data/{TASKS_TABLE_NAME}", headers=headers_b)
+    print_status("[Б] НЕ может видеть 'Задачи'", resp_b_tasks, 403)
+
+    # Проверки для Пользователя В (Наблюдатель)
+    print("\n--- Проверки для Пользователя В (Наблюдатель) ---")
+    resp_c_view = requests.get(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}", headers=headers_c)
+    print_status("[В] Может просматривать 'Проекты'", resp_c_view, 200)
+
+    resp_c_edit = requests.put(f"{BASE_URL}/api/data/{PROJECTS_TABLE_NAME}/{entity_id}", headers=headers_c,
+                               json={"name": "Попытка редактирования от В"})
+    print_status("[В] НЕ может редактировать записи в 'Проектах'", resp_c_edit, 403)
+
+    resp_c_tasks = requests.get(f"{BASE_URL}/api/data/{TASKS_TABLE_NAME}", headers=headers_c)
+    print_status("[В] НЕ может видеть 'Задачи'", resp_c_tasks, 403)
+
+    # --- ФАЗА 5: Очистка ---
+    print("\n--- [ФАЗА 5] Очистка тестовых данных ---")
+    del_proj = requests.delete(f"{BASE_URL}/api/meta/entity-types/{projects_table_id}", headers=headers_a)
+    print_status("Удаление таблицы 'Проекты'", del_proj, 204)
+    del_tasks = requests.delete(f"{BASE_URL}/api/meta/entity-types/{tasks_table_id}", headers=headers_a)
+    print_status("Удаление таблицы 'Задачи'", del_tasks, 204)
+    print("!!! Не забудьте удалить тестовые роли и разрешения в админ-панели !!!")
+
+    print("\n>>> РАСШИРЕННОЕ ТЕСТИРОВАНИЕ ЗАВЕРШЕНО <<<")
 
 
 if __name__ == "__main__":
-    main()
+    run_test()
