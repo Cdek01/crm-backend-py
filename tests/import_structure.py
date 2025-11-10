@@ -41,12 +41,18 @@ def direct_import(token: str):
 
     print_header(f"Этап 1: Чтение и очистка листа '{SHEET_NAME}'")
     try:
-        df = pd.read_excel(FILE_PATH, sheet_name=SHEET_NAME, header=1)  # Предполагаем, что заголовки на 2-й строке
+        # Если заголовки в первой строке
+        df = pd.read_excel(FILE_PATH, sheet_name=SHEET_NAME, header=0)
+
+        # Убираем полностью пустые строки и колонки
         df.dropna(axis=1, how='all', inplace=True)
         df.dropna(axis=0, how='all', inplace=True)
 
-        # Принудительно конвертируем все в строки
+        # Преобразуем всё в строки
         df = df.astype(str).replace({'nan': None, 'NaT': None})
+
+        # Разворачиваем DataFrame, чтобы порядок импорта был как в Excel
+        df = df[::-1].reset_index(drop=True)
 
         print(f"✅ Файл прочитан. Найдено {len(df)} строк для импорта.")
     except Exception as e:

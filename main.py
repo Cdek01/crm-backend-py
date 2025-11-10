@@ -30,9 +30,10 @@ from admin import (
     TenantAdmin, UserAdmin, LeadAdmin, LegalEntityAdmin,
     IndividualAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
     RoleAdmin, PermissionAdmin,
-    AssignRoleView
+    AssignRoleView, SharedAccessAdmin  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+
 )
-from api.endpoints import roles, shared, imports, files, ai, users
+from api.endpoints import roles, shared, imports, files, ai, users, shares
 
 setup_logging()
 
@@ -143,6 +144,8 @@ admin.add_view(TableAliasAdmin)
 admin.add_view(RoleAdmin)
 admin.add_view(PermissionAdmin)
 admin.add_view(AssignRoleView) # <-- ДОБАВЬТЕ ЭТО
+admin.add_view(SharedAccessAdmin) # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+
 # admin.add_view(SharedEntityTypeAdmin)
 # Если вы создали AttributeAliasAdmin, раскомментируйте следующую строку
 # admin.add_view(AttributeAliasAdmin)
@@ -165,6 +168,7 @@ app.include_router(select_lists.router, prefix="/api/meta/select-lists", tags=["
 app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+app.include_router(shares.router, prefix="/api/shares", tags=["Shares (Access Control)"])
 
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---

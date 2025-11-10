@@ -16,8 +16,9 @@ from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
 from sqlalchemy import or_, cast, Text
-import logging # <-- ШАГ 1: Добавьте этот импорт
-# from tasks.enrichment import enrich_data_by_inn_task # <-- ДОБАВЬТЕ ЭТО
+import logging
+# from tasks.enrichment import enrich_data_by_inn_task
+from sqlalchemy import or_ # <-- Убедитесь, что этот импорт есть
 
 
 logger = logging.getLogger(__name__)
@@ -120,29 +121,31 @@ class EAVService:
 
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
-        db_user = self.db.query(models.User).options(
-            joinedload(models.User.roles).joinedload(models.Role.permissions)
-        ).filter(models.User.id == current_user.id).one()
-        if not db_user:
-            # На случай, если пользователь был удален во время сессии
-            raise HTTPException(status_code=401, detail="Пользователь не найден")
-        user_permissions = {perm.name for role in db_user.roles for perm in role.permissions}
+        # --- НАЧАЛО ИЗМЕНЕНИЙ ---
+        if current_user.is_superuser:
+            # Суперадмин видит все таблицы
+            query = self.db.query(models.EntityType).options(
+                joinedload(models.EntityType.attributes)
+            ).order_by(models.EntityType.id)
+        else:
+            # Обычный пользователь видит:
+            # 1. Свои таблицы (по tenant_id)
+            # 2. Таблицы, к которым ему дали доступ
+            shared_entity_types_subquery = self.db.query(models.SharedAccess.entity_type_id).filter(
+                models.SharedAccess.grantee_user_id == current_user.id
+            )
 
-        accessible_table_names = {p.split(':')[2] for p in user_permissions if
-                                  p.startswith("data:") and len(p.split(':')) == 3}
-
-        query = self.db.query(models.EntityType).options(
-            joinedload(models.EntityType.attributes)
-        ).order_by(models.EntityType.id)
-
-        if not current_user.is_superuser:
-            query = query.filter(
+            query = self.db.query(models.EntityType).options(
+                joinedload(models.EntityType.attributes)
+            ).filter(
                 or_(
                     models.EntityType.tenant_id == current_user.tenant_id,
-                    models.EntityType.name.in_(accessible_table_names)
+                    models.EntityType.id.in_(shared_entity_types_subquery)
                 )
-            )
+            ).order_by(models.EntityType.id)
+
         db_entity_types = query.all()
+        # --- КОНЕЦ ИЗМЕНЕНИЙ ---
         attr_aliases = self.alias_service.get_aliases_for_tenant(current_user=current_user)
         table_aliases = self.alias_service.get_table_aliases_for_tenant(current_user=current_user)
         response_list = []
@@ -174,64 +177,43 @@ class EAVService:
             self,
             entity_type_name: str,
             current_user: models.User,
-            tenant_id: Optional[int] = None  # tenant_id теперь используется только суперадмином
+            tenant_id: Optional[int] = None
     ) -> models.EntityType:
         """
-        Ищет таблицу по имени с учетом прав доступа.
+        Ищет таблицу по имени с учетом прав доступа (владение или общий доступ).
         """
-        # 1. Получаем права пользователя
-        user_permissions = {perm.name for role in current_user.roles for perm in role.permissions}
-
-        # 2. Строим базовый запрос
         query = self.db.query(models.EntityType).filter(models.EntityType.name == entity_type_name)
 
-        if not current_user.is_superuser:
-            # 3. Проверяем, есть ли у пользователя право на эту таблицу
-            has_access_via_permission = any(
-                p.startswith(f"data:") and p.endswith(f":{entity_type_name}") for p in user_permissions)
-
-            # 4. Пользователь может найти таблицу, если:
-            #    - она принадлежит его тенанту
-            #    - ИЛИ у него есть явное право на доступ к ней
-            query = query.filter(
-                or_(
-                    models.EntityType.tenant_id == current_user.tenant_id,
-                    has_access_via_permission  # Если True, это условие не будет фильтровать по tenant_id
-                )
-            )
-            # ВАЖНО: Этот фильтр не совсем корректен, так как `has_access_via_permission` - это Python boolean.
-            # Правильная реализация ниже.
-
-        # --- ПРАВИЛЬНАЯ РЕАЛИЗАЦИЯ ---
-        if not current_user.is_superuser:
-            query = query.filter(
-                or_(
-                    models.EntityType.tenant_id == current_user.tenant_id,
-                    models.EntityType.name.in_(
-                        # Получаем имена всех таблиц, к которым есть хоть какой-то доступ
-                        {p.split(':')[2] for p in user_permissions if p.startswith("data:") and len(p.split(':')) == 3}
-                    )
-                )
-            )
-        elif tenant_id:
+        # Суперадмин может указать tenant_id для поиска в конкретном клиенте
+        if current_user.is_superuser and tenant_id:
             query = query.filter(models.EntityType.tenant_id == tenant_id)
 
-        result = query.first()
+        entity_type = query.first()
 
-        if not result:
-            raise HTTPException(status_code=404,
-                                detail=f"Тип сущности '{entity_type_name}' не найден или к нему нет доступа")
+        if not entity_type:
+            raise HTTPException(status_code=404, detail=f"Тип сущности '{entity_type_name}' не найден")
 
-        # --- ИЗМЕНЕНИЕ: ЖАДНАЯ ЗАГРУЗКА ДАННЫХ О СВЯЗЯХ ---
-        # После того как мы нашли ID и проверили права, делаем полный запрос
-        # с загрузкой всех необходимых данных для построения связей.
-        full_entity_type = self.db.query(models.EntityType).options(
-            joinedload(models.EntityType.attributes).joinedload(models.Attribute.source_attribute),
-            joinedload(models.EntityType.attributes).joinedload(models.Attribute.target_attribute),
-            joinedload(models.EntityType.attributes).joinedload(models.Attribute.display_attribute)
-        ).filter(models.EntityType.id == result.id).one()
+        # --- НАЧАЛО ПРОВЕРКИ ДОСТУПА ---
+        if not current_user.is_superuser:
+            is_owner = (entity_type.tenant_id == current_user.tenant_id)
+            if not is_owner:
+                # Если не владелец, ищем запись об общем доступе
+                share_access = self.db.query(models.SharedAccess).filter_by(
+                    entity_type_id=entity_type.id,
+                    grantee_user_id=current_user.id
+                ).first()
+                if not share_access:
+                    # Если нет ни владения, ни доступа - ошибка
+                    raise HTTPException(status_code=403, detail="Доступ к этой таблице запрещен")
+        # --- КОНЕЦ ПРОВЕРКИ ДОСТУПА ---
 
-        return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(result.id)
+        # Загружаем атрибуты, как и раньше
+        return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(entity_type.id)
+
+
+
+
+
 
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         db = session.SessionLocal()

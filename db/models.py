@@ -6,7 +6,7 @@ from sqlalchemy import (Column, Integer, String, DateTime, Date, Float,
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
-
+from enum import Enum as PyEnum
 
 
 
@@ -489,6 +489,49 @@ class Role(Base):
     def __str__(self):
         return self.name
 
+
+
+
+
+
+# --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+# 1. Создаем Enum для уровней доступа
+class PermissionLevel(PyEnum):
+    VIEW = "view"
+    EDIT = "edit"
+    MANAGE = "manage"
+
+# 2. Создаем новую модель для хранения доступов
+class SharedAccess(Base):
+    __tablename__ = 'shared_access'
+    id = Column(Integer, primary_key=True)
+
+    # К какой таблице дан доступ
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="CASCADE"), nullable=False, index=True)
+    # Кому дан доступ
+    grantee_user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, index=True)
+    # Кто предоставил доступ
+    grantor_user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, index=True)
+    # Какой уровень доступа
+    permission_level = Column(String, nullable=False, default=PermissionLevel.VIEW.value)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Связи для удобного доступа
+    entity_type = relationship("EntityType")
+    grantee = relationship("User", foreign_keys=[grantee_user_id], back_populates="shared_with_me")
+    grantor = relationship("User", foreign_keys=[grantor_user_id])
+
+    # Гарантируем, что одному пользователю нельзя дать доступ к одной таблице дважды
+    __table_args__ = (
+        UniqueConstraint('entity_type_id', 'grantee_user_id', name='_entity_grantee_uc'),
+    )
+
+
+
+
+
 # Теперь нам нужно обновить существующую модель User, добавив ей связь с ролями
 class User(Base):
     __tablename__ = "users"
@@ -507,7 +550,10 @@ class User(Base):
     tenant = relationship("Tenant", back_populates="users")
 
     roles = relationship("Role", secondary=user_roles_table, backref="users")
-    # shared_entity_types = relationship("SharedEntityType", back_populates="user")
+    # --- ДОБАВЬТЕ ЭТОТ RELATIONSHIP ---
+    # Показывает, к каким таблицам ДРУГИХ пользователей мне дали доступ
+    shared_with_me = relationship("SharedAccess", back_populates="grantee", foreign_keys=[SharedAccess.grantee_user_id], cascade="all, delete-orphan")
+    # ---------------------------------
     def __str__(self):
         return self.email
 
@@ -571,3 +617,13 @@ class SelectOption(Base):
     option_list_id = Column(Integer, ForeignKey('select_option_lists.id'), nullable=False)
     option_list = relationship("SelectOptionList", back_populates="options")
     def __str__(self): return self.value
+
+
+
+
+
+
+
+
+
+
