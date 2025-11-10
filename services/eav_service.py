@@ -344,8 +344,11 @@ class EAVService:
             attr = value_obj.attribute
             attr_name = attr.name
             value_type = attr.value_type
-
-            if value_type == 'relation' and attr.allow_multiple_selection:
+            # --- ИЗМЕНЕНИЕ ЗДЕСЬ: Логика для строк ---
+            if value_type == 'string':
+                # Собираем значение из обоих полей, приоритет у value_text, если он заполнен
+                result[attr_name] = value_obj.value_text or value_obj.value_string
+            elif value_type == 'relation' and attr.allow_multiple_selection:
                 result[attr_name] = [link.id for link in value_obj.many_to_many_links]
             elif value_type == 'multiselect':
                 result[attr_name] = [
@@ -410,9 +413,11 @@ class EAVService:
 
             # Если specific_fields не указан, ищем по всем (как и раньше)
 
+            # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
             matching_entity_ids_subquery = self.db.query(models.AttributeValue.entity_id).filter(
                 or_(
                     models.AttributeValue.value_string.ilike(search_term),
+                    models.AttributeValue.value_text.ilike(search_term), # <-- ДОБАВЛЯЕМ ПОИСК В value_text
                     cast(models.AttributeValue.value_integer, Text).like(search_term),
                     cast(models.AttributeValue.value_float, Text).like(search_term)
                 )
@@ -1198,25 +1203,8 @@ class EAVService:
 
             # --- Сценарий 3: Обработка всех остальных типов полей ---
             elif attribute.value_type in VALUE_FIELD_MAP:
-                processed_value = self._process_value(value, attribute)
-                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-                existing_value = self.db.query(models.AttributeValue).filter_by(
-                    entity_id=entity_id, attribute_id=attribute.id
-                ).first()
 
-                if existing_value:
-                    # if processed_value is None:
-                    #     self.db.delete(existing_value)
-                    setattr(existing_value, value_field_name, processed_value)
-                    #
-                    # else:
-                    #     for field in VALUE_FIELD_MAP.values():
-                    #         setattr(existing_value, field, None)
-                    #     setattr(existing_value, value_field_name, processed_value)
-                elif processed_value is not None:
-                    new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id,
-                                                      **{value_field_name: processed_value})
-                    self.db.add(new_value)
+                self._save_attribute_value(entity_id, attribute, value)
 
         # 4. Сохраняем все изменения и отправляем уведомления
         entity.updated_at = datetime.utcnow()
@@ -1432,18 +1420,8 @@ class EAVService:
                 self.db.add(attr_value)
 
             elif attribute.value_type in VALUE_FIELD_MAP:
-                # Старая логика для всех остальных типов
-                processed_value = self._process_value(value, attribute)  # Передаем весь `attribute`
-                if processed_value is None:
-                    continue
+                self._save_attribute_value(new_entity.id, attribute, value)
 
-                value_field_name = VALUE_FIELD_MAP[attribute.value_type]
-                attr_value = models.AttributeValue(
-                    entity_id=new_entity.id,
-                    attribute_id=attribute.id
-                )
-                setattr(attr_value, value_field_name, processed_value)
-                self.db.add(attr_value)
             # ---------------------------
 
         self.db.commit()
@@ -1929,3 +1907,44 @@ class EAVService:
         logger.info(
             f"--- [DEBUG] Возвращаем самую первую пользовательскую колонку '{first_attr.name}' (ID: {first_attr.id})")
         return first_attr
+
+    # services/eav_service.py -> class EAVService
+
+    def _save_attribute_value(self, entity_id: int, attribute: models.Attribute, value: Any):
+        """
+        Умное сохранение значения атрибута с учетом его типа и длины.
+        """
+        processed_value = self._process_value(value, attribute)
+
+        # Ищем существующее значение
+        existing_value = self.db.query(models.AttributeValue).filter_by(
+            entity_id=entity_id, attribute_id=attribute.id
+        ).first()
+
+        if processed_value is None:
+            # Если новое значение пустое, а старое было - удаляем его
+            if existing_value:
+                self.db.delete(existing_value)
+            return
+
+        # Определяем, в какие поля записывать
+        value_to_save = {}
+        if attribute.value_type == 'string' and isinstance(processed_value, str):
+            if len(processed_value) > 255:
+                value_to_save['value_text'] = processed_value
+                value_to_save['value_string'] = None  # Очищаем короткое поле
+            else:
+                value_to_save['value_string'] = processed_value
+                value_to_save['value_text'] = None  # Очищаем длинное поле
+        elif attribute.value_type in VALUE_FIELD_MAP:
+            value_field_name = VALUE_FIELD_MAP[attribute.value_type]
+            value_to_save[value_field_name] = processed_value
+
+        if existing_value:
+            # Обновляем существующую запись
+            for field, val in value_to_save.items():
+                setattr(existing_value, field, val)
+        else:
+            # Создаем новую запись
+            new_value = models.AttributeValue(entity_id=entity_id, attribute_id=attribute.id, **value_to_save)
+            self.db.add(new_value)

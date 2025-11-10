@@ -355,6 +355,9 @@ class AttributeValue(Base):
     # Храним значения разных типов в разных полях
     # Индексируем каждое поле со значением
     value_string = Column(Text, nullable=True, index=True)
+    # Новое поле для хранения неограниченного текста
+    value_text = Column(Text, nullable=True)
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
     value_integer = Column(Integer, nullable=True, index=True)
     value_float = Column(Float, nullable=True, index=True)
     value_date = Column(DateTime, nullable=True, index=True)
