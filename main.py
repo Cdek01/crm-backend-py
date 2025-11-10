@@ -33,7 +33,7 @@ from admin import (
     AssignRoleView, SharedAccessAdmin  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 )
-from api.endpoints import roles, shared, imports, files, ai, users, shares
+from api.endpoints import roles, imports, files, ai, users, shares
 
 setup_logging()
 
@@ -163,7 +163,6 @@ app.include_router(individuals.router, prefix="/api/individuals", tags=["Individ
 app.include_router(aliases.router, prefix="/api/aliases", tags=["Aliases"])
 app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])
-app.include_router(shared.router, prefix="/api/shares", tags=["Shares"])
 app.include_router(select_lists.router, prefix="/api/meta/select-lists", tags=["Meta (Select Lists)"])
 app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
