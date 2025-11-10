@@ -108,16 +108,16 @@ def import_roadmap_sheet(token: str):
         if e.response is not None: print(f"   └─ Ответ сервера: {e.response.text}")
         return
 
-    print_header("Этап 3: Запуск фонового процесса импорта")
     try:
+        # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        # Мы больше не доверяем "suggested_type".
+        # Мы принудительно говорим серверу, что ВСЕ колонки - это строки.
         column_mappings = []
         for h in headers_from_server:
-            # --- ИЗМЕНЕНИЕ 2: Принудительно ставим тип 'string' ---
-            # Это гарантирует, что сервер создаст строковые колонки
             column_mappings.append({
                 "original_header": h["original_header"],
                 "display_name": h["original_header"],
-                "value_type": "string",  # <-- Устанавливаем тип "строка"
+                "value_type": "string",  # <--- ПРИНУДИТЕЛЬНО УСТАНАВЛИВАЕМ ТИП "СТРОКА"
                 "do_import": True
             })
 
