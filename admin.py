@@ -271,11 +271,13 @@ class SharedAccessAdmin(ModelView, model=models.SharedAccess):
     }
 
     # 3. Добавляем возможность поиска по email пользователя и названию таблицы
+    # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
     column_searchable_list = [
-        models.SharedAccess.grantee.email,
-        models.SharedAccess.entity_type.name,
-        models.SharedAccess.entity_type.display_name,
+        models.User.email,  # Указываем напрямую на модель User
+        models.EntityType.name, # Указываем напрямую на модель EntityType
+        models.EntityType.display_name,
     ]
+    # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
     # 4. Определяем поля для формы создания/редактирования
     # sqladmin автоматически создаст выпадающие списки для связанных полей
