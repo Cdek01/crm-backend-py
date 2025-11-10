@@ -54,6 +54,10 @@ def get_all_roles(
     query = db.query(models.Role).options(joinedload(models.Role.permissions))
 
     if not current_user.is_superuser:
+        # Убедимся, что у пользователя есть tenant_id
+        if not current_user.tenant_id:
+            # Если у пользователя нет tenant, он не может иметь ролей
+            return []
         query = query.filter(models.Role.tenant_id == current_user.tenant_id)
 
     roles = query.order_by(models.Role.name).all()
@@ -62,21 +66,30 @@ def get_all_roles(
 
 @router.get("/simple-list", response_model=List[RoleSchema], summary="Получить простой список ролей")
 def get_roles_simple_list(
+        # Добавляем опциональный query-параметр tenant_id
+        tenant_id: Optional[int] = None,
         db: Session = Depends(session.get_db),
         current_user: models.User = Depends(get_current_user)
 ):
     """
-    Возвращает простой список ролей (ID и имя) для текущего клиента.
-    Идеально подходит для заполнения выпадающих списков в UI.
+    Возвращает простой список ролей (ID и имя).
+    - Обычный пользователь получает роли только для своего tenant.
+    - Суперадминистратор может запросить роли для любого tenant, передав ?tenant_id=...
+      Если tenant_id не передан, он получает роли для своего собственного tenant.
     """
-    # Суперадминистратору тоже нужно видеть роли в контексте какого-то клиента,
-    # поэтому здесь всегда фильтруем по tenant_id текущего пользователя.
+    target_tenant_id = current_user.tenant_id
+
+    # Если запрос от суперадминистратора и он указал конкретный tenant_id, используем его
+    if current_user.is_superuser and tenant_id is not None:
+        target_tenant_id = tenant_id
+
+    if target_tenant_id is None:
+        # Если ни у пользователя нет tenant_id, ни он не передан в параметрах,
+        # то ролей быть не может. Возвращаем пустой список.
+        return []
+
     roles = db.query(models.Role).filter(
-        models.Role.tenant_id == current_user.tenant_id
+        models.Role.tenant_id == target_tenant_id
     ).order_by(models.Role.name).all()
 
-    if not roles and current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Для текущего пользователя-суперадминистратора не задан tenant. Укажите tenant_id для пользователя в админ-панели.",
-        )
+    return roles
