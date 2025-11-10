@@ -132,7 +132,7 @@ def require_data_permission(action: str):
         )
 
         # 3. Собираем все уникальные права пользователя
-        user_permissions = {perm.name for role in user_with_perms.roles for perm in user_permissions}
+        user_permissions = {perm.name for role in user_with_perms.roles for perm in role.permissions}
 
         # 4. Проверяем наличие нужного права
         if required_permission not in user_permissions:
