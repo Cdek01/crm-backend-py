@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import joinedload
 from db import models, session
 from core.config import settings
+from fastapi import Path # <-- Добавьте этот импорт
 
 
 # Эта строка указывает FastAPI, откуда брать токен для проверки
@@ -95,3 +96,50 @@ def get_current_admin_user(request: Request, db: Session = Depends(session.get_d
             detail="No superuser configured"
         )
     return superuser
+
+
+
+
+
+
+
+
+# --- ДОБАВЬТЕ ЭТУ НОВУЮ ФУНКЦИЮ В КОНЕЦ ФАЙЛА ---
+
+def require_data_permission(action: str):
+    """
+    Фабрика зависимостей для проверки прав доступа к данным в кастомных таблицах.
+    Проверяет право динамически, на основе имени таблицы из URL.
+    Например: data:view:projects, data:edit:tasks
+    """
+    async def _check_permission(
+        entity_type_name: str = Path(...), # Получаем имя таблицы из пути URL
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(session.get_db)
+    ):
+        if current_user.is_superuser:
+            return True # Суперадмину можно все
+
+        # 1. Формируем имя необходимого разрешения
+        required_permission = f"data:{action}:{entity_type_name}"
+
+        # 2. Загружаем пользователя с его ролями и правами
+        user_with_perms = (
+            db.query(models.User)
+            .options(joinedload(models.User.roles).joinedload(models.Role.permissions))
+            .filter(models.User.id == current_user.id)
+            .one()
+        )
+
+        # 3. Собираем все уникальные права пользователя
+        user_permissions = {perm.name for role in user_with_perms.roles for perm in user_permissions}
+
+        # 4. Проверяем наличие нужного права
+        if required_permission not in user_permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Недостаточно прав для выполнения действия '{action}' над таблицей '{entity_type_name}'",
+            )
+        return True
+
+    return Depends(_check_permission)
