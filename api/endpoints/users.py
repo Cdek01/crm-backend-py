@@ -5,7 +5,7 @@ import os
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
 from PIL import Image
-from typing import IO
+from typing import IO, List
 
 # --- Импорты из проекта ---
 from db import models
@@ -19,7 +19,8 @@ from schemas.user import UserWithPermissions
 from sqlalchemy.orm import joinedload
 
 # ------------------------------------
-
+from schemas.user import UserWithPermissions, UserAccessInfo # <--- ИЗМЕНЕНИЕ ЗДЕСЬ
+from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 
