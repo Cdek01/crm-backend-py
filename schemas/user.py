@@ -21,3 +21,26 @@ class User(BaseModel):
 
 class UserWithPermissions(User):
     permissions: List[str] = []
+
+
+class PermissionInfo(BaseModel):
+    name: str
+
+    class Config:
+        from_attributes = True
+
+class RoleWithPermissionsInfo(BaseModel):
+    name: str
+    permissions: List[PermissionInfo]
+
+    class Config:
+        from_attributes = True
+
+class UserAccessInfo(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    is_superuser: bool
+    roles: List[RoleWithPermissionsInfo]
+    # Добавляем итоговый список прав для удобства фронтенда
+    effective_permissions: List[str]

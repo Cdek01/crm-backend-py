@@ -173,3 +173,55 @@ def delete_avatar(
     db.refresh(current_user)
 
     return current_user
+
+
+@router.get("/access-map", response_model=List[UserAccessInfo])
+def get_all_user_access(
+        db: Session = Depends(get_db),
+        # Эта зависимость гарантирует, что эндпоинт доступен только суперадминистраторам
+        current_user: models.User = Depends(get_current_user)
+):
+    """
+    Получить полную карту доступов для всех пользователей.
+    Доступно только для суперадминистраторов.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав для выполнения этого действия.",
+        )
+
+    # 1. Загружаем всех пользователей с их ролями и правами этих ролей
+    # Это один эффективный запрос к БД
+    all_users = (
+        db.query(models.User)
+        .options(
+            joinedload(models.User.roles)
+            .joinedload(models.Role.permissions)
+        )
+        .order_by(models.User.id)
+        .all()
+    )
+
+    # 2. Формируем красивый ответ
+    response_list = []
+    for user in all_users:
+        # Собираем уникальные права для каждого пользователя
+        user_permissions = {
+            perm.name
+            for role in user.roles
+            for perm in role.permissions
+        }
+
+        # Создаем Pydantic-объект для ответа
+        user_info = UserAccessInfo(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            is_superuser=user.is_superuser,
+            roles=user.roles,  # Pydantic автоматически преобразует SQLAlchemy-объекты
+            effective_permissions=sorted(list(user_permissions))
+        )
+        response_list.append(user_info)
+
+    return response_list
