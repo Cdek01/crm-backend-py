@@ -27,8 +27,7 @@ from core.logging_config import setup_logging
 from sqladmin import Admin
 from sqladmin.authentication import AuthenticationBackend
 from admin import (
-    TenantAdmin, UserAdmin, LeadAdmin, LegalEntityAdmin,
-    IndividualAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
+    TenantAdmin, UserAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
     RoleAdmin, PermissionAdmin,
     AssignRoleView, SharedAccessAdmin  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
