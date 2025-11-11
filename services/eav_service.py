@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError
 import validators
 import time
+import time as time_module # Переименовываем, чтобы не конфликтовать с datetime.time
 from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
@@ -477,13 +478,13 @@ class EAVService:
                     if op == 'is_within':
                         start_date = self._parse_date_filter_value(value[0])
                         end_date = self._parse_date_filter_value(value[1])
-                        start_dt = datetime.combine(start_date, datetime.time.min)
-                        end_dt = datetime.combine(end_date, datetime.time.max)
+                        start_dt = datetime.combine(start_date, time.min) # ИЗМЕНЕНО
+                        end_dt = datetime.combine(end_date, time.max) # ИЗМЕНЕНО
                         subquery = subquery.filter(value_column.between(start_dt, end_dt))
                     else:
                         target_date = self._parse_date_filter_value(value)
-                        start_of_day = datetime.combine(target_date, datetime.time.min)
-                        end_of_day = datetime.combine(target_date, datetime.time.max)
+                        start_of_day = datetime.combine(target_date, time.min) # ИЗМЕНЕНО
+                        end_of_day = datetime.combine(target_date, time.max) # ИЗМЕНЕНО
                         if op == 'is':
                             subquery = subquery.filter(value_column.between(start_of_day, end_of_day))
                         elif op == 'is_not':
