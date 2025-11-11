@@ -133,9 +133,6 @@ admin = Admin(
 # Регистрируем все представления моделей, которые хотим видеть в админке
 admin.add_view(TenantAdmin)
 admin.add_view(UserAdmin)
-admin.add_view(LeadAdmin)
-admin.add_view(LegalEntityAdmin)
-admin.add_view(IndividualAdmin)
 admin.add_view(EntityTypeAdmin)
 admin.add_view(AttributeAdmin)
 admin.add_view(AttributeAliasAdmin)
