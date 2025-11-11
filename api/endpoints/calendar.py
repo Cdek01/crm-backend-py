@@ -3,7 +3,10 @@
 from fastapi import APIRouter, Depends, Query
 from typing import List, Dict, Any
 from datetime import date
-# ...
+
+from db import models
+from api.deps import get_current_user
+from services.calendar_service import CalendarService
 
 router = APIRouter()
 
@@ -17,5 +20,6 @@ def get_calendar_events(
 ):
     """
     Получает все события для указанного представления календаря в заданном диапазоне дат.
+    Это основной эндпоинт, который будет использовать фронтенд для отрисовки календаря.
     """
     return service.get_events_for_view(view_id, start, end, current_user)
