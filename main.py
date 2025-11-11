@@ -19,7 +19,7 @@ from api.deps import get_current_user
 from sqlalchemy.orm import joinedload
 
 # Роутеры для всех ваших API эндпоинтов
-from api.endpoints import auth, leads, legal_entities, individuals, meta, data, aliases, select_lists
+from api.endpoints import auth, meta, data, aliases, select_lists
 from starlette.templating import Jinja2Templates
 from core.logging_config import setup_logging
 
@@ -157,9 +157,6 @@ admin.add_view(SharedAccessAdmin) # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
-app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
-app.include_router(legal_entities.router, prefix="/api/legal-entities", tags=["Legal Entities"])
-app.include_router(individuals.router, prefix="/api/individuals", tags=["Individuals"])
 app.include_router(aliases.router, prefix="/api/aliases", tags=["Aliases"])
 app.include_router(meta.router, prefix="/api/meta", tags=["Meta (Constructor)"])
 app.include_router(data.router, prefix="/api/data", tags=["Data (Custom)"])

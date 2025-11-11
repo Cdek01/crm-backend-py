@@ -104,31 +104,6 @@ class UserAdmin(ModelView, model=models.User):
         return "/admin/user/create"
 
 
-# ... (Классы LeadAdmin, LegalEntityAdmin, IndividualAdmin остаются без изменений)
-class LeadAdmin(ModelView, model=models.Lead):
-    name = "Лид"
-    name_plural = "Лиды"
-    icon = "fa-solid fa-filter"
-    column_list = [models.Lead.id, models.Lead.organization_name, models.Lead.lead_status, "tenant"]
-    column_formatters = {"tenant": tenant_formatter}
-    column_searchable_list = [models.Lead.organization_name, models.Lead.inn]
-
-class LegalEntityAdmin(ModelView, model=models.LegalEntity):
-    name = "Юр. лицо"
-    name_plural = "Юр. лица"
-    icon = "fa-solid fa-building"
-    column_list = [models.LegalEntity.id, models.LegalEntity.short_name, models.LegalEntity.inn, "tenant"]
-    column_formatters = {"tenant": tenant_formatter}
-    column_searchable_list = [models.LegalEntity.short_name, models.LegalEntity.inn]
-
-class IndividualAdmin(ModelView, model=models.Individual):
-    name = "Физ. лицо"
-    name_plural = "Физ. лица"
-    icon = "fa-solid fa-address-card"
-    column_list = [models.Individual.id, models.Individual.full_name, models.Individual.email, "tenant"]
-    column_formatters = {"tenant": tenant_formatter}
-    column_searchable_list = [models.Individual.full_name, models.Individual.email, models.Individual.inn]
-
 
 class EntityTypeAdmin(ModelView, model=models.EntityType):
     name = "Тип таблицы (кастом.)"
