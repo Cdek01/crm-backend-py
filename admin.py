@@ -4,7 +4,6 @@ from sqladmin import BaseView, expose
 from fastapi.responses import RedirectResponse
 from starlette.templating import Jinja2Templates
 from sqlalchemy.orm import joinedload
-
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter
 from db import models, session
 from fastapi import Request, HTTPException

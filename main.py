@@ -32,7 +32,7 @@ from admin import (
     AssignRoleView, SharedAccessAdmin  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 )
-from api.endpoints import roles, imports, files, ai, users, shares
+from api.endpoints import roles, imports, files, ai, users, shares, calendar_views
 
 setup_logging()
 
@@ -161,6 +161,7 @@ app.include_router(imports.router, prefix="/api/imports", tags=["Imports"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 app.include_router(shares.router, prefix="/api/shares", tags=["Shares (Access Control)"])
+app.include_router(calendar_views.router, prefix="/api/calendar-views", tags=["Calendar Views Config"])
 
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---

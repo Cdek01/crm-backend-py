@@ -7,7 +7,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
 from enum import Enum as PyEnum
-
+import json
 
 
 # Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
@@ -468,6 +468,76 @@ class SelectOption(Base):
 
 
 
+class CalendarViewConfig(Base):
+    """Хранит настройки для одного 'Представления типа Ка-лендарь'."""
+    __tablename__ = 'calendar_view_configs'
+
+    id = Column(Integer, primary_key=True)
+
+    # --- Основные настройки ---
+    name = Column(String, nullable=False)  # Название, которое видит пользователь: "Календарь по срокам"
+    entity_type_id = Column(Integer, ForeignKey('entity_types.id', ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # --- Настройки маппинга полей (что откуда брать) ---
+
+    # 1. Заголовок события (обязательно)
+    title_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False)
+
+    # 2. Дата начала (обязательно)
+    start_date_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="CASCADE"), nullable=False)
+
+    # 3. Дата окончания (опционально, для событий-диапазонов)
+    end_date_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+
+    # 4. Флаг "Событие на весь день" (опционально)
+    # Позволяет использовать поле типа "Checkbox" для определения,
+    # должно ли событие занимать весь день в календаре.
+    is_allday_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+
+    # --- Настройки внешнего вида ---
+
+    # 5. Раскраска событий (опционально)
+    # Поле, значения которого будут определять цвет события (например, поле "Статус" или "Приоритет").
+    color_attribute_id = Column(Integer, ForeignKey('attributes.id', ondelete="SET NULL"), nullable=True)
+
+    # 6. Настройки цветов
+    # Храним JSON-объект, который сопоставляет конкретное значение с цветом.
+    # Пример: '{"Новая": "#3498db", "В работе": "#f1c40f", "Готово": "#2ecc71"}'
+    color_settings = Column(Text, nullable=True, default=json.dumps({}))
+
+    # --- Настройки фильтрации и видимости ---
+
+    # 7. Сохраненные фильтры
+    # Позволяет сохранить набор фильтров вместе с представлением.
+    # Например, календарь может показывать только "мои задачи" или "задачи с высоким приоритетом".
+    filters = Column(Text, nullable=True)
+
+    # 8. Видимые поля в карточке
+    # Храним JSON-массив ID атрибутов, которые нужно показывать во всплывающей карточке
+    # при клике на событие в календаре.
+    # Пример: '[101, 102, 105]' (где 101 - "Статус", 102 - "Ответственный" и т.д.)
+    visible_fields = Column(Text, nullable=True, default=json.dumps([]))
+
+    # --- Дополнительные настройки ---
+
+    # 9. Вид по умолчанию
+    # В каком режиме открывать календарь: 'month', 'week', 'day'.
+    default_view = Column(String(20), nullable=False, default='month')
+
+    # 10. Флаг "Скрывать выходные"
+    hide_weekends = Column(Boolean, nullable=False, default=False)
+
+    # --- Связи (Relationships) для удобного доступа в коде ---
+    entity_type = relationship("EntityType", foreign_keys=[entity_type_id])
+    tenant = relationship("Tenant")
+
+    # Связи с атрибутами
+    title_attribute = relationship("Attribute", foreign_keys=[title_attribute_id])
+    start_date_attribute = relationship("Attribute", foreign_keys=[start_date_attribute_id])
+    end_date_attribute = relationship("Attribute", foreign_keys=[end_date_attribute_id])
+    is_allday_attribute = relationship("Attribute", foreign_keys=[is_allday_attribute_id])
+    color_attribute = relationship("Attribute", foreign_keys=[color_attribute_id])
 
 
 
