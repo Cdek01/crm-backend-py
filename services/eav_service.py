@@ -12,7 +12,8 @@ from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError
 import validators
 import time
-import time as time_module # Переименовываем, чтобы не конфликтовать с datetime.time
+from datetime import datetime, date, time # Убедитесь, что 'time' импортируется напрямую
+import time as time_module 
 from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
