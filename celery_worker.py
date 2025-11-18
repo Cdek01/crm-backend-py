@@ -29,7 +29,11 @@ celery_app = Celery(
 
 )
 
-# Можно добавить дополнительные настройки, если потребуется
+# --- НОВАЯ КОНФИГУРАЦИЯ ДЛЯ ПЛАНИРОВЩИКА ---
 celery_app.conf.update(
     task_track_started=True,
+    # Указываем SQLAlchemy URI для планировщика
+    beat_dburi=settings.DATABASE_URL,
+    # Указываем сам класс планировщика
+    beat_scheduler='celery_sqlalchemy_scheduler.schedulers:DatabaseScheduler',
 )

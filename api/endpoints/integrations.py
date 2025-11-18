@@ -116,7 +116,7 @@ def disconnect_modulbank(
         raise HTTPException(status_code=404, detail="Клиент не найден")
 
     # Удаляем задачу из расписания Celery Beat
-    setup_schedule_for_tenant(tenant, disable=True)
+    setup_schedule_for_tenant(tenant, db, disable=True)
 
     # Очищаем все поля в нашей БД
     tenant.modulbank_api_token = None
