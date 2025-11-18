@@ -12,23 +12,28 @@ from wtforms.validators import DataRequired
 from core import security
 from sqladmin.fields import QuerySelectField, QuerySelectMultipleField
 
-
 templates = Jinja2Templates(directory="templates")
+
 
 # --- Функции-форматтеры ---
 def tenant_formatter(model, name):
     return model.tenant.name if model.tenant else "N/A"
 
+
 def entity_type_formatter(model, name):
     # Этот форматтер теперь будет использоваться в нескольких местах
     return model.entity_type.display_name if model.entity_type else "N/A"
+
 
 # --- НОВЫЕ ФОРМАТТЕРЫ для SharedAccessAdmin ---
 def grantor_formatter(model, name):
     return model.grantor.email if model.grantor else "N/A"
 
+
 def grantee_formatter(model, name):
     return model.grantee.email if model.grantee else "N/A"
+
+
 # -----------------------------------------------
 
 
@@ -103,7 +108,6 @@ class UserAdmin(ModelView, model=models.User):
         return "/admin/user/create"
 
 
-
 class EntityTypeAdmin(ModelView, model=models.EntityType):
     name = "Тип таблицы (кастом.)"
     name_plural = "Типы таблиц (кастом.)"
@@ -164,6 +168,7 @@ class PermissionAdmin(ModelView, model=models.Permission):
         'individuals:view', 'individuals:create', 'individuals:edit', 'individuals:delete',
         'meta:view', 'meta:manage', 'aliases:manage',
     }
+
     async def delete_model(self, request: Request, pk: str) -> None:
         model = await self.get_object_for_delete(pk)
         if model and model.name in self.PROTECTED_PERMISSIONS:
@@ -175,6 +180,7 @@ class PermissionAdmin(ModelView, model=models.Permission):
         if model and model.name in self.PROTECTED_PERMISSIONS and 'name' in data and data['name'] != model.name:
             raise HTTPException(status_code=400, detail=f"Нельзя изменить системное имя для разрешения '{model.name}'.")
         await super().update_model(request, pk, data)
+
 
 class RoleAdmin(ModelView, model=models.Role):
     name = "Роль"
@@ -189,9 +195,11 @@ class RoleAdmin(ModelView, model=models.Role):
         models.Role.permissions,
     ]
 
+
 class AssignRoleView(BaseView):
     name = "Назначение Ролей"
     icon = "fa-solid fa-user-tag"
+
     @expose("/assign-role", methods=["GET", "POST"])
     async def assign_role_page(self, request: Request):
         db = session.SessionLocal()
@@ -232,7 +240,7 @@ class AssignRoleView(BaseView):
 class SharedAccessAdmin(ModelView, model=models.SharedAccess):
     name = "Общий доступ"
     name_plural = "Общие доступы"
-    icon = "fa-solid fa-share-nodes" # Иконка "поделиться"
+    icon = "fa-solid fa-share-nodes"  # Иконка "поделиться"
 
     # 1. Определяем колонки для отображения в списке
     column_list = ["grantor", "grantee", "entity_type", "permission_level"]
@@ -248,7 +256,7 @@ class SharedAccessAdmin(ModelView, model=models.SharedAccess):
     # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
     column_searchable_list = [
         models.User.email,  # Указываем напрямую на модель User
-        models.EntityType.name, # Указываем напрямую на модель EntityType
+        models.EntityType.name,  # Указываем напрямую на модель EntityType
         models.EntityType.display_name,
     ]
     # --- КОНЕЦ ИСПРАВЛЕНИЯ ---

@@ -7,16 +7,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 from sqladmin import BaseView, expose
 import os
-from fastapi.staticfiles import StaticFiles # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+from fastapi.staticfiles import StaticFiles  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 # --- ШАГ 2: ИМПОРТЫ ИЗ ВАШЕГО ПРОЕКТА ---
 # Модули для работы с БД и конфигурацией
 from db import models, base, session
-
-# Схемы и зависимости для API
-from schemas.user import User, UserWithPermissions
-from api.deps import get_current_user
-from sqlalchemy.orm import joinedload
 
 # Роутеры для всех ваших API эндпоинтов
 from api.endpoints import auth, meta, data, aliases, select_lists
@@ -29,10 +24,10 @@ from sqladmin.authentication import AuthenticationBackend
 from admin import (
     TenantAdmin, UserAdmin, EntityTypeAdmin, AttributeAdmin, AttributeAliasAdmin, TableAliasAdmin,
     RoleAdmin, PermissionAdmin,
-    AssignRoleView, SharedAccessAdmin  # <-- ДОБАВЬТЕ ЭТОТ ИМПОРТ
+    AssignRoleView, SharedAccessAdmin
 
 )
-from api.endpoints import roles, imports, files, ai, users, shares, calendar_views, calendar
+from api.endpoints import roles, imports, files, ai, users, shares, calendar_views, calendar, integrations
 
 setup_logging()
 
@@ -43,7 +38,7 @@ setup_logging()
 # Создаем таблицы в БД при первом запуске (если их нет)
 base.Base.metadata.create_all(bind=session.engine)
 
-# --- ДОБАВЬТЕ ЭТОТ БЛОК ---
+
 # Создаем директорию для хранения загруженных файлов, если ее нет
 STATIC_DIR = "static"
 AVATAR_DIR = os.path.join(STATIC_DIR, "avatars")
@@ -91,6 +86,8 @@ app.add_middleware(
 )
 
 app.include_router(roles.router, prefix="/api/roles", tags=["Roles"])
+
+
 # --------------------------------------------------------------------------
 # --- ШАГ 5: НАСТРОЙКА И РЕГИСТРАЦИЯ АДМИН-ПАНЕЛИ ---
 # --------------------------------------------------------------------------
@@ -114,6 +111,7 @@ class AdminAuth(AuthenticationBackend):
     async def authenticate(self, request: Request) -> bool:
         # Проверяем, есть ли наш маркер в сессии, установленный после успешного логина
         return "token" in request.session
+
 
 # Создаем экземпляр бэкенда аутентификации
 authentication_backend = AdminAuth(secret_key="a_very_secret_key_for_auth_backend")
@@ -139,12 +137,8 @@ admin.add_view(AttributeAliasAdmin)
 admin.add_view(TableAliasAdmin)
 admin.add_view(RoleAdmin)
 admin.add_view(PermissionAdmin)
-admin.add_view(AssignRoleView) # <-- ДОБАВЬТЕ ЭТО
-admin.add_view(SharedAccessAdmin) # <-- ДОБАВЬТЕ ЭТУ СТРОКУ
-
-# admin.add_view(SharedEntityTypeAdmin)
-# Если вы создали AttributeAliasAdmin, раскомментируйте следующую строку
-# admin.add_view(AttributeAliasAdmin)
+admin.add_view(AssignRoleView)
+admin.add_view(SharedAccessAdmin)
 
 
 # --------------------------------------------------------------------------
@@ -163,6 +157,9 @@ app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 app.include_router(shares.router, prefix="/api/shares", tags=["Shares (Access Control)"])
 app.include_router(calendar_views.router, prefix="/api/calendar-views", tags=["Calendar Views Config"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar Events"])
+app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"]) # <--
+
+
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---
 # --------------------------------------------------------------------------
@@ -170,39 +167,3 @@ app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar Even
 @app.get("/", tags=["Root"])
 def read_root():
     return {"message": "Welcome to CRM API"}
-
-
-# @app.get("/api/users/me", response_model=UserWithPermissions, tags=["Users"])
-# def read_users_me(
-#         current_user: models.User = Depends(get_current_user),
-#         db: Session = Depends(session.get_db)
-# ):
-#     """
-#     Получить информацию о текущем пользователе и его разрешениях.
-#     """
-#     # Загружаем пользователя со всеми его ролями и правами этих ролей
-#     user_with_roles = (
-#         db.query(models.User)
-#         .options(
-#             joinedload(models.User.roles).
-#             joinedload(models.Role.permissions)
-#         )
-#         .filter(models.User.id == current_user.id)
-#         .first()
-#     )
-#
-#     if not user_with_roles:
-#         response_user = UserWithPermissions.model_validate(current_user)
-#         response_user.permissions = []
-#         return response_user
-#
-#     # Собираем все уникальные имена разрешений, проходя по всем ролям пользователя.
-#     user_permissions = set()
-#     for role in user_with_roles.roles:
-#         for perm in role.permissions:
-#             user_permissions.add(perm.name)
-#
-#     response_user = UserWithPermissions.model_validate(user_with_roles)
-#     response_user.permissions = sorted(list(user_permissions))
-#
-#     return response_user

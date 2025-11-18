@@ -1,4 +1,4 @@
-#services/eav_service.py
+# services/eav_service.py
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
@@ -12,16 +12,15 @@ from dateutil.relativedelta import relativedelta
 from email_validator import validate_email, EmailNotValidError
 import validators
 import time
-from datetime import datetime, date, time # Убедитесь, что 'time' импортируется напрямую
-import time as time_module 
+from datetime import datetime, date, time
+import time as time_module
 from . import external_api_client
 import re
 # from tasks.messaging import send_webhook_task
 from sqlalchemy import or_, cast, Text
 import logging
 # from tasks.enrichment import enrich_data_by_inn_task
-from sqlalchemy import or_ # <-- Убедитесь, что этот импорт есть
-
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +78,6 @@ class EAVService:
 
         raise HTTPException(status_code=400, detail=f"Неподдерживаемый формат значения для фильтра по дате: {value}")
 
-
-
     def _parse_time_filter_value(self, value: Any) -> time:
         """Интерпретирует значение из фильтра для времени и возвращает объект time."""
         if isinstance(value, str):
@@ -91,15 +88,12 @@ class EAVService:
                 raise HTTPException(status_code=400, detail=f"Неверный формат времени: {value}")
         raise HTTPException(status_code=400, detail=f"Неподдерживаемый формат значения для фильтра по времени: {value}")
 
-
-
-
     def _apply_attribute_order(
-        self,
-        db: Session,
-        entity_type_id: int,
-        attributes: List[models.Attribute],
-        current_user: models.User
+            self,
+            db: Session,
+            entity_type_id: int,
+            attributes: List[models.Attribute],
+            current_user: models.User
     ) -> List[models.Attribute]:
         """Применяет сохранённый пользователем порядок к списку атрибутов"""
         saved_order_ids = [
@@ -120,7 +114,6 @@ class EAVService:
             sorted([a for a in attributes if a.id not in saved_order_ids], key=lambda a: a.id)
         )
         return sorted_attrs
-
 
     def get_all_entity_types(self, current_user: models.User) -> List[EntityType]:
         # --- НАЧАЛО ИЗМЕНЕНИЙ ---
@@ -169,12 +162,6 @@ class EAVService:
             response_list.append(response_entity)
         return response_list
 
-
-
-
-
-
-
     def _get_entity_type_by_name(
             self,
             entity_type_name: str,
@@ -212,11 +199,6 @@ class EAVService:
         # Загружаем атрибуты, как и раньше
         return self.db.query(models.EntityType).options(joinedload(models.EntityType.attributes)).get(entity_type.id)
 
-
-
-
-
-
     def get_entity_type_by_id(self, entity_type_id: int, current_user: models.User) -> EntityType:
         db = session.SessionLocal()
         try:
@@ -248,8 +230,6 @@ class EAVService:
             return response_entity_type
         finally:
             db.close()
-
-
 
     def set_attribute_order(
             self,
@@ -299,10 +279,6 @@ class EAVService:
     # так как они либо создают сущность в текущем тенанте,
     # либо используют get_entity_type_by_id, который уже содержит проверки.
 
-
-
-
-
     def delete_entity_type(self, entity_type_id: int, current_user: models.User):
         db_entity_type = self.db.query(models.EntityType).filter(
             models.EntityType.id == entity_type_id,
@@ -350,11 +326,6 @@ class EAVService:
 
         return result
 
-
-
-
-
-
     def get_all_entities_for_type(
             self,
             entity_type_name: str,
@@ -401,7 +372,7 @@ class EAVService:
             matching_entity_ids_subquery = self.db.query(models.AttributeValue.entity_id).filter(
                 or_(
                     models.AttributeValue.value_string.ilike(search_term),
-                    models.AttributeValue.value_text.ilike(search_term), # <-- ДОБАВЛЯЕМ ПОИСК В value_text
+                    models.AttributeValue.value_text.ilike(search_term),  # <-- ДОБАВЛЯЕМ ПОИСК В value_text
                     cast(models.AttributeValue.value_integer, Text).like(search_term),
                     cast(models.AttributeValue.value_float, Text).like(search_term)
                 )
@@ -416,7 +387,6 @@ class EAVService:
             matching_entity_ids_subquery = matching_entity_ids_subquery.distinct()
             query = query.filter(models.Entity.id.in_(matching_entity_ids_subquery))
         # --- КОНЕЦ НОВОГО БЛОКА ---
-
 
         # 3. Динамически применяем фильтры
         if filters:
@@ -479,13 +449,13 @@ class EAVService:
                     if op == 'is_within':
                         start_date = self._parse_date_filter_value(value[0])
                         end_date = self._parse_date_filter_value(value[1])
-                        start_dt = datetime.combine(start_date, time.min) # ИЗМЕНЕНО
-                        end_dt = datetime.combine(end_date, time.max) # ИЗМЕНЕНО
+                        start_dt = datetime.combine(start_date, time.min)  # ИЗМЕНЕНО
+                        end_dt = datetime.combine(end_date, time.max)  # ИЗМЕНЕНО
                         subquery = subquery.filter(value_column.between(start_dt, end_dt))
                     else:
                         target_date = self._parse_date_filter_value(value)
-                        start_of_day = datetime.combine(target_date, time.min) # ИЗМЕНЕНО
-                        end_of_day = datetime.combine(target_date, time.max) # ИЗМЕНЕНО
+                        start_of_day = datetime.combine(target_date, time.min)  # ИЗМЕНЕНО
+                        end_of_day = datetime.combine(target_date, time.max)  # ИЗМЕНЕНО
                         if op == 'is':
                             subquery = subquery.filter(value_column.between(start_of_day, end_of_day))
                         elif op == 'is_not':
@@ -720,7 +690,6 @@ class EAVService:
         # Преобразуем результат в список словарей
         return [{"group_key": row.group_key, "count": row.count} for row in results]
 
-
     def update_attribute(
             self, attribute_id: int, attr_in: AttributeUpdate, current_user: models.User
     ) -> models.Attribute:
@@ -732,7 +701,6 @@ class EAVService:
             setattr(db_attr, key, value)
         self.db.commit()
         return db_attr
-
 
     def create_entity_type(self, entity_type_in: EntityTypeCreate, current_user: models.User) -> models.EntityType:
         """
@@ -890,7 +858,6 @@ class EAVService:
                     logger.info(
                         f"--- [DEBUG] ОБРАТНАЯ СВЯЗЬ: back_relation_display_attribute_id передан явно = {back_display_attr_id}")
 
-
                 back_relation_attr_data = {
                     "name": final_back_name,
                     "display_name": final_back_display_name,
@@ -937,7 +904,8 @@ class EAVService:
             self.db.commit()
             # --- НАЧАЛО ИЗМЕНЕНИЯ: Автоматическое заполнение значения по умолчанию для чекбоксов ---
             if db_attribute.value_type == 'boolean':
-                logger.info(f"Создана новая колонка типа 'boolean' (ID: {db_attribute.id}). Запускаем заполнение по умолчанию (False)...")
+                logger.info(
+                    f"Создана новая колонка типа 'boolean' (ID: {db_attribute.id}). Запускаем заполнение по умолчанию (False)...")
 
                 # 1. Находим все ID существующих строк в этой таблице.
                 entity_ids_in_table = [
@@ -972,7 +940,8 @@ class EAVService:
                     if new_values:
                         self.db.bulk_save_objects(new_values)
                         self.db.commit()
-                        logger.info(f"Успешно заполнено {len(new_values)} строк значением 'False' для колонки ID {db_attribute.id}.")
+                        logger.info(
+                            f"Успешно заполнено {len(new_values)} строк значением 'False' для колонки ID {db_attribute.id}.")
             # --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
             self.db.refresh(db_attribute)
@@ -1205,8 +1174,6 @@ class EAVService:
         #     )
         # # --- КОНЕЦ ТРИГГЕРА ---
 
-
-
         if not is_external_update:
             send_webhook_task.delay(
                 event_type="update",
@@ -1219,17 +1186,12 @@ class EAVService:
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
         return self.get_entity_by_id(entity_id, current_user)
 
-
-
-
-
-
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
 
     def _process_value(self, value, attribute: models.Attribute):
         """Вспомогательная функция для обработки и конвертации значений."""
         # 1. Сразу отсекаем None
-        value_type = attribute.value_type # Получаем тип из атрибута
+        value_type = attribute.value_type  # Получаем тип из атрибута
 
         # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
         # 1. Проверяем ТОЛЬКО на None. Пустая строка теперь будет обрабатываться дальше.
@@ -1238,8 +1200,9 @@ class EAVService:
 
         # 2. Если для не-строковых полей приходит пустая строка, считаем это как None,
         # чтобы избежать ошибок конвертации `int('')`.
-        if isinstance(value, str) and value.strip() == '' and value_type not in ['string', 'select', 'email', 'phone', 'url', 'audio']:
-             return None
+        if isinstance(value, str) and value.strip() == '' and value_type not in ['string', 'select', 'email', 'phone',
+                                                                                 'url', 'audio']:
+            return None
         # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         # # 2. Пустые строки для всех типов считаем как None
         # if isinstance(value, str) and value.strip() == '':
@@ -1334,11 +1297,6 @@ class EAVService:
 
         return value
 
-
-
-
-
-
     def create_entity(self, entity_type_name: str, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
         from tasks.messaging import send_webhook_task
 
@@ -1420,7 +1378,6 @@ class EAVService:
         #     )
         # # --- КОНЕЦ ТРИГГЕРА ---
 
-
         # --- ЛОГИКА ОТПРАВКИ УВЕДОМЛЕНИЯ ---
         if not is_external_update:
             # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
@@ -1434,12 +1391,6 @@ class EAVService:
             )
         # -----------------------------------
         return self.get_entity_by_id(new_entity.id, current_user)
-
-
-
-
-
-
 
     def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
         from tasks.messaging import send_webhook_task  # <--- ИМПОРТ ВНУТРИ ФУНКЦИИ
@@ -1552,49 +1503,6 @@ class EAVService:
         # Коммитим удаление
         self.db.commit()
         return None
-    # def delete_attribute_from_type(self, entity_type_id: int, attribute_id: int, current_user: models.User):
-    #     """
-    #     Удалить атрибут ('колонку') из типа сущности и все его значения.
-    #     """
-    #     # 1. Сначала проверяем, что сам тип сущности (таблица) существует
-    #     # и принадлежит текущему пользователю. Это защищает от попытки удалить
-    #     # колонку из чужой таблицы.
-    #     self.get_entity_type_by_id(entity_type_id=entity_type_id, current_user=current_user)
-    #
-    #     # 2. Находим сам атрибут, который нужно удалить.
-    #     # Дополнительно проверяем, что он действительно принадлежит указанному типу сущности.
-    #     attribute_to_delete = self.db.query(models.Attribute).filter(
-    #         models.Attribute.id == attribute_id,
-    #         models.Attribute.entity_type_id == entity_type_id
-    #     ).first()
-    #
-    #     # 3. Если атрибут не найден, возвращаем ошибку.
-    #     if not attribute_to_delete:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_404_NOT_FOUND,
-    #             detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
-    #         )
-    #
-    #     # 4. Проверяем, не является ли атрибут системным. Системные удалять нельзя.
-    #     system_attributes = [
-    #         "send_sms_trigger", "sms_status", "sms_last_error",
-    #         "phone_number", "message_text"
-    #     ]
-    #     if attribute_to_delete.name in system_attributes:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_400_BAD_REQUEST,
-    #             detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
-    #         )
-    #
-    #     # 5. Удаляем объект. Благодаря ondelete="CASCADE", все связанные AttributeValue
-    #     # будут удалены автоматически на уровне базы данных.
-    #     self.db.delete(attribute_to_delete)
-    #     self.db.commit()
-    #
-    #     return None
-
-
-
 
 
     def update_entity_type(
@@ -1630,7 +1538,6 @@ class EAVService:
 
         return db_entity_type
 
-
     def create_entity_and_get_list(
             self,
             entity_type_name: str,
@@ -1652,8 +1559,6 @@ class EAVService:
         )
 
         return full_sorted_list
-
-
 
     def delete_multiple_entities(
             self,
@@ -1702,9 +1607,6 @@ class EAVService:
                 data={"ids": ids}  # <-- В `data` передаем список удаленных ID
             )
         return num_deleted
-
-
-
 
     def set_attribute_order(
             self,
@@ -1803,9 +1705,6 @@ class EAVService:
 
         return {"id": entity_id, "new_position": new_position}
 
-
-
-
     def _calculate_formula(self, formula_text: str, row_data: Dict[str, Any]) -> Optional[float]:
         """
         Безопасно вычисляет значение формулы для одной строки данных.
@@ -1841,6 +1740,7 @@ class EAVService:
             # В случае любой ошибки (деление на ноль, синтаксическая ошибка)
             # просто возвращаем None
             return None
+
     # ------------------------------------
 
     def _find_primary_display_attribute(self, entity_type_id: int) -> Optional[models.Attribute]:

@@ -1,0 +1,28 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Сервис базы данных PostgreSQL
+  postgres:
+    image: postgres:15-alpine  # Используем официальный образ Postgres
+    container_name: crm_postgres
+    environment:
+      # Эти переменные задают пользователя, пароль и имя базы данных
+      # ВАЖНО: они должны совпадать с тем, что вы укажете в .env файле
+      POSTGRES_USER: crm_user
+      POSTGRES_PASSWORD: crm_password
+      POSTGRES_DB: crm_db
+    ports:
+      - "5432:5432"  # Пробрасываем порт 5432 из контейнера на ваш ПК
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/ # Сохраняем данные БД между перезапусками
+
+  # Сервис для Celery - Redis
+  redis:
+    image: redis:7-alpine  # Используем официальный образ Redis
+    container_name: crm_redis
+    ports:
+      - "6379:6379"  # Пробрасываем порт Redis
+
+volumes:
+  postgres_data: # Docker сам будет управлять этим томом

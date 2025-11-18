@@ -8,6 +8,7 @@ from sqlalchemy.sql import func
 from .base import Base
 from enum import Enum as PyEnum
 import json
+from sqlalchemy import LargeBinary
 
 
 # Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
@@ -46,7 +47,21 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # --- НАЧАЛО ИЗМЕНЕНИЙ: Настройки интеграции с Модульбанком ---
 
+    # 1. Зашифрованный токен. Храним как бинарные данные.
+    modulbank_api_token = Column(LargeBinary, nullable=True)
+
+    # 2. Статус интеграции: 'active', 'inactive', 'error'
+    modulbank_integration_status = Column(String(50), nullable=True, default='inactive')
+
+    # 3. Дата и время последней успешной синхронизации
+    modulbank_last_sync = Column(DateTime(timezone=True), nullable=True)
+
+    # 4. Сообщение об ошибке, если синхронизация не удалась
+    modulbank_last_error = Column(Text, nullable=True)
+
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
     # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
     users = relationship("User", cascade="all, delete-orphan")
     entity_types = relationship("EntityType", cascade="all, delete-orphan")

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 import json
 
+
 class CalendarViewConfigBase(BaseModel):
     name: str
     entity_type_id: int
@@ -18,8 +19,10 @@ class CalendarViewConfigBase(BaseModel):
     default_view: str = 'month'
     hide_weekends: bool = False
 
+
 class CalendarViewConfigCreate(CalendarViewConfigBase):
     pass
+
 
 class CalendarViewConfigUpdate(BaseModel):
     name: Optional[str] = None
@@ -34,6 +37,7 @@ class CalendarViewConfigUpdate(BaseModel):
     visible_fields: Optional[List[int]] = None
     default_view: Optional[str] = None
     hide_weekends: Optional[bool] = None
+
 
 class CalendarViewConfigResponse(CalendarViewConfigBase):
     id: int
@@ -50,5 +54,5 @@ class CalendarViewConfigResponse(CalendarViewConfigBase):
             try:
                 return json.loads(v)
             except json.JSONDecodeError:
-                return v # Возвращаем как есть, если не JSON, pydantic выдаст ошибку
+                return v  # Возвращаем как есть, если не JSON, pydantic выдаст ошибку
         return v

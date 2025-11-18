@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str # <-- И ЭТУ
     DADATA_API_KEY: Optional[str] = None
     DADATA_SECRET_KEY: Optional[str] = None
-    
+    ENCRYPTION_KEY: str
     class Config:
         env_file = ".env"
 
