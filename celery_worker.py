@@ -36,4 +36,6 @@ celery_app.conf.update(
     beat_dburi=settings.DATABASE_URL,
     # Указываем сам класс планировщика
     beat_scheduler='celery_sqlalchemy_scheduler.schedulers:DatabaseScheduler',
+    beat_schedule={},
+
 )
