@@ -1,7 +1,7 @@
 # tasks/banking.py
 import json
 import requests
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone # <-- Добавьте 'timezone'
 from typing import Optional
 
 from celery_worker import celery_app
@@ -97,7 +97,7 @@ def sync_tenant_operations(tenant_id: int):
         # Определяем период для запроса
         # Если это первая синхронизация, берем данные за последний месяц.
         # Если нет, берем с момента последней успешной синхронизации.
-        from_date = (tenant.modulbank_last_sync or (datetime.utcnow() - timedelta(days=30))).strftime('%Y-%m-%dT%H:%M:%S')
+        from_date = (tenant.modulbank_last_sync or (datetime.now(timezone.utc) - timedelta(days=30))).strftime('%Y-%m-%dT%H:%M:%S')
 
 
         # 1. Получаем список счетов
@@ -147,7 +147,7 @@ def sync_tenant_operations(tenant_id: int):
                 eav_service.create_entity("banking_operations", op_data, owner)
 
         # Обновляем статус в БД
-        tenant.modulbank_last_sync = datetime.utcnow()
+        tenant.modulbank_last_sync = datetime.now(timezone.utc)
         tenant.modulbank_last_error = None
         db.commit()
 
