@@ -1,7 +1,7 @@
 # tasks/banking.py
 import json
 import requests
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Optional
 
 from celery_worker import celery_app
@@ -9,6 +9,7 @@ from db.session import SessionLocal
 from db import models
 from core.encryption import decrypt_data
 from services.eav_service import EAVService
+from services.alias_service import AliasService # <-- 1. Добавляем импорт AliasService
 
 # Импортируем модели из celery_sqlalchemy_scheduler
 from celery_sqlalchemy_scheduler.models import (
@@ -96,8 +97,8 @@ def sync_tenant_operations(tenant_id: int):
         # Определяем период для запроса
         # Если это первая синхронизация, берем данные за последний месяц.
         # Если нет, берем с момента последней успешной синхронизации.
-        from_date = (tenant.modulbank_last_sync or (datetime.utcnow() - timedelta(days=30))).strftime(
-            '%Y-%m-%dT%H:%M:%S')
+        from_date = (tenant.modulbank_last_sync or (datetime.utcnow() - timedelta(days=30))).strftime('%Y-%m-%dT%H:%M:%S')
+
 
         # 1. Получаем список счетов
         accounts_resp = requests.get("https://api.modulbank.ru/v1/bank-accounts", headers=headers)
