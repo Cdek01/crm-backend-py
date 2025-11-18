@@ -15,6 +15,7 @@ class User(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    tenant_id: Optional[int] = None
 
     class Config:
         from_attributes = True # Раньше называлось orm_mode
