@@ -1,5 +1,7 @@
 # tasks/banking.py
 import json
+from typing import Optional
+
 import requests
 from datetime import datetime, time
 from celery_worker import celery_app
