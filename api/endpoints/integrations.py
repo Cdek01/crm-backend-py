@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional, Literal
-from datetime import time
+from datetime import time, datetime
 
 # --- Импорты из проекта ---
 from db import models, session
