@@ -87,11 +87,11 @@ def setup_11am_schedule():
         print(f"[INFO] Работаем с клиентом (tenant_id): {tenant_id}")
 
         # --- [ШАГ 1] Отправляем запрос на настройку ---
-        print("\n--- [ШАГ 1] Отправка запроса на создание/обновление расписания на 11:00 ---")
+        print("\n--- [ШАГ 1] Отправка запроса на создание/обновление расписания на 11:30 ---")
         settings_payload = {
             "api_token": REAL_MODULBANK_TOKEN,  # Передаем токен для активации
             "schedule_type": "daily",
-            "sync_time": "11:00:00"
+            "sync_time": "11:30:00"
         }
         resp_api = requests.post(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers,
                                  json=settings_payload)
