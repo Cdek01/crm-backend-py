@@ -31,9 +31,14 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 target_metadata = Base.metadata
 # target_metadata = None
-from celery_sqlalchemy_scheduler.models import Base as SchedulerBase
-target_metadata = [Base.metadata, SchedulerBase.metadata]
+# --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+# Получаем metadata напрямую из планировщика - это более надежный способ
+from celery_sqlalchemy_scheduler.schedulers import DatabaseScheduler
 
+# Alembic будет "видеть" и метаданные ваших моделей (из Base.metadata),
+# и метаданные таблиц планировщика.
+target_metadata = [Base.metadata, DatabaseScheduler.Model.metadata]
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
