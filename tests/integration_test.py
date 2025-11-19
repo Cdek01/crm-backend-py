@@ -1,3 +1,5 @@
+from typing import Optional, Any
+
 import requests
 import time
 import psycopg2
