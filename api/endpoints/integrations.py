@@ -9,13 +9,15 @@ from datetime import time, datetime
 # --- Импорты из проекта ---
 from db import models, session
 from api.deps import get_current_user
-from core.encryption import encrypt_data, decrypt_data
+from core.encryption import encrypt_data
 from tasks.banking import setup_schedule_for_tenant, sync_tenant_operations
+from services.eav_service import EAVService
+from services.banking_setup_service import setup_banking_table  # Импортируем нашу новую функцию
 
 router = APIRouter()
 
 
-# --- Новая, объединенная Pydantic-схема ---
+# --- Схемы данных ---
 
 class ModulbankIntegrationSettings(BaseModel):
     """Схема для получения и сохранения всех настроек интеграции."""
@@ -37,7 +39,7 @@ class ModulbankIntegrationStatus(BaseModel):
     last_error: Optional[str] = None
 
 
-# --- Новые, объединенные эндпоинты ---
+# --- Эндпоинты ---
 
 @router.get("/modulbank/settings", response_model=ModulbankIntegrationStatus)
 def get_modulbank_settings(
@@ -65,39 +67,51 @@ def get_modulbank_settings(
 def save_modulbank_settings(
         settings: ModulbankIntegrationSettings,
         db: Session = Depends(session.get_db),
-        current_user: models.User = Depends(get_current_user)
+        current_user: models.User = Depends(get_current_user),
+        eav_service: EAVService = Depends()  # Добавляем зависимость
 ):
     """
     Сохраняет все настройки интеграции: API-ключ и расписание.
+    Автоматически создает таблицу 'banking_operations' при первом подключении.
     """
     tenant = db.query(models.Tenant).get(current_user.tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Клиент не найден")
 
-    # --- Обновление API-ключа ---
+    message = "Расписание синхронизации обновлено."
+
+    # --- Обновление API-ключа и создание таблицы ---
     if settings.api_token:
-        # Если пришел новый токен, шифруем и сохраняем его
+        # Если пришел новый токен, это означает первое подключение или смену ключа.
+
+        # 1. Автоматически создаем EAV-таблицу, если ее еще нет.
+        try:
+            setup_banking_table(db=db, eav_service=eav_service, current_user=current_user)
+        except Exception as e:
+            # Если не удалось создать таблицу, возвращаем ошибку
+            raise HTTPException(status_code=500, detail=f"Не удалось создать таблицу для банковских операций: {e}")
+
+        # 2. Шифруем и сохраняем токен
         tenant.modulbank_api_token = encrypt_data(settings.api_token)
         tenant.modulbank_integration_status = 'active'
         tenant.modulbank_last_error = None  # Сбрасываем старые ошибки
 
-        # Запускаем первую синхронизацию сразу после ввода нового ключа
+        # 3. Запускаем первую синхронизацию
         sync_tenant_operations.delay(tenant.id)
         message = "Интеграция с Модульбанком активирована. Первая синхронизация запущена."
+
     elif not tenant.modulbank_api_token:
         # Если токен не пришел и его не было раньше, интеграцию активировать нельзя
         raise HTTPException(status_code=400, detail="Для активации интеграции необходимо предоставить API-ключ.")
-    else:
-        message = "Расписание синхронизации обновлено."
 
-    # --- Обновление расписания ---
+    # --- Обновление расписания (выполняется всегда) ---
     tenant.modulbank_sync_schedule_type = settings.schedule_type
     tenant.modulbank_sync_time = settings.sync_time
     tenant.modulbank_sync_weekday = settings.sync_weekday
 
-    # Вызываем функцию, которая обновит расписание в таблицах Celery Beat
-    new_task_id = setup_schedule_for_tenant(tenant, db) # <-- Добавляем 'db'
-    tenant.modulbank_periodic_task_id = new_task_id  # Сохраняем ID новой задачи
+    # Обновляем расписание в таблицах Celery Beat
+    new_task_id = setup_schedule_for_tenant(tenant, db)
+    tenant.modulbank_periodic_task_id = new_task_id
 
     db.commit()
     return {"status": "ok", "message": message}
