@@ -85,7 +85,9 @@ class Tenant(Base):
     attribute_aliases = relationship("AttributeAlias", cascade="all, delete-orphan")
     table_aliases = relationship("TableAlias", cascade="all, delete-orphan")
     select_option_lists = relationship("SelectOptionList", cascade="all, delete-orphan")
-
+    # Храним ID компаний и счетов, выбранных для синхронизации, в формате JSON.
+    # Пример: {"companies": ["company_id_1"], "accounts": ["acc_id_A", "acc_id_B"]}
+    modulbank_sync_sources = Column(Text, nullable=True)
     # ---------------------------------------------
 
     def __str__(self):

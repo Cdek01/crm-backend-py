@@ -1,7 +1,7 @@
 # tasks/banking.py
 import json
 import requests
-from datetime import datetime, time, timedelta, timezone # <-- Добавьте 'timezone'
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 
 from celery_worker import celery_app
@@ -9,23 +9,22 @@ from db.session import SessionLocal
 from db import models
 from core.encryption import decrypt_data
 from services.eav_service import EAVService
-from services.alias_service import AliasService # <-- 1. Добавляем импорт AliasService
+from services.alias_service import AliasService
 
-# Импортируем модели из celery_sqlalchemy_scheduler
-from celery_sqlalchemy_scheduler.models import (
-    PeriodicTask,
-    CrontabSchedule,
-    IntervalSchedule,
-)
-from sqlalchemy.orm import Session
+try:
+    from celery_sqlalchemy_scheduler.models import PeriodicTask, CrontabSchedule, IntervalSchedule
+    from sqlalchemy.orm import Session
+except ImportError:
+    PeriodicTask, CrontabSchedule, IntervalSchedule, Session = None, None, None, None
 
 
 def setup_schedule_for_tenant(tenant: models.Tenant, db: Session, disable: bool = False) -> Optional[int]:
     """
-    Создает, обновляет или удаляет запись о периодической задаче
-    с использованием SQLAlchemy.
+    Создает, обновляет или удаляет запись о периодической задаче с использованием SQLAlchemy.
     """
-    # Сначала удаляем старую задачу, если она была
+    if not PeriodicTask:
+        return None
+
     if tenant.modulbank_periodic_task_id:
         old_task = db.query(PeriodicTask).filter_by(id=tenant.modulbank_periodic_task_id).first()
         if old_task:
@@ -63,12 +62,7 @@ def setup_schedule_for_tenant(tenant: models.Tenant, db: Session, disable: bool 
             db.add(schedule)
             db.commit()
 
-    # Создаем новую задачу
-    new_task = PeriodicTask(
-        name=task_name,
-        task='tasks.banking.sync_tenant_operations',
-        args=task_args,
-    )
+    new_task = PeriodicTask(name=task_name, task='tasks.banking.sync_tenant_operations', args=task_args)
     if isinstance(schedule, IntervalSchedule):
         new_task.interval_id = schedule.id
     else:
@@ -81,13 +75,28 @@ def setup_schedule_for_tenant(tenant: models.Tenant, db: Session, disable: bool 
 
 @celery_app.task
 def sync_tenant_operations(tenant_id: int):
-    """Синхронизирует операции для одного конкретного клиента."""
+    """Синхронизирует операции для одного конкретного клиента только по выбранным им счетам."""
     db = SessionLocal()
-    eav_service = EAVService(db=db)  # Нужен для создания записей
 
+    alias_service = AliasService(db=db)
+    eav_service = EAVService(db=db, alias_service=alias_service)
+
+    tenant = None
     try:
         tenant = db.get(models.Tenant, tenant_id)
         if not tenant or not tenant.modulbank_api_token:
+            return
+
+        # 1. Загружаем сохраненный выбор счетов пользователя
+        sync_sources = {"accounts": []}
+        if tenant.modulbank_sync_sources:
+            sync_sources = json.loads(tenant.modulbank_sync_sources)
+
+        selected_accounts = sync_sources.get("accounts", [])
+        if not selected_accounts:
+            tenant.modulbank_last_error = "Источники для синхронизации (счета) не выбраны в настройках."
+            tenant.modulbank_integration_status = 'error'
+            db.commit()
             return
 
         token = decrypt_data(tenant.modulbank_api_token)
@@ -95,75 +104,50 @@ def sync_tenant_operations(tenant_id: int):
 
         from_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S')
         if tenant.modulbank_last_sync:
-            # Добавляем 1 секунду, чтобы не запрашивать последнюю полученную операцию заново
             from_date = (tenant.modulbank_last_sync + timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%S')
-
-        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
-
-        # 1. Получаем список компаний и счетов через POST-запрос
-        companies_resp = requests.post("https://api.modulbank.ru/v1/account-info", headers=headers)
-        companies_resp.raise_for_status()
-        companies = companies_resp.json()
-        if not companies: return
 
         owner = db.query(models.User).filter(models.User.tenant_id == tenant.id).first()
         if not owner: return
 
-        # 2. Проходим по каждой компании и ее счетам
-        for company in companies:
-            for account in company.get('bankAccounts', []):
-                account_id = account['id']
+        # 2. Проходим в цикле ТОЛЬКО по выбранным счетам
+        for account_id in selected_accounts:
             operations_url = f"https://api.modulbank.ru/v1/operation-history/{account_id}"
-            payload = {
-                "from": from_date,
-                "records": 50  # Максимальное значение по документации
-            }
+            payload = {"from": from_date, "records": 50}
             operations_resp = requests.post(operations_url, headers=headers, json=payload)
             operations_resp.raise_for_status()
             operations = operations_resp.json()
 
             for op in operations:
-                # 3. Проверяем, не создавали ли мы уже такую запись
-                # Для этого в EAV-таблице должно быть поле "operation_id"
                 existing_op_filter = [{"field": "operation_id", "op": "eq", "value": op['id']}]
 
-                # Нужен пользователь, от имени которого будем создавать
-                owner = db.query(models.User).filter(models.User.tenant_id == tenant.id).first()
-                if not owner: continue  # Пропускаем, если у клиента нет пользователей
-
-                # Используем EAVService для поиска
                 search_result = eav_service.get_all_entities_for_type(
-                    entity_type_name="banking_operations",  # Системное имя вашей EAV-таблицы
+                    entity_type_name="banking_operations",
                     current_user=owner,
                     filters=existing_op_filter,
                     limit=1
                 )
 
                 if search_result['total'] > 0:
-                    continue  # Такая операция уже есть, пропускаем
+                    continue
 
-                # 4. Создаем новую запись в EAV
                 op_data = {
-                    "operation_id": op['id'],
-                    "amount": op['amount'],
-                    "currency": op['currency'],
-                    "operation_type": op['type'],
-                    "contractor_name": op['contractorName'],
-                    "purpose": op['purpose'],
+                    "operation_id": op['id'], "amount": op['amount'],
+                    "currency": op['currency'], "operation_type": op['type'],
+                    "contractor_name": op.get('contragentName'),  # Используем .get для безопасности
+                    "purpose": op.get('paymentPurpose'),
                     "operation_date": op['executed'],
                 }
                 eav_service.create_entity("banking_operations", op_data, owner)
 
-        # Обновляем статус в БД
+        # Обновляем статус в БД, если все прошло успешно
         tenant.modulbank_last_sync = datetime.now(timezone.utc)
         tenant.modulbank_last_error = None
         db.commit()
 
     except Exception as e:
-        # Если что-то пошло не так, записываем ошибку в БД
-        if 'tenant' in locals():
+        if tenant:
             tenant.modulbank_integration_status = 'error'
-            tenant.modulbank_last_error = str(e)
+            tenant.modulbank_last_error = str(e)[:1000]
             db.commit()
     finally:
         db.close()
