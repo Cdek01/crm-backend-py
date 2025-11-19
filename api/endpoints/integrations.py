@@ -96,7 +96,7 @@ def save_modulbank_settings(
     tenant.modulbank_sync_weekday = settings.sync_weekday
 
     # Вызываем функцию, которая обновит расписание в таблицах Celery Beat
-    new_task_id = setup_schedule_for_tenant(tenant)
+    new_task_id = setup_schedule_for_tenant(tenant, db) # <-- Добавляем 'db'
     tenant.modulbank_periodic_task_id = new_task_id  # Сохраняем ID новой задачи
 
     db.commit()
