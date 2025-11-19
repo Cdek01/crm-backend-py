@@ -86,31 +86,39 @@ def sync_tenant_operations(tenant_id: int):
     eav_service = EAVService(db=db)  # Нужен для создания записей
 
     try:
-        tenant = db.query(models.Tenant).get(tenant_id)
+        tenant = db.get(models.Tenant, tenant_id)
         if not tenant or not tenant.modulbank_api_token:
             return
 
-        # Расшифровываем токен
         token = decrypt_data(tenant.modulbank_api_token)
         headers = {'Authorization': f'Bearer {token}'}
 
-        # Определяем период для запроса
-        # Если это первая синхронизация, берем данные за последний месяц.
-        # Если нет, берем с момента последней успешной синхронизации.
-        from_date = (tenant.modulbank_last_sync or (datetime.now(timezone.utc) - timedelta(days=30))).strftime('%Y-%m-%dT%H:%M:%S')
+        from_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S')
+        if tenant.modulbank_last_sync:
+            # Добавляем 1 секунду, чтобы не запрашивать последнюю полученную операцию заново
+            from_date = (tenant.modulbank_last_sync + timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%S')
 
+        # --- НАЧАЛО ИСПРАВЛЕНИЯ ---
 
-        # 1. Получаем список счетов
-        accounts_resp = requests.get("https://api.modulbank.ru/v1/bank-accounts", headers=headers)
-        accounts_resp.raise_for_status()
-        accounts = accounts_resp.json()
-        if not accounts: return
+        # 1. Получаем список компаний и счетов через POST-запрос
+        companies_resp = requests.post("https://api.modulbank.ru/v1/account-info", headers=headers)
+        companies_resp.raise_for_status()
+        companies = companies_resp.json()
+        if not companies: return
 
-        # 2. Для каждого счета запрашиваем операции
-        for account in accounts:
-            account_id = account['id']
-            operations_url = f"https://api.modulbank.ru/v1/bank-accounts/{account_id}/operations?from={from_date}"
-            operations_resp = requests.get(operations_url, headers=headers)
+        owner = db.query(models.User).filter(models.User.tenant_id == tenant.id).first()
+        if not owner: return
+
+        # 2. Проходим по каждой компании и ее счетам
+        for company in companies:
+            for account in company.get('bankAccounts', []):
+                account_id = account['id']
+            operations_url = f"https://api.modulbank.ru/v1/operation-history/{account_id}"
+            payload = {
+                "from": from_date,
+                "records": 50  # Максимальное значение по документации
+            }
+            operations_resp = requests.post(operations_url, headers=headers, json=payload)
             operations_resp.raise_for_status()
             operations = operations_resp.json()
 
