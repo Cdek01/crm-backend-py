@@ -47,21 +47,37 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    # --- НАЧАЛО ИЗМЕНЕНИЙ: Настройки интеграции с Модульбанком ---
+    # --- НАЧАЛО ПОЛНОЙ И ИСПРАВЛЕННОЙ ВЕРСИИ ---
 
-    # 1. Зашифрованный токен. Храним как бинарные данные.
+    # --- Настройки интеграции с Модульбанком ---
+
+    # 1. Зашифрованный токен.
     modulbank_api_token = Column(LargeBinary, nullable=True)
 
-    # 2. Статус интеграции: 'active', 'inactive', 'error'
+    # 2. Статус интеграции.
     modulbank_integration_status = Column(String(50), nullable=True, default='inactive')
 
-    # 3. Дата и время последней успешной синхронизации
+    # 3. Дата последней успешной синхронизации.
     modulbank_last_sync = Column(DateTime(timezone=True), nullable=True)
 
-    # 4. Сообщение об ошибке, если синхронизация не удалась
+    # 4. Сообщение об ошибке.
     modulbank_last_error = Column(Text, nullable=True)
 
-    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+    # --- Настройки расписания ---
+
+    # 5. Тип расписания: 'manual', 'hourly', 'daily', 'weekly'
+    modulbank_sync_schedule_type = Column(String(50), default='manual')
+
+    # 6. Время для ежедневной/еженедельной синхронизации.
+    modulbank_sync_time = Column(Time, nullable=True)
+
+    # 7. День недели для еженедельной синхронизации (0=Пн, ..., 6=Вс).
+    modulbank_sync_weekday = Column(Integer, nullable=True)
+
+    # 8. ID связанной задачи в таблице periodic_tasks Celery.
+    modulbank_periodic_task_id = Column(Integer, nullable=True)
+
+    # --- КОНЕЦ ПОЛНОЙ И ИСПРАВЛЕННОЙ ВЕРСИИ ---
     # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
     users = relationship("User", cascade="all, delete-orphan")
     entity_types = relationship("EntityType", cascade="all, delete-orphan")
