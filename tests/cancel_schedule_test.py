@@ -15,6 +15,7 @@ DB_PASSWORD = "your_strong_password"  # Замените на ваш парол�
 DB_HOST = "localhost"
 DB_PORT = "5432"
 
+TEST_MODULBANK_TOKEN = "MGIwMjlmZjEtMjM2MC00ZWJmLWE4NTktNmI1ZDA4Y2RmYWE4NmRjOTQ0MGYtYzUzNi00MGQ3LWIwNmYtZDZmNDQxZjlmMDFl"
 
 # --- КОНЕЦ КОНФИГУРАЦИИ ---
 
@@ -81,7 +82,11 @@ def run_cancel_test():
 
         # --- [ШАГ 2] Создаем задачу ---
         print("\n--- [ШАГ 2] Отправка запроса на создание задачи... ---")
-        settings_payload = {"schedule_type": "daily", "sync_time": "14:30:00"}
+        settings_payload = {
+            "api_token": TEST_MODULBANK_TOKEN, # <-- ДОБАВЛЯЕМ КЛЮЧ
+            "schedule_type": "daily",
+            "sync_time": "14:30:00"
+        }
         resp_api = requests.post(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers,
                                  json=settings_payload)
 
