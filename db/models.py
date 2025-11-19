@@ -76,7 +76,9 @@ class Tenant(Base):
 
     # 8. ID связанной задачи в таблице periodic_tasks Celery.
     modulbank_periodic_task_id = Column(Integer, nullable=True)
-
+    # Храним ID компаний и счетов, выбранных для синхронизации, в формате JSON.
+    # Пример: {"companies": ["company_id_1"], "accounts": ["acc_id_A", "acc_id_B"]}
+    modulbank_sync_sources = Column(Text, nullable=True)
     # --- КОНЕЦ ПОЛНОЙ И ИСПРАВЛЕННОЙ ВЕРСИИ ---
     # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
     users = relationship("User", cascade="all, delete-orphan")
@@ -85,9 +87,6 @@ class Tenant(Base):
     attribute_aliases = relationship("AttributeAlias", cascade="all, delete-orphan")
     table_aliases = relationship("TableAlias", cascade="all, delete-orphan")
     select_option_lists = relationship("SelectOptionList", cascade="all, delete-orphan")
-    # Храним ID компаний и счетов, выбранных для синхронизации, в формате JSON.
-    # Пример: {"companies": ["company_id_1"], "accounts": ["acc_id_A", "acc_id_B"]}
-    modulbank_sync_sources = Column(Text, nullable=True)
     # ---------------------------------------------
 
     def __str__(self):
