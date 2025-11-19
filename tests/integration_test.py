@@ -22,6 +22,19 @@ DB_PORT = "5432"  # Порт для SSH-туннеля (например, 5433)
 
 # --- КОНЕЦ КОНФИГУРАЦИИ ---
 
+def print_status(ok: bool, message: str, data: Optional[Any] = None):
+    global test_failed
+    if ok:
+        print(f"✅ [OK] {message}")
+    else:
+        test_failed = True
+        print(f"❌ [FAIL] {message}")
+        if data:
+            try:
+                print(f"  └─ Ответ сервера: {json.dumps(data, indent=2, ensure_ascii=False)}")
+            except (TypeError, json.JSONDecodeError):
+                print(f"  └─ Ответ сервера: {data}")
+        print("")
 
 # --- Вспомогательные функции (без изменений) ---
 
@@ -61,13 +74,23 @@ def get_task_for_tenant(conn, tenant_id):
         return cursor.fetchone()
 
 
+def get_tenant_sync_sources(conn, tenant_id):
+    """Получает сохраненные источники синхронизации из БД."""
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT modulbank_sync_sources FROM tenants WHERE id = %s", (tenant_id,))
+        result = cursor.fetchone()
+        if result and result[0]:
+            return json.loads(result[0])
+        return None
+
+
 # --- Основной сценарий теста ---
 
-def setup_11am_schedule():
-    print(">>> Тест: Создание задачи синхронизации на 11:00 <<<")
+def run_select_company_test():
+    print(">>> Тест: Настройка интеграции с выбором второй компании <<<")
 
     if "ВАШ_РЕАЛЬНЫЙ_API_ТОКЕН" in REAL_MODULBANK_TOKEN:
-        print("[FAIL] Пожалуйста, вставьте ваш реальный API токен в переменную REAL_MODULBANK_TOKEN.")
+        print("[FAIL] Пожалуйста, вставьте ваш реальный API токен.")
         return
 
     token = login(USER_EMAIL, USER_PASSWORD)
@@ -78,56 +101,87 @@ def setup_11am_schedule():
     if not db_conn: return
 
     try:
-        # Получаем tenant_id для проверки в БД
         resp_me = requests.get(f"{BASE_URL}/api/users/me", headers=headers)
         tenant_id = resp_me.json().get('tenant_id')
-        if not tenant_id:
-            print("[FAIL] Не удалось получить tenant_id от API.")
-            return
         print(f"[INFO] Работаем с клиентом (tenant_id): {tenant_id}")
 
-        # --- [ШАГ 1] Отправляем запрос на настройку ---
-        print("\n--- [ШАГ 1] Отправка запроса на создание/обновление расписания на 11:30 ---")
+        # --- [ШАГ 1] Начальная очистка ---
+        print("\n--- [ШАГ 1] Начальная очистка ---")
+        requests.delete(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers)
+        print("    Старые настройки интеграции удалены.")
+
+        # --- [ШАГ 2] Эмуляция фронтенда: Проверка токена и получение списка компаний ---
+        print("\n--- [ШАГ 2] Проверка токена и получение списка компаний от API ---")
+        resp_validate = requests.post(
+            f"{BASE_URL}/api/integrations/modulbank/validate-token",
+            headers=headers,
+            json={"api_token": REAL_MODULBANK_TOKEN}
+        )
+        if not print_status("Запрос на валидацию токена", resp_validate.status_code == 200):
+            print(f"    Ответ сервера: {resp_validate.text}")
+            return
+
+        companies = resp_validate.json()
+        print(f"    Получено {len(companies)} компаний от Модульбанка.")
+
+        if len(companies) < 2:
+            print("[FAIL] Для этого теста необходимо, чтобы у токена был доступ как минимум к двум компаниям.")
+            return
+
+        # --- [ШАГ 3] Эмуляция фронтенда: Пользователь выбирает ВТОРУЮ компанию и ее счета ---
+        print("\n--- [ШАГ 3] Выбор второй компании и всех ее счетов для синхронизации ---")
+        second_company = companies[1]  # Берем вторую компанию из списка (индекс 1)
+
+        selected_company_id = second_company['companyId']
+        selected_account_ids = [acc['id'] for acc in second_company.get('bankAccounts', [])]
+
+        print(f"    Выбрана компания: '{second_company['companyName']}' (ID: {selected_company_id})")
+        print(f"    Выбрано счетов для синхронизации: {len(selected_account_ids)}")
+
+        if not selected_account_ids:
+            print("[ПРЕДУПРЕЖДЕНИЕ] У выбранной компании нет счетов. Тест может быть неполным.")
+
+        # --- [ШАГ 4] Эмуляция фронтенда: Сохранение всех настроек ---
+        print("\n--- [ШАГ 4] Сохранение всех настроек (ключ, выбор, расписание) ---")
         settings_payload = {
-            "api_token": REAL_MODULBANK_TOKEN,  # Передаем токен для активации
-            "schedule_type": "daily",
-            "sync_time": "11:30:00"
+            "api_token": REAL_MODULBANK_TOKEN,
+            "schedule_type": "manual",  # Для теста не ставим авто-расписание
+            "selected_company_ids": [selected_company_id],
+            "selected_account_ids": selected_account_ids
         }
-        resp_api = requests.post(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers,
-                                 json=settings_payload)
 
-        if resp_api.status_code == 200:
-            print(f"[OK] API успешно обработал запрос (Статус: {resp_api.status_code})")
-        else:
-            print(f"[FAIL] API вернул ошибку! (Статус: {resp_api.status_code}, Ответ: {resp_api.text})")
+        resp_save = requests.post(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers,
+                                  json=settings_payload)
+        if not print_status("Запрос на сохранение настроек", resp_save.status_code == 200):
+            print(f"    Ответ сервера: {resp_save.text}")
             return
 
-        # --- [ШАГ 2] Проверка результата в БД ---
-        print("\n--- [ШАГ 2] Проверка расписания напрямую в базе данных Celery... ---")
-        db_conn.commit()  # Сбрасываем транзакцию, чтобы увидеть изменения
-        task_info = get_task_for_tenant(db_conn, tenant_id)
+        # --- [ШАГ 5] Проверка результата в базе данных ---
+        print("\n--- [ШАГ 5] Проверка сохраненных настроек в базе данных ---")
+        db_conn.commit()  # Обновляем транзакцию
 
-        if not task_info:
-            print("[FAIL] Задача для клиента не была найдена в базе данных!")
+        saved_sources = get_tenant_sync_sources(db_conn, tenant_id)
+        if not saved_sources:
+            print_status("Проверка сохраненных источников", False, "Запись не найдена в БД.")
             return
 
-        task_id, task_name, minute, hour, day_of_week = task_info
-        print(f"    Найдена задача: ID={task_id}, Имя='{task_name}'")
-        print(f"    Параметры расписания в БД: Минута='{minute}', Час='{hour}', День недели='{day_of_week}'")
+        print(f"    Сохраненные в БД ID счетов: {saved_sources.get('accounts')}")
 
-        # Главная проверка
-        if minute == '0' and hour == '11' and day_of_week == '*':
-            print("\n[SUCCESS] Тест пройден! Задача на ежедневную синхронизацию в 11:00 успешно создана.")
-        else:
-            print("\n[FAIL] Тест провален! Параметры расписания в базе данных неверные.")
-            print(f"          Ожидалось: Минута='0', Час='11'. Получено: Минута='{minute}', Час='{hour}'.")
+        # Сравниваем сохраненные в БД ID с теми, что мы выбрали
+        is_ok = set(saved_sources.get('accounts', [])) == set(selected_account_ids)
+        print_status("Проверка: сохраненные в БД счета соответствуют выбранным", is_ok)
+
+        if is_ok:
+            print("\n[SUCCESS] Тест пройден! Система правильно обработала выбор компании и сохранила нужные счета.")
 
     finally:
         if db_conn:
+            print("\n--- [Финал] Отключение интеграции ---")
+            requests.delete(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers)
             db_conn.close()
 
-    print("\n>>> ПРОВЕРКА ЗАВЕРШЕНА <<<")
+    print("\n>>> ТЕСТ ВЫБОРА КОМПАНИИ ЗАВЕРШЕН <<<")
 
 
 if __name__ == "__main__":
-    setup_11am_schedule()
+    run_select_company_test()
