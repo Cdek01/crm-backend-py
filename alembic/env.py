@@ -31,6 +31,7 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 target_metadata = Base.metadata
 # target_metadata = None
+from celery_sqlalchemy_scheduler import models as scheduler_models
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
