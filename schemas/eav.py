@@ -7,6 +7,7 @@ from enum import Enum
 # Используем Enum для строгой типизации полей
 class ValueTypeEnum(str, Enum):
     string = "string"
+    text = "text" # Для длинных текстовых полей
     integer = "integer"
     float = "float"
     date = "date"

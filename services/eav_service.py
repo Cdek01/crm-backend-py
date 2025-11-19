@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 VALUE_FIELD_MAP = {
     "string": "value_string",
+    "text": "value_text",  # Указываем, что тип 'text' сохраняется в колонку 'value_text'
     "integer": "value_integer",
     "float": "value_float",
     "date": "value_date",
