@@ -1,10 +1,11 @@
-from typing import Optional
-import os  # <-- Импорт для работы с путями
-import uuid # <-- Импорт для генерации уникальных имен
+# tasks/beeline_sync.py
 import requests
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional
+import os
+import uuid
 
 from celery_worker import celery_app
 from db.session import SessionLocal
@@ -24,12 +25,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 CRM_TABLE_NAME = "beeline_calls"
 
-
 # Путь к папке, куда будут сохраняться записи
 AUDIO_UPLOAD_DIR = os.path.join("static", "uploads", "audio")
 os.makedirs(AUDIO_UPLOAD_DIR, exist_ok=True)
 
-# --- НАЧАЛО НОВОГО БЛОКА: Функция для управления расписанием ---
+
 def setup_schedule_for_beeline(tenant: models.Tenant, db: Session, disable: bool = False) -> Optional[int]:
     """Создает/обновляет/удаляет периодическую задачу для синхронизации Билайн."""
     if not PeriodicTask:
@@ -84,17 +84,11 @@ def setup_schedule_for_beeline(tenant: models.Tenant, db: Session, disable: bool
     return new_task.id
 
 
-# --- КОНЕЦ НОВОГО БЛОКА ---
-
-
-# --- ИЗМЕНЕНИЕ: Задача теперь принимает tenant_id ---
 @celery_app.task
 def sync_beeline_calls(tenant_id: int):
     """
     Синхронизирует звонки для ОДНОГО конкретного клиента, ID которого был передан.
     """
-    # Теперь нам не нужен if/else, мы сразу вызываем основную логику.
-    # Старый код, который искал всех активных клиентов, можно удалить.
     _sync_for_single_tenant(tenant_id)
 
 
@@ -132,7 +126,6 @@ def _sync_for_single_tenant(tenant_id: int):
 
         logger.info(f"[Beeline Sync] Получено {len(calls)} звонков от API для Tenant ID {tenant.id}.")
 
-        # --- НАЧАЛО ВОССТАНОВЛЕННОГО БЛОКА ---
         new_calls_count = 0
         if not calls:
             logger.info("[Beeline Sync] Новых звонков для обработки нет.")
@@ -154,13 +147,21 @@ def _sync_for_single_tenant(tenant_id: int):
                 if search_result['total'] > 0:
                     continue
 
-                # Звонок новый, обрабатываем и сохраняем
-                call_date = datetime.fromtimestamp(call.get("date", 0) / 1000)
-                duration_seconds = round(call.get("duration", 0) / 1000)
+                # --- ОБЪЕДИНЕННАЯ ЛОГИКА: СКАЧИВАНИЕ ФАЙЛА И ПОЛУЧЕНИЕ ССЫЛКИ ---
 
-                # --- 1. Скачиваем файл записи разговора ---
-                audio_url_path = ""  # Путь по умолчанию, если скачать не удалось
-                call_id = call.get("id")
+                # 1. Получаем ссылку на запись
+                record_link = ""
+                try:
+                    link_response = requests.get(f"{settings.BEELINE_BASE_URL}/records/{call_id}/reference",
+                                                 headers=headers)
+                    if link_response.ok:
+                        record_link = link_response.json().get("url", "")
+                        logger.info(f"[Beeline Sync] Получена ссылка для звонка ID: {call_id}: {record_link}")
+                except Exception as e:
+                    logger.warning(f"Не удалось получить ссылку на запись для звонка {call_id}: {e}")
+
+                # 2. Скачиваем файл записи
+                audio_file_path = ""
                 try:
                     logger.info(f"[Beeline Sync] Попытка скачать запись для звонка ID: {call_id}...")
                     download_url = f"{settings.BEELINE_BASE_URL}/records/{call_id}/download"
@@ -169,11 +170,16 @@ def _sync_for_single_tenant(tenant_id: int):
                     record_response = requests.get(download_url, headers=headers, stream=True, timeout=30)
                     record_response.raise_for_status()
 
-                    # Генерируем уникальное имя файла. Расширение можно взять из заголовков, если есть, или .mp3 по умолчанию
-                    # Content-Disposition: attachment; filename="record.mp3"
+                    # Генерируем уникальное имя файла
                     content_disp = record_response.headers.get('Content-Disposition', '')
-                    original_filename = [part for part in content_disp.split(';') if 'filename' in part]
-                    file_extension = os.path.splitext(original_filename[0] if original_filename else ".mp3")[1]
+                    original_filename = ""
+                    if 'filename=' in content_disp:
+                        original_filename = content_disp.split('filename=')[1].strip('"')
+
+                    if original_filename:
+                        file_extension = os.path.splitext(original_filename)[1]
+                    else:
+                        file_extension = ".mp3"  # расширение по умолчанию
 
                     unique_filename = f"{uuid.uuid4().hex}{file_extension}"
                     file_path = os.path.join(AUDIO_UPLOAD_DIR, unique_filename)
@@ -184,8 +190,8 @@ def _sync_for_single_tenant(tenant_id: int):
                             f.write(chunk)
 
                     # Формируем относительный URL для сохранения в БД
-                    audio_url_path = f"/{os.path.join('static', 'uploads', 'audio', unique_filename).replace(os.path.sep, '/')}"
-                    logger.info(f"[Beeline Sync] Запись успешно сохранена: {audio_url_path}")
+                    audio_file_path = f"/{os.path.join('static', 'uploads', 'audio', unique_filename).replace(os.path.sep, '/')}"
+                    logger.info(f"[Beeline Sync] Запись успешно сохранена: {audio_file_path}")
 
                 except requests.exceptions.HTTPError as e:
                     # Часто API возвращает 404, если записи нет. Это не критическая ошибка.
@@ -196,7 +202,7 @@ def _sync_for_single_tenant(tenant_id: int):
                 except Exception as e:
                     logger.error(f"Не удалось скачать или сохранить запись для звонка {call_id}: {e}")
 
-                # --- 2. Готовим данные для CRM, включая ссылку на аудио ---
+                # --- СОХРАНЕНИЕ ДАННЫХ В БАЗУ ---
                 call_date = datetime.fromtimestamp(call.get("date", 0) / 1000)
                 duration_seconds = round(call.get("duration", 0) / 1000)
 
@@ -207,14 +213,14 @@ def _sync_for_single_tenant(tenant_id: int):
                     "call_date": call_date.isoformat(),
                     "duration_seconds": duration_seconds,
                     "internal_user": call.get("abonent", {}).get("extension"),
-                    "audio_record": audio_url_path  # <-- Добавляем путь к файлу
+                    "record_link": record_link,  # Ссылка на запись
+                    "audio_record": audio_file_path  # Путь к скачанному файлу
                 }
 
                 eav_service.create_entity(CRM_TABLE_NAME, call_data_for_crm, owner)
                 new_calls_count += 1
 
-            logger.info(f"[Beeline Sync] Обработка завершена. Сохранено {new_calls_count} новых звонков.")
-        # --- КОНЕЦ ВОССТАНОВЛЕННОГО БЛОКА ---
+        logger.info(f"[Beeline Sync] Обработка завершена. Сохранено {new_calls_count} новых звонков.")
 
         # Обновляем статус в БД, если все прошло успешно
         tenant.beeline_last_sync = datetime.now(timezone.utc)
