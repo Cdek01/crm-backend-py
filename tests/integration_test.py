@@ -171,11 +171,11 @@ def run_select_company_test():
     except Exception as e:
         print(f"\n[CRITICAL] В ходе теста произошла непредвиденная ошибка!", False, f"Детали: {e}")
 
-    finally:
-        if db_conn:
-            print("\n--- [Финал] Отключение интеграции ---")
-            requests.delete(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers)
-            db_conn.close()
+    # finally:
+    #     if db_conn:
+    #         print("\n--- [Финал] Отключение интеграции ---")
+    #         requests.delete(f"{BASE_URL}/api/integrations/modulbank/settings", headers=headers)
+    #         db_conn.close()
 
     print("\n>>> ТЕСТ ВЫБОРА КОМПАНИИ ЗАВЕРШЕН <<<")
 
