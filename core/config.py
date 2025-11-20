@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     DADATA_API_KEY: Optional[str] = None
     DADATA_SECRET_KEY: Optional[str] = None
     ENCRYPTION_KEY: str
+    BEELINE_API_TOKEN: str
+    BEELINE_BASE_URL: str
+
+
     class Config:
         env_file = ".env"
 

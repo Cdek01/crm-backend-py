@@ -24,7 +24,7 @@ celery_app = Celery(
     'celery_worker',
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include = ['tasks.messaging', 'tasks.imports', 'tasks.enrichment', 'tasks.banking']
+    include = ['tasks.messaging', 'tasks.imports', 'tasks.enrichment', 'tasks.banking', 'tasks.beeline_sync']
 )
 
 # --- НОВАЯ КОНФИГУРАЦИЯ ДЛЯ ПЛАНИРОВЩИКА ---
@@ -47,3 +47,14 @@ celery_app.conf.update(
 # Полностью очищаем стандартное расписание Beat.
 # Это более надежный способ, чем просто пустой словарь в update().
 celery_app.conf.beat_schedule = {}
+
+# Полностью очищаем стандартное расписание Beat.
+celery_app.conf.beat_schedule = {
+    # Добавляем нашу новую задачу
+    'sync-beeline-calls-every-5-minutes': {
+        'task': 'tasks.beeline_sync.sync_beeline_calls',
+        'schedule': 300.0,  # 300 секунд = 5 минут
+    },
+}
+
+

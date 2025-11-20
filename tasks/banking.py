@@ -146,16 +146,22 @@ def sync_tenant_operations(tenant_id: int):
                     continue
 
                 op_data = {
-                    "operation_id": op['id'],
-                    "amount": op['amount'],
-                    "currency": op['currency'],
-                    "operation_type": op.get('type'),  # <--- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
-                    "contractor_name": op.get('contragentName'),
-                    "purpose": op.get('paymentPurpose'),
-                    "operation_date": op['executed'],
+                    "operation_id": op.get('id'),
+                    "amount": op.get('amount'),
+                    "currency": op.get('currency'),
+                    "operation_type": op.get('type'),  # Безопасный доступ
+                    "contractor_name": op.get('contragentName'),  # Безопасный доступ
+                    "purpose": op.get('paymentPurpose'),  # Безопасный доступ
+                    "operation_date": op.get('executed'),
                 }
-                eav_service.create_entity("banking_operations", op_data, owner)
-                total_new_ops += 1
+                # --- КОНЕЦ БЛОКА ДЛЯ ПРОВЕРКИ ---
+
+                # Убираем из словаря ключи с пустыми значениями, чтобы не записывать NULL без надобности
+                op_data_cleaned = {k: v for k, v in op_data.items() if v is not None}
+
+                # Проверяем, что у операции есть ID, иначе пропускаем
+                if not op_data_cleaned.get("operation_id"):
+                    continue
 
         logger.info(f"[Banking Sync] Обработка завершена. Сохранено {total_new_ops} новых операций.")
 

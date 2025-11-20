@@ -80,6 +80,19 @@ class Tenant(Base):
     # Пример: {"companies": ["company_id_1"], "accounts": ["acc_id_A", "acc_id_B"]}
     modulbank_sync_sources = Column(Text, nullable=True)
     # --- КОНЕЦ ПОЛНОЙ И ИСПРАВЛЕННОЙ ВЕРСИИ ---
+
+    # --- НАЧАЛО ИЗМЕНЕНИЙ: Добавляем поля для интеграции с Билайн ---
+    beeline_api_token = Column(LargeBinary, nullable=True)
+    beeline_integration_status = Column(String(50), nullable=True, default='inactive')
+    beeline_last_sync = Column(DateTime(timezone=True), nullable=True)
+    beeline_last_error = Column(Text, nullable=True)
+    beeline_sync_schedule_type = Column(String(50), default='manual')
+    beeline_sync_time = Column(Time, nullable=True)
+    beeline_sync_weekday = Column(Integer, nullable=True)
+    beeline_periodic_task_id = Column(Integer, nullable=True)
+    # --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+    
     # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
     users = relationship("User", cascade="all, delete-orphan")
     entity_types = relationship("EntityType", cascade="all, delete-orphan")
