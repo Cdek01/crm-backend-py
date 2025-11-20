@@ -8,6 +8,7 @@ from datetime import time, datetime
 import requests
 import json
 
+from core.config import settings
 from db import models, session
 from api.deps import get_current_user
 from core.encryption import encrypt_data
@@ -63,24 +64,24 @@ class CompanyInfo(BaseModel):
 class TokenValidateRequest(BaseModel):
     api_token: str
 
-    # --- Схемы данных для Билайн (добавьте их после схем для Modulbank) ---
+# --- Схемы данных для Билайн (добавьте их после схем для Modulbank) ---
 
-    class BeelineTokenValidateRequest(BaseModel):
-        api_token: str
+class BeelineTokenValidateRequest(BaseModel):
+    api_token: str
 
-    class BeelineIntegrationSettings(BaseModel):
-        api_token: Optional[str] = Field(None, description="API-ключ. Отправляется только при изменении.")
-        schedule_type: Literal['manual', 'hourly', 'daily', 'weekly'] = 'manual'
-        sync_time: Optional[time] = None
-        sync_weekday: Optional[int] = Field(None, ge=0, le=6)
+class BeelineIntegrationSettings(BaseModel):
+    api_token: Optional[str] = Field(None, description="API-ключ. Отправляется только при изменении.")
+    schedule_type: Literal['manual', 'hourly', 'daily', 'weekly'] = 'manual'
+    sync_time: Optional[time] = None
+    sync_weekday: Optional[int] = Field(None, ge=0, le=6)
 
-    class BeelineIntegrationStatus(BaseModel):
-        is_active: bool
-        schedule_type: str
-        sync_time: Optional[time] = None
-        sync_weekday: Optional[int] = None
-        last_sync: Optional[datetime] = None
-        last_error: Optional[str] = None
+class BeelineIntegrationStatus(BaseModel):
+    is_active: bool
+    schedule_type: str
+    sync_time: Optional[time] = None
+    sync_weekday: Optional[int] = None
+    last_sync: Optional[datetime] = None
+    last_error: Optional[str] = None
 
 
 
