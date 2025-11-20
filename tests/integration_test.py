@@ -124,7 +124,7 @@ def run_full_sync_test():
         settings_payload = {
             "api_token": REAL_MODULBANK_TOKEN,
             "schedule_type": "daily",
-            "sync_time": "13:44",
+            "sync_time": "13:47",
             "selected_company_ids": selected_company_ids,
             "selected_account_ids": selected_account_ids
         }
@@ -154,8 +154,6 @@ def run_full_sync_test():
     except Exception as e:
 
         print(f"\n[CRITICAL] В ходе теста произошла непредвиденная ошибка!", False, f"Детали: {e}")
-
-
 
     print("\n>>> ТЕСТ ВЫБОРА КОМПАНИИ ЗАВЕРШЕН <<<")
 
