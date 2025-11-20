@@ -213,8 +213,9 @@ def _sync_for_single_tenant(tenant_id: int):
                     "call_date": call_date.isoformat(),
                     "duration_seconds": duration_seconds,
                     "internal_user": call.get("abonent", {}).get("extension"),
-                    "record_link": record_link,  # Ссылка на запись
-                    "audio_record": audio_file_path  # Путь к скачанному файлу
+                    "audio_record": audio_file_path,  # Путь к скачанному файлу
+                    "record_link": record_link  # Ссылка на запись
+
                 }
 
                 eav_service.create_entity(CRM_TABLE_NAME, call_data_for_crm, owner)

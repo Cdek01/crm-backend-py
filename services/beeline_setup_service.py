@@ -35,8 +35,8 @@ def setup_beeline_table(db: Session, eav_service: EAVService, current_user: mode
         {"name": "call_date", "display_name": "Дата и время звонка", "value_type": "date"}, # Используем date, так как он поддерживает и время
         {"name": "duration_seconds", "display_name": "Длительность (сек)", "value_type": "integer"},
         {"name": "internal_user", "display_name": "Сотрудник", "value_type": "string"},
-        {"name": "record_link", "display_name": "Запись разговора", "value_type": "url"},
         {"name": "audio_record", "display_name": "Файл записи", "value_type": "audio"},
+        {"name": "record_link", "display_name": "Запись разговора", "value_type": "url"},
     ]
 
     # 4. Создаем каждую колонку
