@@ -140,7 +140,7 @@ def run_select_company_test():
         settings_payload = {
             "api_token": REAL_MODULBANK_TOKEN,
             "schedule_type": "daily",
-            "sync_time": "13:10",
+            "sync_time": "13:15",
             "selected_company_ids": [selected_company_id],
             "selected_account_ids": selected_account_ids
         }
