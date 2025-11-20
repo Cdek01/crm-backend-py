@@ -3,7 +3,7 @@ from typing import Optional
 import requests
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from celery_worker import celery_app
 from db.session import SessionLocal
@@ -114,12 +114,11 @@ def _sync_for_single_tenant(tenant_id: int):
         token = decrypt_data(tenant.beeline_api_token)
         headers = {"X-MPBX-API-AUTH-TOKEN": token}
 
-        # Определяем, с какой даты запрашивать звонки
-        date_from = datetime.now() - timedelta(days=1)  # По умолчанию за последний день
+        date_from = datetime.now(timezone.utc) - timedelta(days=1)
         if tenant.beeline_last_sync:
-            date_from = tenant.beeline_last_sync - timedelta(minutes=5)  # С небольшим запасом
+            date_from = tenant.beeline_last_sync - timedelta(minutes=5)
 
-        params = {"dateFrom": date_from.strftime("%Y-%m-%d"), "dateTo": datetime.now().strftime("%Y-%m-%d")}
+        params = {"dateFrom": date_from.strftime("%Y-%m-%d"), "dateTo": datetime.now(timezone.utc).strftime("%Y-%m-%d")}
 
         logger.info(f"[Beeline Sync] Запрос звонков для Tenant ID {tenant.id} с параметрами: {params}")
         response = requests.get(f"{settings.BEELINE_BASE_URL}/records", headers=headers, params=params)
@@ -127,11 +126,60 @@ def _sync_for_single_tenant(tenant_id: int):
         calls = response.json()
 
         logger.info(f"[Beeline Sync] Получено {len(calls)} звонков от API для Tenant ID {tenant.id}.")
-        # ... (остальная логика обработки звонков остается такой же, как была) ...
-        # ... (проверка на дубликаты, сохранение в CRM) ...
+
+        # --- НАЧАЛО ВОССТАНОВЛЕННОГО БЛОКА ---
+        new_calls_count = 0
+        if not calls:
+            logger.info("[Beeline Sync] Новых звонков для обработки нет.")
+        else:
+            for call in calls:
+                call_id = call.get("id")
+                if not call_id:
+                    continue
+
+                # Проверяем, не был ли этот звонок уже сохранен
+                existing_call_filter = [{"field": "call_id", "op": "eq", "value": str(call_id)}]
+                search_result = eav_service.get_all_entities_for_type(
+                    entity_type_name=CRM_TABLE_NAME,
+                    current_user=owner,
+                    filters=existing_call_filter,
+                    limit=1
+                )
+
+                if search_result['total'] > 0:
+                    continue
+
+                # Звонок новый, обрабатываем и сохраняем
+                call_date = datetime.fromtimestamp(call.get("date", 0) / 1000)
+                duration_seconds = round(call.get("duration", 0) / 1000)
+
+                record_link = ""
+                try:
+                    link_response = requests.get(f"{settings.BEELINE_BASE_URL}/records/{call_id}/reference",
+                                                 headers=headers)
+                    if link_response.ok:
+                        record_link = link_response.json().get("url", "")
+                except Exception:
+                    logger.warning(f"Не удалось получить ссылку на запись для звонка {call_id}")
+
+                call_data_for_crm = {
+                    "call_id": str(call_id),
+                    "external_phone": call.get("phone"),
+                    "direction": call.get("direction"),
+                    "call_date": call_date.isoformat(),
+                    "duration_seconds": duration_seconds,
+                    "internal_user": call.get("abonent", {}).get("extension"),
+                    "record_link": record_link
+                }
+
+                eav_service.create_entity(CRM_TABLE_NAME, call_data_for_crm, owner)
+                new_calls_count += 1
+
+        logger.info(f"[Beeline Sync] Обработка завершена. Сохранено {new_calls_count} новых звонков.")
+        # --- КОНЕЦ ВОССТАНОВЛЕННОГО БЛОКА ---
 
         # Обновляем статус в БД, если все прошло успешно
-        tenant.beeline_last_sync = datetime.now()
+        tenant.beeline_last_sync = datetime.now(timezone.utc)
         tenant.beeline_last_error = None
         db.commit()
 
