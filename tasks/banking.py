@@ -146,8 +146,10 @@ def sync_tenant_operations(tenant_id: int):
                     continue
 
                 op_data = {
-                    "operation_id": op['id'], "amount": op['amount'],
-                    "currency": op['currency'], "operation_type": op['type'],
+                    "operation_id": op['id'],
+                    "amount": op['amount'],
+                    "currency": op['currency'],
+                    "operation_type": op.get('type'),  # <--- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ
                     "contractor_name": op.get('contragentName'),
                     "purpose": op.get('paymentPurpose'),
                     "operation_date": op['executed'],

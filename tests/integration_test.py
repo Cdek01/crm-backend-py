@@ -157,7 +157,7 @@ def run_full_sync_test():  # <-- Имя функции изменено для �
         settings_payload = {
             "api_token": REAL_MODULBANK_TOKEN,
             "schedule_type": "daily",
-            "sync_time": "13:31",
+            "sync_time": "13:32",
             # Передаем списки со всеми собранными ID
             "selected_company_ids": selected_company_ids,
             "selected_account_ids": selected_account_ids
