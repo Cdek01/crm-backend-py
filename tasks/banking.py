@@ -3,6 +3,7 @@ import json
 import requests
 from datetime import datetime, time, timedelta, timezone
 from typing import Optional
+import logging  # <-- 1. Импортируем модуль логирования
 
 from celery_worker import celery_app
 from db.session import SessionLocal
@@ -16,6 +17,9 @@ try:
     from sqlalchemy.orm import Session
 except ImportError:
     PeriodicTask, CrontabSchedule, IntervalSchedule, Session = None, None, None, None
+
+# --- 2. Настраиваем логгер ---
+logger = logging.getLogger(__name__)
 
 
 def setup_schedule_for_tenant(tenant: models.Tenant, db: Session, disable: bool = False) -> Optional[int]:
@@ -76,24 +80,29 @@ def setup_schedule_for_tenant(tenant: models.Tenant, db: Session, disable: bool 
 @celery_app.task
 def sync_tenant_operations(tenant_id: int):
     """Синхронизирует операции для одного конкретного клиента только по выбранным им счетам."""
+    # --- 3. Добавляем подробное логирование на каждом шаге ---
+    logger.info(f"--- [Banking Sync] Запуск задачи для Tenant ID: {tenant_id} ---")
     db = SessionLocal()
 
     alias_service = AliasService(db=db)
     eav_service = EAVService(db=db, alias_service=alias_service)
 
     tenant = None
+    total_new_ops = 0
     try:
         tenant = db.get(models.Tenant, tenant_id)
         if not tenant or not tenant.modulbank_api_token:
+            logger.warning(f"[Banking Sync] Задача прервана: не найден Tenant или API токен для ID: {tenant_id}")
             return
 
-        # 1. Загружаем сохраненный выбор счетов пользователя
         sync_sources = {"accounts": []}
         if tenant.modulbank_sync_sources:
             sync_sources = json.loads(tenant.modulbank_sync_sources)
 
         selected_accounts = sync_sources.get("accounts", [])
         if not selected_accounts:
+            logger.warning(
+                f"[Banking Sync] Задача прервана: у Tenant ID: {tenant_id} не выбраны счета для синхронизации.")
             tenant.modulbank_last_error = "Источники для синхронизации (счета) не выбраны в настройках."
             tenant.modulbank_integration_status = 'error'
             db.commit()
@@ -106,16 +115,22 @@ def sync_tenant_operations(tenant_id: int):
         if tenant.modulbank_last_sync:
             from_date = (tenant.modulbank_last_sync + timedelta(seconds=1)).strftime('%Y-%m-%dT%H:%M:%S')
 
-        owner = db.query(models.User).filter(models.User.tenant_id == tenant.id).first()
-        if not owner: return
+        logger.info(f"[Banking Sync] Запрос операций с {from_date} для {len(selected_accounts)} счетов.")
 
-        # 2. Проходим в цикле ТОЛЬКО по выбранным счетам
+        owner = db.query(models.User).filter(models.User.tenant_id == tenant.id).first()
+        if not owner:
+            logger.error(
+                f"[Banking Sync] КРИТИЧЕСКАЯ ОШИБКА: Не найден пользователь-владелец для Tenant ID: {tenant_id}")
+            return
+
         for account_id in selected_accounts:
             operations_url = f"https://api.modulbank.ru/v1/operation-history/{account_id}"
             payload = {"from": from_date, "records": 50}
             operations_resp = requests.post(operations_url, headers=headers, json=payload)
             operations_resp.raise_for_status()
             operations = operations_resp.json()
+
+            logger.info(f"[Banking Sync] -> Получено {len(operations)} операций для счета {account_id}.")
 
             for op in operations:
                 existing_op_filter = [{"field": "operation_id", "op": "eq", "value": op['id']}]
@@ -133,18 +148,21 @@ def sync_tenant_operations(tenant_id: int):
                 op_data = {
                     "operation_id": op['id'], "amount": op['amount'],
                     "currency": op['currency'], "operation_type": op['type'],
-                    "contractor_name": op.get('contragentName'),  # Используем .get для безопасности
+                    "contractor_name": op.get('contragentName'),
                     "purpose": op.get('paymentPurpose'),
                     "operation_date": op['executed'],
                 }
                 eav_service.create_entity("banking_operations", op_data, owner)
+                total_new_ops += 1
 
-        # Обновляем статус в БД, если все прошло успешно
+        logger.info(f"[Banking Sync] Обработка завершена. Сохранено {total_new_ops} новых операций.")
+
         tenant.modulbank_last_sync = datetime.now(timezone.utc)
         tenant.modulbank_last_error = None
         db.commit()
 
     except Exception as e:
+        logger.error(f"[Banking Sync] ОШИБКА при синхронизации для Tenant ID {tenant_id}: {e}", exc_info=True)
         if tenant:
             tenant.modulbank_integration_status = 'error'
             tenant.modulbank_last_error = str(e)[:1000]
