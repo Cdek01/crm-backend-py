@@ -139,7 +139,8 @@ def run_select_company_test():
         print("\n--- [ШАГ 4] Сохранение всех настроек (ключ, выбор, расписание) ---")
         settings_payload = {
             "api_token": REAL_MODULBANK_TOKEN,
-            "schedule_type": "manual",
+            "schedule_type": "daily",
+            "sync_time": "13:10",
             "selected_company_ids": [selected_company_id],
             "selected_account_ids": selected_account_ids
         }
