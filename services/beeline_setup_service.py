@@ -36,6 +36,7 @@ def setup_beeline_table(db: Session, eav_service: EAVService, current_user: mode
         {"name": "duration_seconds", "display_name": "Длительность (сек)", "value_type": "integer"},
         {"name": "internal_user", "display_name": "Сотрудник", "value_type": "string"},
         {"name": "record_link", "display_name": "Запись разговора", "value_type": "url"},
+        {"name": "audio_record", "display_name": "Файл записи", "value_type": "audio"},
     ]
 
     # 4. Создаем каждую колонку
