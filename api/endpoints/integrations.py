@@ -271,7 +271,7 @@ def save_beeline_settings(
         tenant.beeline_integration_status = 'active'
         tenant.beeline_last_error = None
         # Запускаем первую синхронизацию немедленно
-        sync_beeline_calls.delay()
+        sync_beeline_calls.delay(tenant.id)
         message = "Интеграция с Билайн активирована. Первая синхронизация запущена."
     elif not tenant.beeline_api_token:
         raise HTTPException(status_code=400, detail="Для активации интеграции необходимо предоставить API-ключ.")

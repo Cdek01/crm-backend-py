@@ -84,21 +84,13 @@ def setup_schedule_for_beeline(tenant: models.Tenant, db: Session, disable: bool
 
 # --- ИЗМЕНЕНИЕ: Задача теперь принимает tenant_id ---
 @celery_app.task
-def sync_beeline_calls(tenant_id: int = None):
+def sync_beeline_calls(tenant_id: int):
     """
-    Синхронизирует звонки для ОДНОГО клиента.
-    Если tenant_id не передан, пытается синхронизировать для всех активных.
+    Синхронизирует звонки для ОДНОГО конкретного клиента, ID которого был передан.
     """
-    if tenant_id:
-        _sync_for_single_tenant(tenant_id)
-    else:
-        # Логика для запуска по общему расписанию (если потребуется)
-        db = SessionLocal()
-        active_tenants = db.query(models.Tenant).filter(models.Tenant.beeline_integration_status == 'active').all()
-        db.close()
-        logger.info(f"[Beeline Sync] Запуск общей синхронизации для {len(active_tenants)} активных клиентов.")
-        for tenant in active_tenants:
-            _sync_for_single_tenant(tenant.id)
+    # Теперь нам не нужен if/else, мы сразу вызываем основную логику.
+    # Старый код, который искал всех активных клиентов, можно удалить.
+    _sync_for_single_tenant(tenant_id)
 
 
 def _sync_for_single_tenant(tenant_id: int):
