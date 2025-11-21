@@ -1,6 +1,27 @@
 # services/history_service.py
 from sqlalchemy.orm import Session
 from db import models
+import json
+from datetime import datetime
+
+
+# --- НАЧАЛО: Добавьте эту вспомогательную функцию ---
+def json_converter(o):
+    """Конвертер для объектов, которые не сериализуются в JSON стандартным способом."""
+    if isinstance(o, datetime):
+        return o.isoformat() # Превращаем datetime в строку формата ISO 8601
+
+def to_json_serializable(data):
+    """Рекурсивно преобразует словарь, чтобы он стал JSON-сериализуемым."""
+    if data is None:
+        return None
+    # Мы просто кодируем и декодируем, используя наш кастомный конвертер.
+    # Это простой трюк, чтобы обработать все вложенные datetime.
+    return json.loads(json.dumps(data, default=json_converter))
+# --- КОНЕЦ ---
+
+
+
 
 class HistoryService:
     def __init__(self, db: Session, eav_service: 'EAVService'):
@@ -22,8 +43,8 @@ class HistoryService:
             action_type=action_type,
             entity_type_name=entity_type_name,
             entity_id=entity_id,
-            state_before=state_before,
-            state_after=state_after,
+            state_before=to_json_serializable(state_before),
+            state_after=to_json_serializable(state_after),
             description=description,
             is_undone=False
         )
