@@ -1463,16 +1463,16 @@ class EAVService:
                 detail=f"Атрибут с ID {attribute_id} не найден в типе сущности {entity_type_id}"
             )
 
-        # 3. Проверяем, не является ли атрибут системным
-        system_attributes = [
-            "send_sms_trigger", "sms_status", "sms_last_error",
-            "phone_number", "message_text", "creation_date", "modification_date"
-        ]
-        if attribute_to_delete.name in system_attributes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
-            )
+        # # 3. Проверяем, не является ли атрибут системным
+        # system_attributes = [
+        #     "send_sms_trigger", "sms_status", "sms_last_error",
+        #     "phone_number", "message_text", "creation_date", "modification_date"
+        # ]
+        # if attribute_to_delete.name in system_attributes:
+        #     raise HTTPException(
+        #         status_code=400,
+        #         detail=f"Нельзя удалить системный атрибут '{attribute_to_delete.name}'"
+        #     )
 
         # --- НАЧАЛО НОВОЙ ЛОГИКИ ---
 
