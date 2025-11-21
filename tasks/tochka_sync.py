@@ -105,63 +105,139 @@ def sync_tochka_operations(tenant_id: int):
         token = decrypt_data(tenant.tochka_api_token)
         headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/json'}
 
-        # Определяем период для запроса
+        # # Определяем период для запроса
+        # end_date = datetime.now(timezone.utc)
+        # start_date = tenant.tochka_last_sync or (end_date - timedelta(days=30))
+        #
+        # params = {
+        #     'startDateTime': start_date.isoformat(),
+        #     'endDateTime': end_date.isoformat()
+        # }
+        #
+        # total_new_ops = 0
+        # for account_id in selected_accounts:
+        #     params['accountId'] = account_id
+        #     logger.info(f"[Tochka Sync] Запрос выписок для счета {account_id} с {start_date.isoformat()}")
+        #
+        #     response = requests.get("https://enter.tochka.com/uapi/open-banking/v1.0/statements", headers=headers,
+        #                             params=params)
+        #     response.raise_for_status()
+        #     data = response.json()
+        #
+        #     statements = data.get('Data', {}).get('Statement', [])
+        #     if not statements:
+        #         logger.info(f"[Tochka Sync] -> Для счета {account_id} нет новых выписок.")
+        #         continue
+        #
+        #     for statement in statements:
+        #         for op in statement.get('Transaction', []):
+        #             op_id = op.get('transactionId')
+        #             if not op_id: continue
+        #
+        #             existing_op_filter = [{"field": "operation_id", "op": "eq", "value": str(op_id)}]
+        #             search_result = eav_service.get_all_entities_for_type(
+        #                 entity_type_name=CRM_TABLE_NAME, current_user=owner, filters=existing_op_filter, limit=1
+        #             )
+        #             if search_result['total'] > 0:
+        #                 continue
+        #
+        #             # Определяем контрагента и тип операции
+        #             op_type = "Списание"
+        #             contractor = op.get('CreditorParty', {}).get('name')
+        #             if op.get('creditDebitIndicator') == 'Credit':
+        #                 op_type = "Поступление"
+        #                 contractor = op.get('DebtorParty', {}).get('name')
+        #
+        #             op_data = {
+        #                 "operation_id": str(op_id),
+        #                 "amount": op.get('Amount', {}).get('amount'),
+        #                 "currency": op.get('Amount', {}).get('currency'),
+        #                 "operation_type": op_type,
+        #                 "contractor_name": contractor,
+        #                 "purpose": op.get('description'),
+        #                 "operation_date": op.get('documentProcessDate'),
+        #             }
+        #
+        #             op_data_cleaned = {k: v for k, v in op_data.items() if v is not None}
+        #             eav_service.create_entity(CRM_TABLE_NAME, op_data_cleaned, owner)
+        #             total_new_ops += 1
+        # Определяем параметры запроса
         end_date = datetime.now(timezone.utc)
-        start_date = tenant.tochka_last_sync or (end_date - timedelta(days=30))
-
         params = {
-            'startDateTime': start_date.isoformat(),
             'endDateTime': end_date.isoformat()
         }
+
+        # Если это НЕ первая синхронизация, добавляем дату начала
+        if tenant.tochka_last_sync:
+            # Добавляем 1 секунду, чтобы не загружать последнюю транзакцию повторно
+            start_date = tenant.tochka_last_sync + timedelta(seconds=1)
+            params['startDateTime'] = start_date.isoformat()
+            logger.info(f"[Tochka Sync] Режим инкрементальной синхронизации: с {start_date.isoformat()}")
+        else:
+            logger.info("[Tochka Sync] Режим полной синхронизации: загрузка всей истории.")
 
         total_new_ops = 0
         for account_id in selected_accounts:
             params['accountId'] = account_id
-            logger.info(f"[Tochka Sync] Запрос выписок для счета {account_id} с {start_date.isoformat()}")
+            page = 1
 
-            response = requests.get("https://enter.tochka.com/uapi/open-banking/v1.0/statements", headers=headers,
-                                    params=params)
-            response.raise_for_status()
-            data = response.json()
+            # Цикл для обработки всех страниц
+            while True:
+                params['page'] = str(page)
+                logger.info(f"[Tochka Sync] Запрос выписок для счета {account_id}, страница {page}...")
 
-            statements = data.get('Data', {}).get('Statement', [])
-            if not statements:
-                logger.info(f"[Tochka Sync] -> Для счета {account_id} нет новых выписок.")
-                continue
+                response = requests.get("https://enter.tochka.com/uapi/open-banking/v1.0/statements", headers=headers,
+                                        params=params)
+                response.raise_for_status()
+                data = response.json()
 
-            for statement in statements:
-                for op in statement.get('Transaction', []):
-                    op_id = op.get('transactionId')
-                    if not op_id: continue
+                statements = data.get('Data', {}).get('Statement', [])
+                if not statements:
+                    logger.info(
+                        f"[Tochka Sync] -> На странице {page} для счета {account_id} нет новых выписок. Завершаем.")
+                    break  # Выходим из цикла while, если на странице нет данных
 
-                    existing_op_filter = [{"field": "operation_id", "op": "eq", "value": str(op_id)}]
-                    search_result = eav_service.get_all_entities_for_type(
-                        entity_type_name=CRM_TABLE_NAME, current_user=owner, filters=existing_op_filter, limit=1
-                    )
-                    if search_result['total'] > 0:
-                        continue
+                for statement in statements:
+                    for op in statement.get('Transaction', []):
+                        # ... (внутренняя логика обработки одной операции остается без изменений) ...
+                        op_id = op.get('transactionId')
+                        if not op_id: continue
 
-                    # Определяем контрагента и тип операции
-                    op_type = "Списание"
-                    contractor = op.get('CreditorParty', {}).get('name')
-                    if op.get('creditDebitIndicator') == 'Credit':
-                        op_type = "Поступление"
-                        contractor = op.get('DebtorParty', {}).get('name')
+                        existing_op_filter = [{"field": "operation_id", "op": "eq", "value": str(op_id)}]
+                        search_result = eav_service.get_all_entities_for_type(
+                            entity_type_name=CRM_TABLE_NAME, current_user=owner, filters=existing_op_filter, limit=1
+                        )
+                        if search_result['total'] > 0:
+                            continue
 
-                    op_data = {
-                        "operation_id": str(op_id),
-                        "amount": op.get('Amount', {}).get('amount'),
-                        "currency": op.get('Amount', {}).get('currency'),
-                        "operation_type": op_type,
-                        "contractor_name": contractor,
-                        "purpose": op.get('description'),
-                        "operation_date": op.get('documentProcessDate'),
-                    }
+                        op_type = "Списание"
+                        contractor = op.get('CreditorParty', {}).get('name')
+                        if op.get('creditDebitIndicator') == 'Credit':
+                            op_type = "Поступление"
+                            contractor = op.get('DebtorParty', {}).get('name')
 
-                    op_data_cleaned = {k: v for k, v in op_data.items() if v is not None}
-                    eav_service.create_entity(CRM_TABLE_NAME, op_data_cleaned, owner)
-                    total_new_ops += 1
+                        op_data = {
+                            "operation_id": str(op_id),
+                            "amount": op.get('Amount', {}).get('amount'),
+                            "currency": op.get('Amount', {}).get('currency'),
+                            "operation_type": op_type,
+                            "contractor_name": contractor,
+                            "purpose": op.get('description'),
+                            "operation_date": op.get('documentProcessDate'),
+                        }
 
+                        op_data_cleaned = {k: v for k, v in op_data.items() if v is not None}
+                        eav_service.create_entity(CRM_TABLE_NAME, op_data_cleaned, owner)
+                        total_new_ops += 1
+
+                # Проверяем, есть ли еще страницы
+                meta = data.get('Meta', {})
+                totalPages = meta.get('totalPages', 1)
+
+                if page >= totalPages:
+                    break  # Все страницы загружены, выходим из цикла
+
+                page += 1  # Переходим к следующей странице
         logger.info(f"[Tochka Sync] Обработка завершена. Сохранено {total_new_ops} новых операций.")
         tenant.tochka_last_sync = datetime.now(timezone.utc)
         tenant.tochka_last_error = None
