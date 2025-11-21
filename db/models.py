@@ -92,7 +92,18 @@ class Tenant(Base):
     beeline_periodic_task_id = Column(Integer, nullable=True)
     # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
-    
+    # --- НАЧАЛО: Добавляем поля для интеграции с Точка Банком ---
+    tochka_api_token = Column(LargeBinary, nullable=True)
+    tochka_integration_status = Column(String(50), nullable=True, default='inactive')
+    tochka_last_sync = Column(DateTime(timezone=True), nullable=True)
+    tochka_last_error = Column(Text, nullable=True)
+    tochka_sync_schedule_type = Column(String(50), default='manual')
+    tochka_sync_time = Column(Time, nullable=True)
+    tochka_sync_weekday = Column(Integer, nullable=True)
+    tochka_periodic_task_id = Column(Integer, nullable=True)
+    tochka_sync_sources = Column(Text, nullable=True) # Для хранения выбранных accountId
+    # --- КОНЕЦ ---
+
     # --- ДОБАВЬТЕ ЭТИ RELATIONSHIP'Ы С КАСКАДОМ ---
     users = relationship("User", cascade="all, delete-orphan")
     entity_types = relationship("EntityType", cascade="all, delete-orphan")

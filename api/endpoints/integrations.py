@@ -20,6 +20,9 @@ from services.beeline_setup_service import setup_beeline_table
 from tasks.beeline_sync import setup_schedule_for_beeline, sync_beeline_calls
 # --- КОНЕЦ ИЗМЕНЕНИЙ ---
 
+from tasks.tochka_sync import setup_schedule_for_tochka, sync_tochka_operations
+from services.tochka_setup_service import setup_tochka_table
+
 router = APIRouter()
 
 
@@ -313,3 +316,156 @@ def disconnect_beeline(
     db.commit()
     return {"status": "ok", "message": "Интеграция с Билайн отключена."}
 # --- КОНЕЦ ИЗМЕНЕНИЙ ---```
+
+
+# --- НАЧАЛО: Новые схемы для Точка Банка ---
+class TochkaTokenValidateRequest(BaseModel):
+    api_token: str
+
+
+class TochkaBankAccount(BaseModel):
+    accountId: str
+    currency: str
+    status: str
+
+
+class TochkaCompanyInfo(BaseModel):
+    # API Точки не группирует по компаниям, так что создадим "заглушку"
+    companyName: str
+    bankAccounts: List[TochkaBankAccount]
+
+
+class TochkaIntegrationSettings(BaseModel):
+    api_token: Optional[str] = Field(None, description="API-ключ. Отправляется только при изменении.")
+    schedule_type: Literal['manual', 'hourly', 'daily', 'weekly'] = 'manual'
+    sync_time: Optional[time] = None
+    sync_weekday: Optional[int] = Field(None, ge=0, le=6)
+    selected_account_ids: List[str] = []
+
+
+class TochkaIntegrationStatus(BaseModel):
+    is_active: bool
+    schedule_type: str
+    sync_time: Optional[time] = None
+    sync_weekday: Optional[int] = None
+    last_sync: Optional[datetime] = None
+    last_error: Optional[str] = None
+    selected_account_ids: List[str] = []
+
+
+# --- КОНЕЦ ---
+
+# --- Существующие эндпоинты для Modulbank и Beeline ---
+# ...
+
+# --- НАЧАЛО: Новые эндпоинты для Точка Банка ---
+
+@router.post("/tochka/validate-token", response_model=List[TochkaCompanyInfo])
+def validate_tochka_token(token_in: TochkaTokenValidateRequest):
+    """Принимает API-токен Точка Банка, проверяет его и возвращает список счетов."""
+    headers = {'Authorization': f'Bearer {token_in.api_token}', 'Accept': 'application/json'}
+    try:
+        response = requests.get("https://enter.tochka.com/uapi/open-banking/v1.0/accounts", headers=headers, timeout=10)
+        response.raise_for_status()
+        accounts_data = response.json().get('Data', {}).get('Account', [])
+
+        # API Точки не имеет сущности "компания", поэтому мы обернем все счета в одну фиктивную компанию
+        company_info = TochkaCompanyInfo(
+            companyName="Счета в Точка Банке",
+            bankAccounts=[TochkaBankAccount.model_validate(acc) for acc in accounts_data]
+        )
+        return [company_info]
+
+    except requests.exceptions.RequestException as e:
+        detail = f"Ошибка API Точка Банка: {e.response.text if e.response else e}"
+        raise HTTPException(status_code=400, detail=detail)
+
+
+@router.get("/tochka/settings", response_model=TochkaIntegrationStatus)
+def get_tochka_settings(db: Session = Depends(session.get_db), current_user: models.User = Depends(get_current_user)):
+    """Получает текущие настройки и статус интеграции с Точка Банком."""
+    tenant = db.get(models.Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+
+    selected_accounts = []
+    if tenant.tochka_sync_sources:
+        try:
+            sources = json.loads(tenant.tochka_sync_sources)
+            selected_accounts = sources.get("accounts", [])
+        except json.JSONDecodeError:
+            pass
+
+    return TochkaIntegrationStatus(
+        is_active=(tenant.tochka_integration_status == 'active'),
+        schedule_type=tenant.tochka_sync_schedule_type or 'manual',
+        sync_time=tenant.tochka_sync_time,
+        sync_weekday=tenant.tochka_sync_weekday,
+        last_sync=tenant.tochka_last_sync,
+        last_error=tenant.tochka_last_error,
+        selected_account_ids=selected_accounts
+    )
+
+
+@router.post("/tochka/settings", status_code=status.HTTP_200_OK)
+def save_tochka_settings(
+        settings_in: TochkaIntegrationSettings,
+        db: Session = Depends(session.get_db),
+        current_user: models.User = Depends(get_current_user),
+        eav_service: EAVService = Depends()
+):
+    """Сохраняет настройки интеграции с Точка Банком."""
+    tenant = db.get(models.Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+
+    message = "Настройки интеграции обновлены."
+    if settings_in.api_token:
+        # Используем ту же таблицу, что и для Модульбанка
+        try:
+            setup_tochka_table(db=db, eav_service=eav_service, current_user=current_user)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Не удалось подготовить таблицу для банковских операций: {e}")
+
+        tenant.tochka_api_token = encrypt_data(settings_in.api_token)
+        tenant.tochka_integration_status = 'active'
+        tenant.tochka_last_error = None
+        # Запускаем первую синхронизацию с задержкой
+        sync_tochka_operations.apply_async(args=[tenant.id], countdown=5)
+        message = "Интеграция с Точка Банком активирована. Первая синхронизация запущена."
+    elif not tenant.tochka_api_token:
+        raise HTTPException(status_code=400, detail="Для активации интеграции необходимо предоставить API-ключ.")
+
+    tenant.tochka_sync_schedule_type = settings_in.schedule_type
+    tenant.tochka_sync_time = settings_in.sync_time
+    tenant.tochka_sync_weekday = settings_in.sync_weekday
+    tenant.tochka_sync_sources = json.dumps({"accounts": settings_in.selected_account_ids})
+
+    new_task_id = setup_schedule_for_tochka(tenant, db)
+    tenant.tochka_periodic_task_id = new_task_id
+
+    db.commit()
+    return {"status": "ok", "message": message}
+
+
+@router.delete("/tochka/settings", status_code=status.HTTP_200_OK)
+def disconnect_tochka(db: Session = Depends(session.get_db), current_user: models.User = Depends(get_current_user)):
+    """Полностью отключает интеграцию с Точка Банком."""
+    tenant = db.get(models.Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+
+    setup_schedule_for_tochka(tenant, db, disable=True)
+    tenant.tochka_api_token = None
+    tenant.tochka_integration_status = 'inactive'
+    tenant.tochka_last_sync = None
+    tenant.tochka_last_error = None
+    tenant.tochka_sync_schedule_type = 'manual'
+    tenant.tochka_sync_time = None
+    tenant.tochka_sync_weekday = None
+    tenant.tochka_periodic_task_id = None
+    tenant.tochka_sync_sources = None
+
+    db.commit()
+    return {"status": "ok", "message": "Интеграция с Точка Банком отключена."}
+# --- КОНЕЦ ---
