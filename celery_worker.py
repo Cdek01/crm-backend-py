@@ -24,7 +24,8 @@ celery_app = Celery(
     'celery_worker',
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include = ['tasks.messaging', 'tasks.imports', 'tasks.enrichment', 'tasks.banking', 'tasks.beeline_sync']
+    include = ['tasks.messaging', 'tasks.imports', 'tasks.enrichment', 'tasks.banking', 'tasks.beeline_sync',
+        'tasks.tochka_sync']
 )
 
 # --- НОВАЯ КОНФИГУРАЦИЯ ДЛЯ ПЛАНИРОВЩИКА ---
