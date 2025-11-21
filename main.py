@@ -27,7 +27,7 @@ from admin import (
     AssignRoleView, SharedAccessAdmin
 
 )
-from api.endpoints import roles, imports, files, ai, users, shares, calendar_views, calendar, integrations
+from api.endpoints import roles, imports, files, ai, users, shares, calendar_views, calendar, integrations, dashboards
 
 setup_logging()
 
@@ -158,8 +158,7 @@ app.include_router(shares.router, prefix="/api/shares", tags=["Shares (Access Co
 app.include_router(calendar_views.router, prefix="/api/calendar-views", tags=["Calendar Views Config"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar Events"])
 app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"]) # <--
-
-
+app.include_router(dashboards.router, prefix="/api/dashboards", tags=["Dashboards"])
 # --------------------------------------------------------------------------
 # --- ШАГ 7: ГЛОБАЛЬНЫЕ ЭНДПОИНТЫ (если нужны) ---
 # --------------------------------------------------------------------------
