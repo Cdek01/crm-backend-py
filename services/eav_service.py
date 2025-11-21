@@ -21,7 +21,7 @@ from sqlalchemy import or_, cast, Text
 import logging
 # from tasks.enrichment import enrich_data_by_inn_task
 from sqlalchemy import or_
-from .history_service import HistoryService # <-- Добавьте этот импорт
+from .history_service import HistoryService
 
 logger = logging.getLogger(__name__)
 

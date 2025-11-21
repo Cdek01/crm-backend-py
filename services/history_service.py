@@ -1,11 +1,9 @@
 # services/history_service.py
 from sqlalchemy.orm import Session
 from db import models
-from services.eav_service import EAVService
-
 
 class HistoryService:
-    def __init__(self, db: Session, eav_service: EAVService):
+    def __init__(self, db: Session, eav_service: 'EAVService'):
         self.db = db
         self.eav_service = eav_service
 
