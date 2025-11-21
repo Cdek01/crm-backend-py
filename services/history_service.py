@@ -81,10 +81,15 @@ class HistoryService:
         last_undone_action = self.db.query(models.ActionHistory).filter(
             models.ActionHistory.user_id == user.id,
             models.ActionHistory.is_undone == True
-        ).order_by(models.ActionHistory.timestamp.asc()).first()
+        ).order_by(models.ActionHistory.timestamp.desc()).first()
 
         if not last_undone_action:
             return {"message": "Нет действий для повтора."}
+
+        # --- ГЛАВНЫЙ ФИКС ---
+        # Запоминаем ID и описание до того, как объект может быть удален
+        action_id = last_undone_action.id
+        action_description = last_undone_action.description
 
         # Применяем прямое действие
         if last_undone_action.action_type == 'CREATE':
@@ -96,7 +101,11 @@ class HistoryService:
             self.eav_service.update_entity(last_undone_action.entity_id,
                                            {**last_undone_action.state_after, "_source": "history"}, user)
 
-        # Помечаем действие как не отмененное
-        last_undone_action.is_undone = False
-        self.db.commit()
-        return {"message": f"Действие '{last_undone_action.description}' повторено."}
+        # Теперь, после того как все действия (включая удаление) выполнены,
+        # мы находим нашу запись заново по ID и обновляем ее.
+        action_to_update = self.db.query(models.ActionHistory).get(action_id)
+        if action_to_update:
+            action_to_update.is_undone = False
+            self.db.commit()
+
+        return {"message": f"Действие '{action_description}' повторено."}

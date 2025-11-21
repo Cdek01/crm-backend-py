@@ -1323,6 +1323,8 @@ class EAVService:
         # --- ПРОВЕРКА ФЛАГА ---
         # Извлекаем флаг из данных. `pop` удаляет его, чтобы он не записался в атрибуты.
         is_external_update = data.pop("_source", None) is not None
+        entity_id_to_restore = data.pop("id", None)
+
         # ---------------------
         """Создать новую запись с корректным преобразованием типов."""
         entity_type = self._get_entity_type_by_name(entity_type_name, current_user)
@@ -1346,6 +1348,11 @@ class EAVService:
         # -----------------------------------------------
 
         new_entity = models.Entity(entity_type_id=entity_type.id, position=new_position)
+        # Если мы восстанавливаем удаленную запись, присваиваем ей старый ID
+        if is_external_update == "history" and entity_id_to_restore is not None:
+            new_entity.id = entity_id_to_restore
+
+
         self.db.add(new_entity)
         self.db.flush()
 
