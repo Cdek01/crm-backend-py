@@ -21,6 +21,7 @@ from sqlalchemy import or_, cast, Text
 import logging
 # from tasks.enrichment import enrich_data_by_inn_task
 from sqlalchemy import or_
+from .history_service import HistoryService # <-- Добавьте этот импорт
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,8 @@ class EAVService:
     def __init__(self, db: Session = Depends(session.get_db), alias_service: AliasService = Depends()):
         self.db = db
         self.alias_service = alias_service
+        self.history_service = HistoryService(db, self)
+
 
     def _parse_date_filter_value(self, value: Any) -> date:
         """
@@ -1017,6 +1020,11 @@ class EAVService:
         return pivoted_result
 
     def update_entity(self, entity_id: int, data: Dict[str, Any], current_user: models.User) -> Dict[str, Any]:
+        is_history_op = data.get("_source") == "history"
+
+        state_before = None
+        if not is_history_op:
+            state_before = self.get_entity_by_id(entity_id, current_user)
         from tasks.messaging import send_webhook_task, send_sms_for_entity_task
         logger.info(f"--- Начало update_entity для ID: {entity_id} ---")
         logger.debug(f"Входящие данные (data): {data}")
@@ -1185,6 +1193,17 @@ class EAVService:
             )
 
         logger.info(f"--- Завершение update_entity для ID: {entity_id} ---")
+        if not is_history_op:
+            state_after = self.get_entity_by_id(entity_id, current_user)
+            self.history_service.record_action(
+                user_id=current_user.id,
+                action_type='UPDATE',
+                entity_type_name=entity.entity_type.name,
+                entity_id=entity_id,
+                state_before=state_before,
+                state_after=state_after,
+                description=f"Обновлена запись #{entity_id}"
+            )
         return self.get_entity_by_id(entity_id, current_user)
 
     # --- ИМПОРТ ЗАДАЧИ ВНУТРИ МЕТОДА ---
@@ -1366,7 +1385,17 @@ class EAVService:
                 self._save_attribute_value(new_entity.id, attribute, value)
 
             # ---------------------------
-
+        if data.get("_source") != "history":
+            created_entity_data = self.get_entity_by_id(new_entity.id, current_user)
+            self.history_service.record_action(
+                user_id=current_user.id,
+                action_type='CREATE',
+                entity_type_name=entity_type_name,
+                entity_id=new_entity.id,
+                state_before=None,
+                state_after=created_entity_data,
+                description=f"Создана запись #{new_entity.id}"
+            )
         self.db.commit()
 
         # # --- ЗАПУСК ТРИГГЕРА ОБОГАЩЕНИЯ ---
@@ -1394,6 +1423,13 @@ class EAVService:
         return self.get_entity_by_id(new_entity.id, current_user)
 
     def delete_entity(self, entity_id: int, current_user: models.User, source: Optional[str] = None):
+        is_history_op = source == "history"
+
+        # --- ДОБАВЬТЕ ЭТОТ БЛОК В НАЧАЛО ФУНКЦИИ ---
+        state_before = None
+        if not is_history_op:
+            state_before = self.get_entity_by_id(entity_id, current_user)
+        # -------------------------------------------
         from tasks.messaging import send_webhook_task  # <--- ИМПОРТ ВНУТРИ ФУНКЦИИ
 
         """Удалить запись."""
@@ -1427,6 +1463,18 @@ class EAVService:
         entity_type_name = entity_to_delete.entity_type.name
         tenant_id_for_webhook = entity_to_delete.entity_type.tenant_id
         self.db.delete(entity_to_delete)
+        # --- ДОБАВЬТЕ ЭТОТ БЛОК В КОНЕЦ ФУНКЦИИ, ПЕРЕД `return` ИЛИ `commit` ---
+        if not is_history_op:
+            self.history_service.record_action(
+                user_id=current_user.id,
+                action_type='DELETE',
+                entity_type_name=state_before['entity_type_name'], # Предполагая, что вы добавите это в get_entity_by_id
+                entity_id=entity_id,
+                state_before=state_before,
+                state_after=None,
+                description=f"Удалена запись #{entity_id}"
+            )
+        # -------------------------------------------------------------
         self.db.commit()
         # ---------------------------
 

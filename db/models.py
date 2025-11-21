@@ -9,6 +9,7 @@ from .base import Base
 from enum import Enum as PyEnum
 import json
 from sqlalchemy import LargeBinary
+from sqlalchemy import JSON
 
 
 # Таблица-связка для отношения "Многие-ко-Многим" между ролями и разрешениями
@@ -596,6 +597,43 @@ class CalendarViewConfig(Base):
     color_attribute = relationship("Attribute", foreign_keys=[color_attribute_id])
 
 
+class ActionType(PyEnum):
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
 
 
+class ActionHistory(Base):
+    """Хранит запись об одном действии пользователя для реализации Undo/Redo."""
+    __tablename__ = 'action_history'
 
+    id = Column(Integer, primary_key=True)
+
+    # Кто совершил действие
+    user_id = Column(Integer, ForeignKey('users.id', ondelete="CASCADE"), nullable=False, index=True)
+
+    # Тип действия
+    action_type = Column(String, nullable=False)  # 'CREATE', 'UPDATE', 'DELETE'
+
+    # С какой таблицей было действие
+    entity_type_name = Column(String, nullable=False, index=True)
+
+    # С какой конкретно строкой
+    entity_id = Column(Integer, nullable=False, index=True)
+
+    # Состояние записи ДО (в виде JSON)
+    state_before = Column(JSON, nullable=True)
+
+    # Состояние записи ПОСЛЕ (в виде JSON)
+    state_after = Column(JSON, nullable=True)
+
+    # Человекочитаемое описание для UI
+    description = Column(String, nullable=True)
+
+    # Когда было совершено действие
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # Флаг, который показывает, было ли это действие "отменено"
+    is_undone = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User")
